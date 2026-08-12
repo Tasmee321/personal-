@@ -6,7 +6,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import nodemailer from "nodemailer";
+// nodemailer replaced by Resend API (Render blocks SMTP)
 import { generateSecret as generateTotpSecret, generateURI as generateTotpURI, verify as verifyTotp } from "otplib";
 import { v2 as cloudinary } from "cloudinary";
 import helmet from "helmet";
@@ -458,15 +458,21 @@ function settleDuePositions(account) {
 // ---- In-memory pending OTPs ----
 const pendingSignups = new Map();
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || "smtp.gmail.com",
-  port: Number(process.env.SMTP_PORT) || 465,
-  secure: true,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+async function sendEmailViaResend({ from, to, subject, text, html }) {
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${process.env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ from, to: [to], subject, text, html }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Resend API error ${res.status}: ${err}`);
+  }
+  return res.json();
+}
 
 async function sendOtpEmail(toEmail, name, otp, purpose) {
   const fromName = process.env.MAIL_FROM_NAME || "KYNEX";
@@ -492,8 +498,9 @@ async function sendOtpEmail(toEmail, name, otp, purpose) {
     "fund-password": "You are setting up your Fund Password for KYNEX withdrawals.",
   };
   const purposeDesc = purposeDescriptions[purpose] || "This code is for verifying your identity on KYNEX.";
-  await transporter.sendMail({
-    from: `"${fromName}" <${process.env.SMTP_USER}>`,
+  const fromAddr = process.env.RESEND_FROM || "KYNEX <onboarding@resend.dev>";
+  await sendEmailViaResend({
+    from: fromAddr,
     to: toEmail,
     subject: `${otp} — KYNEX ${purposeText} Code`,
     text: `Hi ${name},\n\nYour KYNEX verification code for ${purposeText} is: ${otp}\n\nPurpose: ${purposeDesc}\n\nThis code expires in ${process.env.OTP_EXPIRY_MINUTES || 10} minutes.\n\nIf you didn't request this, you can ignore this email.`,
@@ -506,10 +513,10 @@ function generateOtp() {
 }
 
 async function sendNotificationEmail(toEmail, name, subject, heading, bodyHtml) {
-  const fromName = process.env.MAIL_FROM_NAME || "KYNEX";
+  const fromAddr = process.env.RESEND_FROM || "KYNEX <onboarding@resend.dev>";
   try {
-    await transporter.sendMail({
-      from: `"${fromName}" <${process.env.SMTP_USER}>`,
+    await sendEmailViaResend({
+      from: fromAddr,
       to: toEmail,
       subject: `KYNEX — ${subject}`,
       html: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px"><h2 style="color:#3B82F6;margin:0 0 16px">KYNEX</h2><p>Hi ${name},</p><h3>${heading}</h3>${bodyHtml}<hr style="border:none;border-top:1px solid #eee;margin:20px 0"/><p style="color:#888;font-size:12px">This is an automated notification from KYNEX. Do not reply to this email.<br/>Support: supportkynex@gmail.com</p></div>`,
