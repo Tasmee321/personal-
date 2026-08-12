@@ -1,0 +1,264 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Search, ArrowLeftRight, Wallet, ArrowDownToLine, Users, Download, Headset, Globe, User, TrendingUp, TrendingDown, BarChart3, Info, Eye, EyeOff } from 'lucide-react';
+import BottomNav from '../components/BottomNav';
+import { CoinIcon } from '../components/CoinIcons';
+import { getToken } from '../utils/auth';
+import { useTheme } from '../ThemeContext';
+import NotificationBell from '../components/NotificationBell';
+import ALL_COINS, { buildWsStreamUrl } from '../config/coins';
+import { API_URL } from '../config';
+
+const QUICK_ACTIONS = [
+  { to: '/deposit', label: 'Deposit', icon: Wallet, badgeKey: 'blue' },
+  { to: '/withdraw', label: 'Withdrawal', icon: ArrowDownToLine, badgeKey: 'teal' },
+  { to: '/invite', label: 'Invite', icon: Users, badgeKey: 'purple' },
+  { to: '/download', label: 'Download', icon: Download, badgeKey: 'amber' },
+  { to: '/legal/about', label: 'About', icon: Info, badgeKey: 'green' },
+];
+
+function fmtPrice(n) {
+  const abs = Math.abs(n);
+  const digits = abs >= 1 ? 2 : abs >= 0.01 ? 4 : 8;
+  return n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+function fmtVolume(v) {
+  if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
+  if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `${(v / 1e3).toFixed(0)}K`;
+  return v.toFixed(0);
+}
+
+const Dashboard = () => {
+  const { theme, iconBadges } = useTheme();
+  const navigate = useNavigate();
+  const [markets, setMarkets] = useState({});
+  const [balance, setBalance] = useState(null);
+  const [hideBalance, setHideBalance] = useState(() => localStorage.getItem('kynex_hide_balance') === '1');
+  const [search, setSearch] = useState('');
+  useEffect(() => {
+    const ws = new WebSocket(buildWsStreamUrl());
+
+    ws.onmessage = (event) => {
+      const { data } = JSON.parse(event.data);
+      if (!data || !data.s) return;
+      const symbol = data.s.replace('USDT', '');
+      setMarkets((prev) => ({
+        ...prev,
+        [symbol]: {
+          price: parseFloat(data.c),
+          change: parseFloat(data.P),
+          volume: parseFloat(data.q),
+          high: parseFloat(data.h),
+          low: parseFloat(data.l),
+        },
+      }));
+    };
+
+    return () => ws.close();
+  }, []);
+
+  useEffect(() => {
+    const loadBalance = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/demo/account`, { headers: { Authorization: `Bearer ${getToken()}` } });
+        const data = await res.json();
+        if (res.ok) setBalance(data.balance);
+      } catch { /* next poll */ }
+    };
+    const initial = setTimeout(loadBalance, 0);
+    const poll = setInterval(loadBalance, 10000);
+    return () => { clearTimeout(initial); clearInterval(poll); };
+  }, []);
+
+  const enriched = useMemo(() =>
+    ALL_COINS.map((c) => ({ ...c, live: markets[c.short] })),
+    [markets],
+  );
+
+  const hasData = enriched.some((c) => c.live);
+
+  const stats = useMemo(() => {
+    const withLive = enriched.filter((c) => c.live);
+    const gainers = withLive.filter((c) => c.live.change > 0).length;
+    const losers = withLive.filter((c) => c.live.change < 0).length;
+    const totalVol = withLive.reduce((sum, c) => sum + (c.live.volume || 0), 0);
+    return { gainers, losers, totalVol };
+  }, [enriched]);
+
+  const visibleCoins = useMemo(() => {
+    const q = search.trim().toUpperCase();
+    if (!q) return enriched;
+    return enriched.filter((c) => c.short.includes(q) || c.name.toUpperCase().includes(q));
+  }, [search, enriched]);
+
+  return (
+    <div style={{ padding: '20px', paddingBottom: '90px', color: theme.text, backgroundColor: theme.bg, minHeight: '100vh' }}>
+
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <h2 style={{ color: theme.brand, margin: 0, letterSpacing: '0.5px' }}>KYNEX</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <Link to="/legal/contact" style={{ color: theme.subtext, display: 'flex' }} title="Support"><Headset size={19} /></Link>
+          <Link to="/settings" style={{ color: theme.subtext, display: 'flex' }} title="Language"><Globe size={19} /></Link>
+          <NotificationBell />
+          <Link to="/profile" style={{ color: theme.subtext, display: 'flex' }} title="Profile"><User size={20} /></Link>
+        </div>
+      </div>
+
+      {/* Balance card */}
+      <div style={{
+        background: theme.brandGradient || `linear-gradient(135deg, ${theme.primarySoft} 0%, ${theme.card} 60%, ${theme.brandSoft} 100%)`,
+        padding: '22px 20px', borderRadius: '18px', marginBottom: '18px', border: `1px solid ${theme.cardBorder}`,
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        boxShadow: theme.shadowElevated || theme.shadow,
+        backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)',
+      }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+            <p style={{ color: theme.subtext, fontSize: '13px', margin: 0 }}>Spot Balance</p>
+            <button onClick={() => { const next = !hideBalance; setHideBalance(next); localStorage.setItem('kynex_hide_balance', next ? '1' : '0'); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', color: theme.subtext }}>
+              {hideBalance ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+          <h2 style={{ margin: 0, fontSize: '26px', color: theme.text }}>
+            {hideBalance ? '••••••' : (balance === null ? '...' : balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}
+            <span style={{ fontSize: '14px', color: theme.subtext, marginLeft: '6px' }}>{hideBalance ? '' : 'USDT'}</span>
+          </h2>
+        </div>
+        <Link
+          to="/assets"
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: theme.primary, color: 'white', border: 'none', padding: '11px 18px', borderRadius: '24px', fontWeight: 'bold', fontSize: '13px', textDecoration: 'none', boxShadow: '0 6px 16px rgba(36,104,242,0.35)' }}
+        >
+          <ArrowLeftRight size={14} /> Transfer
+        </Link>
+      </div>
+
+      {/* Quick actions */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '22px' }}>
+        {QUICK_ACTIONS.map((action) => {
+          const Icon = action.icon;
+          const badge = iconBadges[action.badgeKey];
+          return (
+            <Link key={action.label} to={action.to} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: theme.text, textDecoration: 'none', flex: 1 }}>
+              <div style={{ width: '48px', height: '48px', borderRadius: '16px', backgroundColor: badge.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: theme.shadow }}>
+                <Icon size={20} color={badge.fg} />
+              </div>
+              <span style={{ fontSize: '11px', color: theme.subtext, fontWeight: '600' }}>{action.label}</span>
+            </Link>
+          );
+        })}
+      </div>
+
+      {/* Market Stats Bar */}
+      {hasData && (
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+          <div style={{
+            flex: 1, padding: '14px 12px', borderRadius: '14px', backgroundColor: theme.card,
+            border: `1px solid ${theme.cardBorder}`, backdropFilter: theme.cardGlass, WebkitBackdropFilter: theme.cardGlass,
+            boxShadow: theme.shadow, display: 'flex', alignItems: 'center', gap: '10px',
+          }}>
+            <div style={{ width: '32px', height: '32px', borderRadius: '10px', backgroundColor: theme.upSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <TrendingUp size={16} color={theme.up} />
+            </div>
+            <div>
+              <div style={{ fontSize: '11px', color: theme.faint }}>Gainers</div>
+              <div style={{ fontSize: '16px', fontWeight: 'bold', color: theme.up }}>{stats.gainers}</div>
+            </div>
+          </div>
+          <div style={{
+            flex: 1, padding: '14px 12px', borderRadius: '14px', backgroundColor: theme.card,
+            border: `1px solid ${theme.cardBorder}`, backdropFilter: theme.cardGlass, WebkitBackdropFilter: theme.cardGlass,
+            boxShadow: theme.shadow, display: 'flex', alignItems: 'center', gap: '10px',
+          }}>
+            <div style={{ width: '32px', height: '32px', borderRadius: '10px', backgroundColor: theme.downSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <TrendingDown size={16} color={theme.down} />
+            </div>
+            <div>
+              <div style={{ fontSize: '11px', color: theme.faint }}>Losers</div>
+              <div style={{ fontSize: '16px', fontWeight: 'bold', color: theme.down }}>{stats.losers}</div>
+            </div>
+          </div>
+          <div style={{
+            flex: 1, padding: '14px 12px', borderRadius: '14px', backgroundColor: theme.card,
+            border: `1px solid ${theme.cardBorder}`, backdropFilter: theme.cardGlass, WebkitBackdropFilter: theme.cardGlass,
+            boxShadow: theme.shadow, display: 'flex', alignItems: 'center', gap: '10px',
+          }}>
+            <div style={{ width: '32px', height: '32px', borderRadius: '10px', backgroundColor: theme.primarySoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <BarChart3 size={16} color={theme.primary} />
+            </div>
+            <div>
+              <div style={{ fontSize: '11px', color: theme.faint }}>24h Vol</div>
+              <div style={{ fontSize: '16px', fontWeight: 'bold' }}>${fmtVolume(stats.totalVol)}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Search */}
+      <div style={{ position: 'relative', marginBottom: '14px' }}>
+        <Search size={16} color={theme.faint} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
+        <input
+          type="text"
+          placeholder="Search coins"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ width: '100%', padding: '12px 12px 12px 38px', borderRadius: '12px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.card, color: theme.text, fontSize: '14px', boxSizing: 'border-box', boxShadow: theme.shadow }}
+        />
+      </div>
+
+      {/* All Markets */}
+      <div style={{ backgroundColor: theme.card, borderRadius: '16px', padding: '6px 16px', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadowElevated || theme.shadow, backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0 6px' }}>
+          <h4 style={{ color: theme.subtext, margin: 0, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '1px' }}>All Markets</h4>
+          <Link to="/markets" style={{ fontSize: '12px', color: theme.primary, textDecoration: 'none', fontWeight: '600' }}>View all</Link>
+        </div>
+
+        {visibleCoins.length === 0 && <p style={{ color: theme.faint, fontSize: '13px', padding: '12px 0' }}>No coins match "{search}".</p>}
+
+        {visibleCoins.map((coin, i) => (
+          <div
+            key={coin.symbol}
+            onClick={() => navigate('/trade', { state: { pair: coin.pair } })}
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '13px 0', borderTop: i === 0 ? 'none' : `1px solid ${theme.cardBorder}`, cursor: 'pointer' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <CoinIcon symbol={coin.short} size={36} />
+              <div>
+                <div style={{ fontWeight: 'bold', fontSize: '15px' }}>{coin.short}</div>
+                <div style={{ color: theme.faint, fontSize: '12px' }}>{coin.name}</div>
+              </div>
+            </div>
+
+            <div style={{ textAlign: 'right' }}>
+              {coin.live ? (
+                <>
+                  <div style={{ fontWeight: 'bold', fontSize: '15px', color: coin.live.change >= 0 ? theme.up : theme.down, transition: 'color 0.3s ease' }}>
+                    ${fmtPrice(coin.live.price)}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end', marginTop: '2px' }}>
+                    <span style={{ color: theme.faint, fontSize: '11px' }}>Vol {fmtVolume(coin.live.volume)}</span>
+                    <span style={{
+                      color: coin.live.change >= 0 ? theme.up : theme.down,
+                      fontSize: '12px', backgroundColor: coin.live.change >= 0 ? theme.upSoft : theme.downSoft,
+                      padding: '2px 7px', borderRadius: '6px', fontWeight: '600',
+                    }}>
+                      {coin.live.change >= 0 ? '+' : ''}{coin.live.change.toFixed(2)}%
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <span style={{ color: theme.faint, fontSize: '13px' }}>Loading...</span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <BottomNav />
+    </div>
+  );
+};
+
+export default Dashboard;
