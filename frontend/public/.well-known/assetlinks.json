@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.kynex.app",
+      "sha256_cert_fingerprints": [
+        "68:AE:39:72:13:10:23:5A:FB:01:8A:FA:F6:51:50:EB:73:A3:84:EB:12:38:0A:DA:B2:E0:4A:EF:4A:97:71:D4"
+      ]
+    }
+  }
+]

@@ -316,7 +316,7 @@ export default function KynexAuth() {
         .ka-graphic { width: 350px; height: 200px; background: ${theme.primaryGradient || theme.primary}; position: absolute; bottom: 0; ${isRTL ? 'right' : 'left'}: 80px; border-top-left-radius: 12px; border-top-right-radius: 12px; display: flex; justify-content: center; align-items: center; }
         .ka-bottom { text-align: center; margin-top: 25px; font-size: 15px; color: ${theme.subtext}; }
         .ka-link { color: ${theme.primary}; cursor: pointer; font-weight: bold; }
-        @media (max-width: 900px) { .ka-left { display: none; } .ka-right { padding: 20px; } }
+        @media (max-width: 900px) { .ka-left { display: none; } .ka-right { padding: 30px 20px; justify-content: flex-start; } }
         .ka-footer { display: flex; flex-wrap: wrap; justify-content: center; gap: 24px; padding: 20px; background-color: ${theme.card}; border-top: 1px solid ${theme.cardBorder}; backdrop-filter: ${theme.cardGlass || 'blur(16px)'}; -webkit-backdrop-filter: ${theme.cardGlass || 'blur(16px)'}; }
         .ka-footer a { color: ${theme.subtext}; font-size: 13px; text-decoration: none; }
         .ka-footer a:hover { color: ${theme.text}; }
