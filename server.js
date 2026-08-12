@@ -2250,7 +2250,12 @@ app.post("/api/demo/futures/close", authenticate, async (req, res) => {
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
 initDb().then(() => {
-  app.listen(PORT, '0.0.0.0', () => console.log(`KYNEX backend running on http://0.0.0.0:${PORT}`));
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`KYNEX backend running on http://0.0.0.0:${PORT}`);
+    setInterval(() => {
+      fetch(`https://kynex-backend-9w8t.onrender.com/api/health`).catch(() => {});
+    }, 14 * 60 * 1000);
+  });
 }).catch(err => {
   console.error("Database init failed:", err);
   process.exit(1);
