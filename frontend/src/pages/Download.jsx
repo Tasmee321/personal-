@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Zap, TrendingUp, Shield, Globe, Award, Smartphone, RefreshCw, Wifi, HardDrive, Download as DownloadIcon, CheckCircle } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { CoinIcon } from '../components/CoinIcons';
 import { useTheme } from '../ThemeContext';
 
@@ -379,23 +380,19 @@ const Download = () => {
             boxShadow: theme.shadowElevated || theme.shadow,
             marginBottom: 10,
           }}>
-            <svg width="100" height="100" viewBox="0 0 110 110">
-              <rect x="0" y="0" width="35" height="35" rx="4" fill="#111827"/>
-              <rect x="5" y="5" width="25" height="25" rx="2" fill="white"/>
-              <rect x="10" y="10" width="15" height="15" rx="1" fill="#111827"/>
-              <rect x="75" y="0" width="35" height="35" rx="4" fill="#111827"/>
-              <rect x="80" y="5" width="25" height="25" rx="2" fill="white"/>
-              <rect x="85" y="10" width="15" height="15" rx="1" fill="#111827"/>
-              <rect x="0" y="75" width="35" height="35" rx="4" fill="#111827"/>
-              <rect x="5" y="80" width="25" height="25" rx="2" fill="white"/>
-              <rect x="10" y="85" width="15" height="15" rx="1" fill="#111827"/>
-              <rect x="42" y="42" width="26" height="26" rx="4" fill="#3B82F6"/>
-              <text x="55" y="59" textAnchor="middle" fill="white" fontSize="14" fontWeight="900">K</text>
-              {[40,47,54,61,68].map(x => [40,47,54,61,68].map(y => (
-                (x < 42 || x > 64 || y < 42 || y > 64) &&
-                <rect key={`${x}-${y}`} x={x} y={y} width="5" height="5" rx="1" fill="#111827" opacity={(x+y) % 14 < 7 ? 0.8 : 0.3} />
-              )))}
-            </svg>
+            <QRCodeSVG
+              value="https://kynex.site/download"
+              size={100}
+              bgColor="white"
+              fgColor="#111827"
+              level="M"
+              imageSettings={{
+                src: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" rx="8" fill="%233B82F6"/><text x="20" y="27" text-anchor="middle" fill="white" font-size="22" font-weight="900">K</text></svg>'),
+                width: 24,
+                height: 24,
+                excavate: true,
+              }}
+            />
           </div>
           <p style={{ color: theme.faint, fontSize: '12px', margin: 0 }}>
             Scan to open KYNEX on your phone
