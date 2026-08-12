@@ -553,38 +553,7 @@ const Signals = () => {
             <button onClick={() => setPendingDirection(null)} style={{ background: 'none', border: 'none', color: theme.faint, cursor: 'pointer', fontSize: '13px' }}>Cancel</button>
           </div>
 
-          <label style={{ fontSize: '12px', color: theme.subtext, marginBottom: '8px', display: 'block' }}>Duration (minutes)</label>
-          <div style={{ marginBottom: '12px' }}>
-            <input
-              type="range"
-              min="1"
-              max="1440"
-              step="1"
-              value={duration}
-              onChange={(e) => setDuration(Number(e.target.value))}
-              style={{ width: '100%', accentColor: theme.primary, cursor: 'pointer', height: '6px' }}
-            />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: theme.faint, marginTop: '4px' }}>
-              <span>1m</span>
-              <span>1h</span>
-              <span>6h</span>
-              <span>12h</span>
-              <span>24h</span>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
-            {[1, 3, 5, 10, 15, 30, 60, 120, 360, 720, 1440].map(m => (
-              <button key={m} onClick={() => setDuration(m)} style={{
-                padding: '6px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: '700', cursor: 'pointer',
-                border: `1px solid ${duration === m ? theme.primary : theme.cardBorder}`,
-                backgroundColor: duration === m ? theme.primarySoft : 'transparent',
-                color: duration === m ? theme.primary : theme.subtext,
-              }}>
-                {m < 60 ? `${m}m` : `${m / 60}h`}
-              </button>
-            ))}
-          </div>
-
+          <label style={{ fontSize: '12px', color: theme.subtext, marginBottom: '8px', display: 'block' }}>Settle Time</label>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
             <input
               type="time"
@@ -592,9 +561,6 @@ const Signals = () => {
               onChange={handleTimeChange}
               style={{ padding: '10px 14px', borderRadius: '10px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg, color: theme.text, boxSizing: 'border-box', fontWeight: 'bold', fontSize: '16px' }}
             />
-            <span style={{ fontSize: '14px', fontWeight: '700', color: theme.text }}>
-              {duration >= 60 ? `${Math.floor(duration / 60)}h ${duration % 60}m` : `${duration}m`}
-            </span>
           </div>
 
           <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '14px' }}>

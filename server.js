@@ -9,6 +9,8 @@ import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer";
 import { generateSecret as generateTotpSecret, generateURI as generateTotpURI, verify as verifyTotp } from "otplib";
 import { v2 as cloudinary } from "cloudinary";
+import helmet from "helmet";
+import { initDb, dbRead, dbWrite } from "./db.js";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -17,10 +19,6 @@ cloudinary.config({
 });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const USERS_FILE = path.join(__dirname, "data", "users.json");
-const DEMO_FILE = path.join(__dirname, "data", "demo_accounts.json");
-const MESSAGES_FILE = path.join(__dirname, "data", "user_messages.json");
-const BLOCKED_EMAILS_FILE = path.join(__dirname, "data", "blocked_emails.json");
 
 const PORT = process.env.PORT || 4000;
 const OTP_EXPIRY_MS = (Number(process.env.OTP_EXPIRY_MINUTES) || 10) * 60 * 1000;
@@ -188,8 +186,7 @@ function calculateLevel(uid, users, accounts) {
   };
 }
 
-// Capital letter first, then lowercase letters, then a number (e.g. "Kynex123")
-const PASSWORD_PATTERN = /^[A-Z][a-z]+[0-9]+$/;
+const PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,}$/;
 
 const app = express();
 app.use(cors());
@@ -204,6 +201,7 @@ app.use((req, res, next) => {
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   next();
 });
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 
 // ---- In-memory rate limiter ----
 const rateLimitStore = {};
@@ -231,12 +229,6 @@ setInterval(() => {
 
 const authRateLimit = rateLimit(15 * 60 * 1000, 15);
 const otpRateLimit = rateLimit(60 * 1000, 3);
-
-// Ensure data folder exists
-const dataDir = path.join(__dirname, "data");
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
 
 // ---- File-based database functions ----
 function generateUid(existingUsers) {
@@ -292,67 +284,50 @@ function ensureUserIdentity(user, allUsers) {
   return changed;
 }
 
-function readUsers() {
-  if (!fs.existsSync(USERS_FILE)) return [];
-  let users;
-  try {
-    users = JSON.parse(fs.readFileSync(USERS_FILE, "utf-8") || "[]");
-  } catch (e) {
-    return [];
-  }
+async function readUsers() {
+  let users = await dbRead('users');
+  if (!Array.isArray(users)) users = [];
   let changed = false;
   for (const user of users) {
     if (ensureUserIdentity(user, users)) changed = true;
   }
-  if (changed) writeUsers(users);
+  if (changed) await writeUsers(users);
   return users;
 }
-function writeUsers(users) {
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+async function writeUsers(users) {
+  await dbWrite('users', users);
 }
-function findUserByEmail(email) {
-  return readUsers().find((u) => u.email.toLowerCase() === email.toLowerCase());
+async function findUserByEmail(email) {
+  return (await readUsers()).find((u) => u.email.toLowerCase() === email.toLowerCase());
 }
-function findUserByUid(uid) {
-  return readUsers().find((u) => u.uid === uid);
+async function findUserByUid(uid) {
+  return (await readUsers()).find((u) => u.uid === uid);
 }
 // A referral can be one of the fixed marketing codes, or another user's personal invite code
-function resolveReferral(rawReferral) {
+async function resolveReferral(rawReferral) {
   const code = (rawReferral || "").trim().toUpperCase();
   if (!code) return { valid: false };
   if (VALID_REFERRAL_CODES.includes(code)) return { valid: true, referrerUid: null };
-  const inviter = readUsers().find((u) => u.inviteCode === code);
+  const inviter = (await readUsers()).find((u) => u.inviteCode === code);
   if (inviter) return { valid: true, referrerUid: inviter.uid };
   return { valid: false };
 }
 
-function readJsonFile(file, fallback) {
-  if (!fs.existsSync(file)) return fallback;
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf-8") || JSON.stringify(fallback));
-  } catch (e) {
-    return fallback;
-  }
-}
-function writeJsonFile(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
-}
+async function readDemoAccounts() { return await dbRead('accounts'); }
+async function writeDemoAccounts(accounts) { await dbWrite('accounts', accounts); }
 
-function readDemoAccounts() { return readJsonFile(DEMO_FILE, {}); }
-function writeDemoAccounts(accounts) { writeJsonFile(DEMO_FILE, accounts); }
-
-function readAllMessages() { return readJsonFile(MESSAGES_FILE, {}); }
-function writeAllMessages(all) { writeJsonFile(MESSAGES_FILE, all); }
-function pushMessage(userId, title, body) {
-  const all = readAllMessages();
+async function readAllMessages() { return await dbRead('messages'); }
+async function writeAllMessages(all) { await dbWrite('messages', all); }
+async function pushMessage(userId, title, body) {
+  const all = await readAllMessages();
   if (!all[userId]) all[userId] = [];
   all[userId].unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, title, body, read: false, at: Date.now() });
-  writeAllMessages(all);
+  await writeAllMessages(all);
 }
 
-function readBlockedEmails() { return readJsonFile(BLOCKED_EMAILS_FILE, []); }
-function writeBlockedEmails(list) { writeJsonFile(BLOCKED_EMAILS_FILE, list); }
-function isEmailBlocked(email) { return readBlockedEmails().includes(email.toLowerCase()); }
+async function readBlockedEmails() { return await dbRead('blocked_emails'); }
+async function writeBlockedEmails(list) { await dbWrite('blocked_emails', list); }
+async function isEmailBlocked(email) { return (await readBlockedEmails()).includes(email.toLowerCase()); }
 
 // ---- Deposit address generator (demo-realistic addresses, stored per user) ----
 function generateDepositAddress(network) {
@@ -558,7 +533,7 @@ app.post("/api/register", authRateLimit, async (req, res) => {
 
     if (!PASSWORD_PATTERN.test(password)) {
       return res.status(400).json({
-        error: "Password must start with a capital letter, followed by lowercase letters, then a number (e.g. Kynex123).",
+        error: "Password must be at least 6 characters with an uppercase letter, a lowercase letter, and a number.",
       });
     }
 
@@ -566,15 +541,15 @@ app.post("/api/register", authRateLimit, async (req, res) => {
     if (!refCode) {
       return res.status(400).json({ error: "Referral code is required." });
     }
-    const referralCheck = resolveReferral(refCode);
+    const referralCheck = await resolveReferral(refCode);
     if (!referralCheck.valid) {
       return res.status(400).json({ error: "That referral code isn't valid." });
     }
 
-    if (findUserByEmail(email)) {
+    if (await findUserByEmail(email)) {
       return res.status(409).json({ error: "An account with this email already exists. Try logging in instead." });
     }
-    if (isEmailBlocked(email)) {
+    if (await isEmailBlocked(email)) {
       return res.status(403).json({ error: "This email can no longer be used to create a KYNEX account." });
     }
 
@@ -620,7 +595,7 @@ app.post("/api/resend-otp", otpRateLimit, async (req, res) => {
 });
 
 // Step 2: Verify OTP -> create real user account
-app.post("/api/verify-otp", (req, res) => {
+app.post("/api/verify-otp", async (req, res) => {
   const { email, otp } = req.body || {};
   const key = (email || "").toLowerCase();
   const pending = pendingSignups.get(key);
@@ -636,12 +611,12 @@ app.post("/api/verify-otp", (req, res) => {
     return res.status(400).json({ error: "Incorrect code." });
   }
 
-  if (findUserByEmail(pending.email)) {
+  if (await findUserByEmail(pending.email)) {
     pendingSignups.delete(key);
     return res.status(409).json({ error: "This email was just registered. Try logging in." });
   }
 
-  const users = readUsers();
+  const users = await readUsers();
   const newUser = {
     id: Date.now().toString(36),
     uid: generateUid(users),
@@ -664,9 +639,9 @@ app.post("/api/verify-otp", (req, res) => {
     kyc: { status: "not_started" },
   };
   users.push(newUser);
-  writeUsers(users);
+  await writeUsers(users);
   pendingSignups.delete(key);
-  pushMessage(newUser.id, "Welcome to KYNEX", "Your account is verified. Take a look around, and set up a fund password before you try withdrawing.");
+  await pushMessage(newUser.id, "Welcome to KYNEX", "Your account is verified. Take a look around, and set up a fund password before you try withdrawing.");
 
   sendNotificationEmail(newUser.email, newUser.name, "Welcome to KYNEX!", "Welcome to KYNEX!",
     `<p>Your account has been successfully created and verified.</p><p><b>UID:</b> ${newUser.uid}<br/><b>Email:</b> ${newUser.email}</p><p>Get started by setting up your fund password and completing your identity verification (KYC) to unlock all features.</p><p>Happy trading!</p>`
@@ -683,7 +658,7 @@ app.post("/api/verify-otp", (req, res) => {
 // Login
 app.post("/api/login", authRateLimit, async (req, res) => {
   const { email, password } = req.body || {};
-  const user = findUserByEmail(email || "");
+  const user = await findUserByEmail(email || "");
   if (!user) {
     return res.status(401).json({ error: "No account found with this email." });
   }
@@ -705,7 +680,7 @@ app.post("/api/forgot-password", otpRateLimit, async (req, res) => {
   try {
     const email = (req.body || {}).email?.trim();
     if (!email) return res.status(400).json({ error: "Enter your email address." });
-    const user = findUserByEmail(email);
+    const user = await findUserByEmail(email);
     if (!user) return res.status(404).json({ error: "No account found with this email." });
 
     const otp = generateOtp();
@@ -730,18 +705,18 @@ app.post("/api/reset-password", async (req, res) => {
     }
     if (otp !== pending.otp) return res.status(400).json({ error: "Incorrect code." });
     if (!PASSWORD_PATTERN.test(newPassword || "")) {
-      return res.status(400).json({ error: "Password must start with a capital letter, followed by lowercase letters, then a number (e.g. Kynex123)." });
+      return res.status(400).json({ error: "Password must be at least 6 characters with an uppercase letter, a lowercase letter, and a number." });
     }
 
-    const users = readUsers();
+    const users = await readUsers();
     const user = users.find((u) => u.email.toLowerCase() === key);
     if (!user) return res.status(404).json({ error: "Account not found." });
 
     user.passwordHash = await bcrypt.hash(newPassword, 10);
     user.passwordChangedAt = Date.now();
-    writeUsers(users);
+    await writeUsers(users);
     pendingPasswordResets.delete(key);
-    pushMessage(user.id, "Password reset", "Your password was reset via email verification. Withdrawals are locked for 2 hours as a security precaution.");
+    await pushMessage(user.id, "Password reset", "Your password was reset via email verification. Withdrawals are locked for 2 hours as a security precaution.");
 
     res.json({ ok: true, message: "Password updated. You can now log in." });
   } catch (err) {
@@ -751,8 +726,8 @@ app.post("/api/reset-password", async (req, res) => {
 });
 
 // ---- Invites / referrals ----
-app.get("/api/invite/summary", authenticate, (req, res) => {
-  const users = readUsers();
+app.get("/api/invite/summary", authenticate, async (req, res) => {
+  const users = await readUsers();
   const me = users.find((u) => u.id === req.user.sub);
   if (!me) return res.status(404).json({ error: "Account not found." });
 
@@ -785,12 +760,12 @@ function computeSecurityLevel(user) {
   return "High";
 }
 
-app.get("/api/account/profile", authenticate, (req, res) => {
-  const me = readUsers().find((u) => u.id === req.user.sub);
+app.get("/api/account/profile", authenticate, async (req, res) => {
+  const me = (await readUsers()).find((u) => u.id === req.user.sub);
   if (!me) return res.status(404).json({ error: "Account not found." });
-  const accounts = readDemoAccounts();
+  const accounts = await readDemoAccounts();
   const account = getDemoAccount(accounts, me.id);
-  writeDemoAccounts(accounts);
+  await writeDemoAccounts(accounts);
   res.json({
     ok: true,
     name: me.name,
@@ -803,8 +778,8 @@ app.get("/api/account/profile", authenticate, (req, res) => {
   });
 });
 
-app.get("/api/account/security", authenticate, (req, res) => {
-  const me = readUsers().find((u) => u.id === req.user.sub);
+app.get("/api/account/security", authenticate, async (req, res) => {
+  const me = (await readUsers()).find((u) => u.id === req.user.sub);
   if (!me) return res.status(404).json({ error: "Account not found." });
   res.json({
     ok: true,
@@ -826,10 +801,10 @@ app.post("/api/account/email/request-change", authenticate, async (req, res) => 
     const { newEmail, currentPassword } = req.body || {};
     const trimmedEmail = newEmail?.trim();
     if (!trimmedEmail) return res.status(400).json({ error: "Enter a new email address." });
-    if (findUserByEmail(trimmedEmail)) return res.status(409).json({ error: "That email is already in use." });
-    if (isEmailBlocked(trimmedEmail)) return res.status(403).json({ error: "That email can't be used." });
+    if (await findUserByEmail(trimmedEmail)) return res.status(409).json({ error: "That email is already in use." });
+    if (await isEmailBlocked(trimmedEmail)) return res.status(403).json({ error: "That email can't be used." });
 
-    const me = readUsers().find((u) => u.id === req.user.sub);
+    const me = (await readUsers()).find((u) => u.id === req.user.sub);
     if (!me) return res.status(404).json({ error: "Account not found." });
     const match = await bcrypt.compare(currentPassword || "", me.passwordHash);
     if (!match) return res.status(401).json({ error: "Current password is incorrect." });
@@ -844,7 +819,7 @@ app.post("/api/account/email/request-change", authenticate, async (req, res) => 
   }
 });
 
-app.post("/api/account/email/confirm-change", authenticate, (req, res) => {
+app.post("/api/account/email/confirm-change", authenticate, async (req, res) => {
   const { otp } = req.body || {};
   const pending = pendingEmailChanges.get(req.user.sub);
   if (!pending) return res.status(400).json({ error: "No pending email change. Start again." });
@@ -854,16 +829,16 @@ app.post("/api/account/email/confirm-change", authenticate, (req, res) => {
   }
   if (otp !== pending.otp) return res.status(400).json({ error: "Incorrect code." });
 
-  const users = readUsers();
+  const users = await readUsers();
   const me = users.find((u) => u.id === req.user.sub);
   if (!me) return res.status(404).json({ error: "Account not found." });
 
   const oldEmail = me.email;
   me.email = pending.newEmail;
   me.emailChangedAt = Date.now();
-  writeUsers(users);
+  await writeUsers(users);
   pendingEmailChanges.delete(req.user.sub);
-  pushMessage(me.id, "Email changed", `Your login email was changed from ${oldEmail} to ${me.email}. Withdrawals are locked for 12 hours as a security precaution.`);
+  await pushMessage(me.id, "Email changed", `Your login email was changed from ${oldEmail} to ${me.email}. Withdrawals are locked for 12 hours as a security precaution.`);
 
   const token = jwt.sign({ sub: me.id, email: me.email }, JWT_SECRET, { expiresIn: "7d" });
   res.json({ ok: true, token, email: me.email });
@@ -872,7 +847,7 @@ app.post("/api/account/email/confirm-change", authenticate, (req, res) => {
 // Changing the login password requires the current password AND an OTP to the account's own email
 app.post("/api/account/password/request-otp", authenticate, otpRateLimit, async (req, res) => {
   try {
-    const me = readUsers().find((u) => u.id === req.user.sub);
+    const me = (await readUsers()).find((u) => u.id === req.user.sub);
     if (!me) return res.status(404).json({ error: "Account not found." });
     await requestSecurityOtp(me, "password");
     res.json({ ok: true, message: "Verification code sent to your email." });
@@ -886,9 +861,9 @@ app.post("/api/account/password/change", authenticate, async (req, res) => {
   try {
     const { currentPassword, newPassword, otp } = req.body || {};
     if (!PASSWORD_PATTERN.test(newPassword || "")) {
-      return res.status(400).json({ error: "New password must start with a capital letter, followed by lowercase letters, then a number (e.g. Kynex123)." });
+      return res.status(400).json({ error: "Password must be at least 6 characters with an uppercase letter, a lowercase letter, and a number." });
     }
-    const users = readUsers();
+    const users = await readUsers();
     const me = users.find((u) => u.id === req.user.sub);
     if (!me) return res.status(404).json({ error: "Account not found." });
 
@@ -900,8 +875,8 @@ app.post("/api/account/password/change", authenticate, async (req, res) => {
 
     me.passwordHash = await bcrypt.hash(newPassword, 10);
     me.passwordChangedAt = Date.now();
-    writeUsers(users);
-    pushMessage(me.id, "Password changed", "Your login password was changed. Withdrawals are locked for 2 hours as a security precaution.");
+    await writeUsers(users);
+    await pushMessage(me.id, "Password changed", "Your login password was changed. Withdrawals are locked for 2 hours as a security precaution.");
     res.json({ ok: true });
   } catch (err) {
     console.error("password change error:", err);
@@ -911,21 +886,21 @@ app.post("/api/account/password/change", authenticate, async (req, res) => {
 
 // 2FA — real TOTP, compatible with Google Authenticator / Authy. Enabling or disabling it needs
 // three separate proofs: the login password, an email OTP, and a live authenticator code.
-app.post("/api/account/2fa/setup", authenticate, (req, res) => {
-  const users = readUsers();
+app.post("/api/account/2fa/setup", authenticate, async (req, res) => {
+  const users = await readUsers();
   const me = users.find((u) => u.id === req.user.sub);
   if (!me) return res.status(404).json({ error: "Account not found." });
 
   const secret = generateTotpSecret();
   me.pendingTwoFactorSecret = secret;
-  writeUsers(users);
+  await writeUsers(users);
 
   res.json({ ok: true, secret, otpauth: generateTotpURI({ issuer: "KYNEX", label: me.email, secret }) });
 });
 
 app.post("/api/account/2fa/request-otp", authenticate, otpRateLimit, async (req, res) => {
   try {
-    const me = readUsers().find((u) => u.id === req.user.sub);
+    const me = (await readUsers()).find((u) => u.id === req.user.sub);
     if (!me) return res.status(404).json({ error: "Account not found." });
     await requestSecurityOtp(me, "2fa");
     res.json({ ok: true, message: "Verification code sent to your email." });
@@ -937,7 +912,7 @@ app.post("/api/account/2fa/request-otp", authenticate, otpRateLimit, async (req,
 
 app.post("/api/account/2fa/verify", authenticate, async (req, res) => {
   const { code, password, otp } = req.body || {};
-  const users = readUsers();
+  const users = await readUsers();
   const me = users.find((u) => u.id === req.user.sub);
   if (!me) return res.status(404).json({ error: "Account not found." });
   if (!me.pendingTwoFactorSecret) return res.status(400).json({ error: "Start 2FA setup first." });
@@ -954,14 +929,14 @@ app.post("/api/account/2fa/verify", authenticate, async (req, res) => {
   me.twoFactorSecret = me.pendingTwoFactorSecret;
   me.twoFactorEnabled = true;
   me.pendingTwoFactorSecret = null;
-  writeUsers(users);
-  pushMessage(me.id, "2FA enabled", "Google Authenticator verification is now protecting your account.");
+  await writeUsers(users);
+  await pushMessage(me.id, "2FA enabled", "Google Authenticator verification is now protecting your account.");
   res.json({ ok: true });
 });
 
 app.post("/api/account/2fa/disable", authenticate, async (req, res) => {
   const { code, password, otp } = req.body || {};
-  const users = readUsers();
+  const users = await readUsers();
   const me = users.find((u) => u.id === req.user.sub);
   if (!me) return res.status(404).json({ error: "Account not found." });
   if (!me.twoFactorEnabled) return res.status(400).json({ error: "2FA isn't enabled." });
@@ -977,8 +952,8 @@ app.post("/api/account/2fa/disable", authenticate, async (req, res) => {
 
   me.twoFactorEnabled = false;
   me.twoFactorSecret = null;
-  writeUsers(users);
-  pushMessage(me.id, "2FA disabled", "Google Authenticator verification was turned off for your account.");
+  await writeUsers(users);
+  await pushMessage(me.id, "2FA disabled", "Google Authenticator verification was turned off for your account.");
   res.json({ ok: true });
 });
 
@@ -987,63 +962,63 @@ app.post("/api/account/fund-password/set", authenticate, async (req, res) => {
   if (!FUND_PASSWORD_PATTERN.test(pin || "")) {
     return res.status(400).json({ error: "Fund password must be 4 to 6 digits." });
   }
-  const users = readUsers();
+  const users = await readUsers();
   const me = users.find((u) => u.id === req.user.sub);
   if (!me) return res.status(404).json({ error: "Account not found." });
 
   me.fundPasswordHash = await bcrypt.hash(pin, 10);
-  writeUsers(users);
-  pushMessage(me.id, "Fund password set", "You can now withdraw from your demo balance.");
+  await writeUsers(users);
+  await pushMessage(me.id, "Fund password set", "You can now withdraw from your demo balance.");
   res.json({ ok: true });
 });
 
-app.post("/api/account/withdrawal-whitelist", authenticate, (req, res) => {
-  const users = readUsers();
+app.post("/api/account/withdrawal-whitelist", authenticate, async (req, res) => {
+  const users = await readUsers();
   const me = users.find((u) => u.id === req.user.sub);
   if (!me) return res.status(404).json({ error: "Account not found." });
 
   me.withdrawalWhitelistEnabled = !!(req.body || {}).enabled;
   if (!me.whitelistedAddresses) me.whitelistedAddresses = [];
-  writeUsers(users);
+  await writeUsers(users);
   res.json({ ok: true, withdrawalWhitelistEnabled: me.withdrawalWhitelistEnabled, whitelistedAddresses: me.whitelistedAddresses });
 });
 
-app.get("/api/account/whitelist-addresses", authenticate, (req, res) => {
-  const me = readUsers().find((u) => u.id === req.user.sub);
+app.get("/api/account/whitelist-addresses", authenticate, async (req, res) => {
+  const me = (await readUsers()).find((u) => u.id === req.user.sub);
   if (!me) return res.status(404).json({ error: "Account not found." });
   res.json({ ok: true, addresses: me.whitelistedAddresses || [], enabled: !!me.withdrawalWhitelistEnabled });
 });
 
-app.post("/api/admin/whitelist/remove", requireAdmin, (req, res) => {
+app.post("/api/admin/whitelist/remove", requireAdmin, async (req, res) => {
   const { userId, address } = req.body || {};
   if (!userId || !address) return res.status(400).json({ error: "userId and address required." });
-  const users = readUsers();
+  const users = await readUsers();
   const user = users.find(u => u.id === userId);
   if (!user) return res.status(404).json({ error: "User not found." });
   user.whitelistedAddresses = (user.whitelistedAddresses || []).filter(a => a !== address);
-  writeUsers(users);
+  await writeUsers(users);
   res.json({ ok: true, whitelistedAddresses: user.whitelistedAddresses });
 });
 
-app.post("/api/account/close", authenticate, (req, res) => {
-  const users = readUsers();
+app.post("/api/account/close", authenticate, async (req, res) => {
+  const users = await readUsers();
   const me = users.find((u) => u.id === req.user.sub);
   if (!me) return res.status(404).json({ error: "Account not found." });
 
   me.closed = true;
-  writeUsers(users);
-  const blocked = readBlockedEmails();
+  await writeUsers(users);
+  const blocked = await readBlockedEmails();
   const emailLower = me.email.toLowerCase();
   if (!blocked.includes(emailLower)) {
     blocked.push(emailLower);
-    writeBlockedEmails(blocked);
+    await writeBlockedEmails(blocked);
   }
   res.json({ ok: true });
 });
 
 // ---- Identity verification (KYC) — status only, reviewed by an operator, never auto-approved ----
-app.get("/api/account/kyc", authenticate, (req, res) => {
-  const me = readUsers().find((u) => u.id === req.user.sub);
+app.get("/api/account/kyc", authenticate, async (req, res) => {
+  const me = (await readUsers()).find((u) => u.id === req.user.sub);
   if (!me) return res.status(404).json({ error: "Account not found." });
   res.json({ ok: true, kyc: me.kyc || { status: "not_started" } });
 });
@@ -1063,7 +1038,7 @@ app.post("/api/account/kyc/submit", authenticate, async (req, res) => {
     return res.status(400).json({ error: "Upload at least one document photo." });
   }
 
-  const users = readUsers();
+  const users = await readUsers();
   const me = users.find((u) => u.id === req.user.sub);
   if (!me) return res.status(404).json({ error: "Account not found." });
 
@@ -1097,21 +1072,21 @@ app.post("/api/account/kyc/submit", authenticate, async (req, res) => {
     submittedAt: Date.now(),
     decidedAt: null,
   };
-  writeUsers(users);
-  pushMessage(me.id, "Verification submitted", "Your identity verification is pending review. We'll notify you once it's been checked.");
+  await writeUsers(users);
+  await pushMessage(me.id, "Verification submitted", "Your identity verification is pending review. We'll notify you once it's been checked.");
   res.json({ ok: true, kyc: me.kyc });
 });
 
-app.get("/api/admin/kyc/pending", requireAdmin, (req, res) => {
-  const pending = readUsers()
+app.get("/api/admin/kyc/pending", requireAdmin, async (req, res) => {
+  const pending = (await readUsers())
     .filter((u) => u.kyc?.status === "pending")
     .map((u) => ({ id: u.id, uid: u.uid, email: u.email, name: u.name, ...u.kyc }));
   res.json({ ok: true, pending });
 });
 
-app.post("/api/admin/kyc/:userId/decide", requireAdmin, (req, res) => {
+app.post("/api/admin/kyc/:userId/decide", requireAdmin, async (req, res) => {
   const { approve } = req.body || {};
-  const users = readUsers();
+  const users = await readUsers();
   const user = users.find((u) => u.id === req.params.userId);
   if (!user || user.kyc?.status !== "pending") {
     return res.status(404).json({ error: "No pending verification for this user." });
@@ -1120,8 +1095,8 @@ app.post("/api/admin/kyc/:userId/decide", requireAdmin, (req, res) => {
   user.kyc.status = approve ? "certified" : "rejected";
   user.kyc.decidedAt = Date.now();
   user.verified = !!approve;
-  writeUsers(users);
-  pushMessage(
+  await writeUsers(users);
+  await pushMessage(
     user.id,
     approve ? "Verification approved" : "Verification rejected",
     approve
@@ -1132,37 +1107,37 @@ app.post("/api/admin/kyc/:userId/decide", requireAdmin, (req, res) => {
 });
 
 // ---- Messages / notifications ----
-app.get("/api/messages", authenticate, (req, res) => {
-  res.json({ ok: true, messages: readAllMessages()[req.user.sub] || [] });
+app.get("/api/messages", authenticate, async (req, res) => {
+  res.json({ ok: true, messages: (await readAllMessages())[req.user.sub] || [] });
 });
 
-app.get("/api/messages/unread-count", authenticate, (req, res) => {
-  const unread = (readAllMessages()[req.user.sub] || []).filter((m) => !m.read).length;
+app.get("/api/messages/unread-count", authenticate, async (req, res) => {
+  const unread = ((await readAllMessages())[req.user.sub] || []).filter((m) => !m.read).length;
   res.json({ ok: true, unread });
 });
 
-app.post("/api/messages/:id/read", authenticate, (req, res) => {
-  const all = readAllMessages();
+app.post("/api/messages/:id/read", authenticate, async (req, res) => {
+  const all = await readAllMessages();
   const msg = (all[req.user.sub] || []).find((m) => m.id === req.params.id);
   if (msg) msg.read = true;
-  writeAllMessages(all);
+  await writeAllMessages(all);
   res.json({ ok: true });
 });
 
-app.post("/api/messages/read-all", authenticate, (req, res) => {
-  const all = readAllMessages();
+app.post("/api/messages/read-all", authenticate, async (req, res) => {
+  const all = await readAllMessages();
   (all[req.user.sub] || []).forEach((m) => { m.read = true; });
-  writeAllMessages(all);
+  await writeAllMessages(all);
   res.json({ ok: true });
 });
 
 // ---- Demo/practice trading account — no real money, ever ----
 
 app.get("/api/demo/account", authenticate, async (req, res) => {
-  const accounts = readDemoAccounts();
+  const accounts = await readDemoAccounts();
   const account = getDemoAccount(accounts, req.user.sub);
   settleDuePositions(account);
-  writeDemoAccounts(accounts);
+  await writeDemoAccounts(accounts);
   res.json({
     ok: true,
     balance: Math.round(account.balance * 100) / 100,
@@ -1184,7 +1159,7 @@ app.get("/api/demo/account", authenticate, async (req, res) => {
 });
 
 // Spot <-> Signal transfer — tracks volume, applies 20% penalty on early Signal→Spot
-app.post("/api/demo/transfer", authenticate, (req, res) => {
+app.post("/api/demo/transfer", authenticate, async (req, res) => {
   const { direction, amount, confirmPenalty } = req.body || {};
   const amt = Number(amount);
   if (!["toSignal", "toSpot"].includes(direction)) {
@@ -1194,12 +1169,12 @@ app.post("/api/demo/transfer", authenticate, (req, res) => {
     return res.status(400).json({ error: "Enter a valid amount greater than 0." });
   }
 
-  const accounts = readDemoAccounts();
+  const accounts = await readDemoAccounts();
   const account = getDemoAccount(accounts, req.user.sub);
 
   if (direction === "toSignal") {
     if (amt > account.balance) {
-      writeDemoAccounts(accounts);
+      await writeDemoAccounts(accounts);
       return res.status(400).json({ error: "Insufficient Spot balance." });
     }
     account.balance = Math.round((account.balance - amt) * 100) / 100;
@@ -1219,7 +1194,7 @@ app.post("/api/demo/transfer", authenticate, (req, res) => {
       account.firstRewardClaimed = true;
       addLedgerEntry(account, 'reward', 'spot', reward, `4% first-deposit reward (${deposited.toFixed(2)} USDT deposited)`, null);
 
-      const users = readUsers();
+      const users = await readUsers();
       const me = users.find(u => u.id === req.user.sub);
       if (me && me.referredByUid) {
         const referrerUser = users.find(u => u.uid === me.referredByUid);
@@ -1236,13 +1211,13 @@ app.post("/api/demo/transfer", authenticate, (req, res) => {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       type: "transfer", direction, amount: amt, reward, at: Date.now(),
     });
-    writeDemoAccounts(accounts);
+    await writeDemoAccounts(accounts);
     return res.json({ ok: true, balance: account.balance, signalBalance: account.signalBalance, reward, referrerReward });
   }
 
   // direction === "toSpot"
   if (amt > account.signalBalance) {
-    writeDemoAccounts(accounts);
+    await writeDemoAccounts(accounts);
     return res.status(400).json({ error: "Insufficient Signal balance." });
   }
 
@@ -1252,7 +1227,7 @@ app.post("/api/demo/transfer", authenticate, (req, res) => {
   const volumeComplete = vd.requiredVolume > 0 && vd.tradedVolume >= vd.requiredVolume && !deadlineExpired;
 
   if (!volumeComplete && vd.requiredVolume > 0 && !confirmPenalty) {
-    writeDemoAccounts(accounts);
+    await writeDemoAccounts(accounts);
     const penaltyAmount = Math.round(amt * 0.2 * 100) / 100;
     const receiveAmount = Math.round(amt * 0.8 * 100) / 100;
     return res.json({
@@ -1277,7 +1252,7 @@ app.post("/api/demo/transfer", authenticate, (req, res) => {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       type: "transfer", direction, amount: amt, penalty, netAmount, at: Date.now(),
     });
-    writeDemoAccounts(accounts);
+    await writeDemoAccounts(accounts);
     return res.json({ ok: true, balance: account.balance, signalBalance: account.signalBalance, penaltyApplied: penalty });
   }
 
@@ -1289,25 +1264,25 @@ app.post("/api/demo/transfer", authenticate, (req, res) => {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     type: "transfer", direction, amount: amt, at: Date.now(),
   });
-  writeDemoAccounts(accounts);
+  await writeDemoAccounts(accounts);
   res.json({ ok: true, balance: account.balance, signalBalance: account.signalBalance });
 });
 
 // ---- Demo top up / withdraw — practice funds only, never real money ----
 const DEMO_TOPUP_MAX = 100000;
 
-app.post("/api/demo/topup", authenticate, (req, res) => {
+app.post("/api/demo/topup", authenticate, async (req, res) => {
   const amount = Number((req.body || {}).amount);
   if (!amount || amount <= 0 || amount > DEMO_TOPUP_MAX) {
     return res.status(400).json({ error: `Enter an amount between 0 and ${DEMO_TOPUP_MAX}.` });
   }
-  const accounts = readDemoAccounts();
+  const accounts = await readDemoAccounts();
   const account = getDemoAccount(accounts, req.user.sub);
   account.balance = Math.round((account.balance + amount) * 100) / 100;
   account.totalDeposited = Math.round((account.totalDeposited + amount) * 100) / 100;
   addLedgerEntry(account, 'deposit', 'spot', amount, `Deposit ${amount.toFixed(2)} USDT`, null);
-  writeDemoAccounts(accounts);
-  pushMessage(req.user.sub, "Deposit received", `${amount.toFixed(2)} USDT was added to your Spot wallet.`);
+  await writeDemoAccounts(accounts);
+  await pushMessage(req.user.sub, "Deposit received", `${amount.toFixed(2)} USDT was added to your Spot wallet.`);
   res.json({ ok: true, balance: account.balance });
 });
 
@@ -1327,7 +1302,7 @@ app.post("/api/demo/withdraw", authenticate, rateLimit(60 * 1000, 5), async (req
     return res.status(400).json({ error: "Enter your wallet address." });
   }
 
-  const users = readUsers();
+  const users = await readUsers();
   const me = users.find((u) => u.id === req.user.sub);
   if (!me) return res.status(404).json({ error: "Account not found." });
 
@@ -1355,11 +1330,11 @@ app.post("/api/demo/withdraw", authenticate, rateLimit(60 * 1000, 5), async (req
     return res.status(403).json({ error: "This address is not in your withdrawal whitelist. Contact admin to update." });
   }
 
-  const accounts = readDemoAccounts();
+  const accounts = await readDemoAccounts();
   const account = getDemoAccount(accounts, req.user.sub);
 
   if (amt > account.balance) {
-    writeDemoAccounts(accounts);
+    await writeDemoAccounts(accounts);
     return res.status(400).json({ error: "Insufficient Spot balance." });
   }
 
@@ -1370,7 +1345,7 @@ app.post("/api/demo/withdraw", authenticate, rateLimit(60 * 1000, 5), async (req
   if (!me.whitelistedAddresses) me.whitelistedAddresses = [];
   if (!me.whitelistedAddresses.includes(trimmedAddr)) {
     me.whitelistedAddresses.push(trimmedAddr);
-    writeUsers(users);
+    await writeUsers(users);
   }
 
   account.balance = Math.round((account.balance - amt) * 100) / 100;
@@ -1380,8 +1355,8 @@ app.post("/api/demo/withdraw", authenticate, rateLimit(60 * 1000, 5), async (req
     status: 'pending', createdAt: Date.now(), reviewedAt: null, txid: null,
   });
   addLedgerEntry(account, 'withdrawal_lock', 'spot', -amt, `Withdrawal request ${amt.toFixed(2)} USDT (5% fee: ${fee.toFixed(2)})`, requestId);
-  writeDemoAccounts(accounts);
-  pushMessage(req.user.sub, "Withdrawal submitted", `Your withdrawal of ${netPayout.toFixed(2)} USDT (after 5% fee) is pending review.`);
+  await writeDemoAccounts(accounts);
+  await pushMessage(req.user.sub, "Withdrawal submitted", `Your withdrawal of ${netPayout.toFixed(2)} USDT (after 5% fee) is pending review.`);
 
   sendNotificationEmail(me.email, me.name, "Withdrawal Request Submitted", "Withdrawal Request Submitted",
     `<p>Your withdrawal request has been submitted and is pending review.</p><p><b>Amount:</b> ${amt.toFixed(2)} USDT<br/><b>Fee (5%):</b> ${fee.toFixed(2)} USDT<br/><b>You Receive:</b> ${netPayout.toFixed(2)} USDT<br/><b>Network:</b> ${network.toUpperCase()}<br/><b>Wallet:</b> ${walletAddress.trim()}<br/><b>Date:</b> ${new Date().toLocaleString()}</p><p>You will be notified once your withdrawal is processed.</p>`
@@ -1391,26 +1366,26 @@ app.post("/api/demo/withdraw", authenticate, rateLimit(60 * 1000, 5), async (req
 });
 
 // ---- Deposit addresses & simulate ----
-app.get("/api/demo/deposit/addresses", authenticate, (req, res) => {
-  const cfg = readSignalConfig();
+app.get("/api/demo/deposit/addresses", authenticate, async (req, res) => {
+  const cfg = await readSignalConfig();
   res.json({ ok: true, addresses: cfg.adminWallets || {} });
 });
 
-app.post("/api/admin/deposit-wallets", requireAdmin, (req, res) => {
+app.post("/api/admin/deposit-wallets", requireAdmin, async (req, res) => {
   const wallets = req.body?.wallets || req.body || {};
   const { trc20, erc20, bep20 } = wallets;
-  const cfg = readSignalConfig();
+  const cfg = await readSignalConfig();
   cfg.adminWallets = {
     trc20: (trc20 || '').trim(),
     erc20: (erc20 || '').trim(),
     bep20: (bep20 || '').trim(),
   };
-  writeSignalConfig(cfg);
+  await writeSignalConfig(cfg);
   res.json({ ok: true, wallets: cfg.adminWallets });
 });
 
-app.get("/api/admin/deposit-wallets", requireAdmin, (req, res) => {
-  const cfg = readSignalConfig();
+app.get("/api/admin/deposit-wallets", requireAdmin, async (req, res) => {
+  const cfg = await readSignalConfig();
   res.json({ ok: true, wallets: cfg.adminWallets || {} });
 });
 
@@ -1421,7 +1396,7 @@ app.post("/api/demo/deposit/request", authenticate, rateLimit(60 * 1000, 5), asy
   if (!['trc20', 'erc20', 'bep20'].includes(network)) return res.status(400).json({ error: "Select a valid network." });
   if (!txHash?.trim()) return res.status(400).json({ error: "Enter the transaction hash / TXID." });
 
-  const accounts = readDemoAccounts();
+  const accounts = await readDemoAccounts();
   const account = getDemoAccount(accounts, req.user.sub);
   if (!account.depositRequests) account.depositRequests = [];
 
@@ -1434,7 +1409,7 @@ app.post("/api/demo/deposit/request", authenticate, rateLimit(60 * 1000, 5), asy
   }
 
   // Get admin wallet address for this network
-  const signalConfig = JSON.parse(fs.readFileSync(path.join(__dirname, "data", "signal-config.json"), "utf-8").toString() || "{}");
+  const signalConfig = await dbRead('signal_config');
   const wallets = signalConfig.depositWallets || {};
   const expectedAddr = wallets[network] || "";
 
@@ -1456,10 +1431,10 @@ app.post("/api/demo/deposit/request", authenticate, rateLimit(60 * 1000, 5), asy
     account.totalDeposited = Math.round(((account.totalDeposited || 0) + amt) * 100) / 100;
     addLedgerEntry(account, 'deposit', 'spot', amt, `Deposit ${amt.toFixed(2)} USDT via ${network.toUpperCase()} (auto-verified)`, requestId);
     account.depositRequests.unshift(depositEntry);
-    writeDemoAccounts(accounts);
+    await writeDemoAccounts(accounts);
 
-    pushMessage(req.user.sub, "Deposit confirmed", `${amt.toFixed(2)} USDT deposited to your Spot wallet via ${network.toUpperCase()}. Auto-verified on blockchain.`);
-    const users = readUsers();
+    await pushMessage(req.user.sub, "Deposit confirmed", `${amt.toFixed(2)} USDT deposited to your Spot wallet via ${network.toUpperCase()}. Auto-verified on blockchain.`);
+    const users = await readUsers();
     const user = users.find(u => u.id === req.user.sub);
     if (user) {
       sendNotificationEmail(user.email, user.name, "Deposit Confirmed", "Deposit Confirmed",
@@ -1472,20 +1447,20 @@ app.post("/api/demo/deposit/request", authenticate, rateLimit(60 * 1000, 5), asy
   // Not auto-verified — stays pending for admin review
   depositEntry.verificationNote = verification.reason;
   account.depositRequests.unshift(depositEntry);
-  writeDemoAccounts(accounts);
-  pushMessage(req.user.sub, "Deposit submitted", `Your deposit of ${amt.toFixed(2)} USDT via ${network.toUpperCase()} is pending review.`);
+  await writeDemoAccounts(accounts);
+  await pushMessage(req.user.sub, "Deposit submitted", `Your deposit of ${amt.toFixed(2)} USDT via ${network.toUpperCase()} is pending review.`);
   res.json({ ok: true, requestId, status: 'pending', autoVerified: false });
 });
 
-app.get("/api/demo/deposit/history", authenticate, (req, res) => {
-  const accounts = readDemoAccounts();
+app.get("/api/demo/deposit/history", authenticate, async (req, res) => {
+  const accounts = await readDemoAccounts();
   const account = getDemoAccount(accounts, req.user.sub);
   res.json({ ok: true, requests: account.depositRequests || [] });
 });
 
-app.get("/api/admin/deposits/pending", requireAdmin, (req, res) => {
-  const accounts = readDemoAccounts();
-  const users = readUsers();
+app.get("/api/admin/deposits/pending", requireAdmin, async (req, res) => {
+  const accounts = await readDemoAccounts();
+  const users = await readUsers();
   const pending = [];
   for (const [userId, account] of Object.entries(accounts)) {
     if (!account.depositRequests) continue;
@@ -1500,10 +1475,10 @@ app.get("/api/admin/deposits/pending", requireAdmin, (req, res) => {
   res.json({ ok: true, pending });
 });
 
-app.post("/api/admin/deposits/:requestId/process", requireAdmin, (req, res) => {
+app.post("/api/admin/deposits/:requestId/process", requireAdmin, async (req, res) => {
   const { approve } = req.body || {};
-  const accounts = readDemoAccounts();
-  const users = readUsers();
+  const accounts = await readDemoAccounts();
+  const users = await readUsers();
   let found = false;
   for (const [userId, account] of Object.entries(accounts)) {
     if (!account.depositRequests) continue;
@@ -1516,7 +1491,7 @@ app.post("/api/admin/deposits/:requestId/process", requireAdmin, (req, res) => {
         account.balance = Math.round((account.balance + dr.amount) * 100) / 100;
         account.totalDeposited = Math.round(((account.totalDeposited || 0) + dr.amount) * 100) / 100;
         addLedgerEntry(account, 'deposit', 'spot', dr.amount, `Deposit ${dr.amount.toFixed(2)} USDT via ${dr.network.toUpperCase()}`, dr.id);
-        pushMessage(userId, "Deposit confirmed", `${dr.amount.toFixed(2)} USDT deposited to your Spot wallet via ${dr.network.toUpperCase()}.`);
+        await pushMessage(userId, "Deposit confirmed", `${dr.amount.toFixed(2)} USDT deposited to your Spot wallet via ${dr.network.toUpperCase()}.`);
         const user = users.find(u => u.id === userId);
         if (user) {
           sendNotificationEmail(user.email, user.name, "Deposit Confirmed", "Deposit Confirmed",
@@ -1525,9 +1500,9 @@ app.post("/api/admin/deposits/:requestId/process", requireAdmin, (req, res) => {
         }
       } else {
         dr.status = 'rejected';
-        pushMessage(userId, "Deposit rejected", `Your deposit of ${dr.amount.toFixed(2)} USDT via ${dr.network.toUpperCase()} was rejected.`);
+        await pushMessage(userId, "Deposit rejected", `Your deposit of ${dr.amount.toFixed(2)} USDT via ${dr.network.toUpperCase()} was rejected.`);
       }
-      writeDemoAccounts(accounts);
+      await writeDemoAccounts(accounts);
       break;
     }
   }
@@ -1536,16 +1511,16 @@ app.post("/api/admin/deposits/:requestId/process", requireAdmin, (req, res) => {
 });
 
 // ---- Withdrawal listing & admin processing ----
-app.get("/api/demo/withdrawals", authenticate, (req, res) => {
-  const accounts = readDemoAccounts();
+app.get("/api/demo/withdrawals", authenticate, async (req, res) => {
+  const accounts = await readDemoAccounts();
   const account = getDemoAccount(accounts, req.user.sub);
-  writeDemoAccounts(accounts);
+  await writeDemoAccounts(accounts);
   res.json({ ok: true, requests: account.withdrawalRequests || [] });
 });
 
-app.get("/api/admin/withdrawals/pending", requireAdmin, (req, res) => {
-  const accounts = readDemoAccounts();
-  const users = readUsers();
+app.get("/api/admin/withdrawals/pending", requireAdmin, async (req, res) => {
+  const accounts = await readDemoAccounts();
+  const users = await readUsers();
   const pending = [];
   for (const [userId, account] of Object.entries(accounts)) {
     if (!account.withdrawalRequests) continue;
@@ -1560,9 +1535,9 @@ app.get("/api/admin/withdrawals/pending", requireAdmin, (req, res) => {
   res.json({ ok: true, pending });
 });
 
-app.post("/api/admin/withdrawals/:requestId/process", requireAdmin, (req, res) => {
+app.post("/api/admin/withdrawals/:requestId/process", requireAdmin, async (req, res) => {
   const { approve, txid } = req.body || {};
-  const accounts = readDemoAccounts();
+  const accounts = await readDemoAccounts();
   let found = false;
   for (const [userId, account] of Object.entries(accounts)) {
     if (!account.withdrawalRequests) continue;
@@ -1573,85 +1548,82 @@ app.post("/api/admin/withdrawals/:requestId/process", requireAdmin, (req, res) =
         wr.txid = txid || null;
         wr.reviewedAt = Date.now();
         addLedgerEntry(account, 'withdrawal_done', 'external', -wr.netPayout, `Withdrawal sent via ${wr.network.toUpperCase()}`, wr.id);
-        pushMessage(userId, "Withdrawal completed", `${wr.netPayout.toFixed(2)} USDT sent to your ${wr.network.toUpperCase()} wallet.`);
+        await pushMessage(userId, "Withdrawal completed", `${wr.netPayout.toFixed(2)} USDT sent to your ${wr.network.toUpperCase()} wallet.`);
       } else {
         wr.status = 'rejected';
         wr.reviewedAt = Date.now();
         account.balance = Math.round((account.balance + wr.amount) * 100) / 100;
         addLedgerEntry(account, 'withdrawal_refund', 'spot', wr.amount, `Withdrawal rejected — ${wr.amount.toFixed(2)} USDT refunded`, wr.id);
-        pushMessage(userId, "Withdrawal rejected", `Your withdrawal of ${wr.amount.toFixed(2)} USDT was rejected. Funds returned to Spot.`);
+        await pushMessage(userId, "Withdrawal rejected", `Your withdrawal of ${wr.amount.toFixed(2)} USDT was rejected. Funds returned to Spot.`);
       }
       found = true;
       break;
     }
   }
   if (!found) return res.status(404).json({ error: "Pending withdrawal not found." });
-  writeDemoAccounts(accounts);
+  await writeDemoAccounts(accounts);
   res.json({ ok: true });
 });
 
 const DEFAULT_DAILY_SIGNAL_LIMIT = 3;
 
-app.post("/api/admin/signal-limit", requireAdmin, (req, res) => {
+app.post("/api/admin/signal-limit", requireAdmin, async (req, res) => {
   const { userId, dailyLimit } = req.body || {};
   if (!userId || typeof userId !== "string") return res.status(400).json({ error: "userId is required." });
   const limit = Number(dailyLimit);
   if (!Number.isFinite(limit) || limit < 1 || limit > 100) return res.status(400).json({ error: "dailyLimit must be between 1 and 100." });
-  const accounts = readDemoAccounts();
+  const accounts = await readDemoAccounts();
   const account = accounts[userId];
   if (!account) return res.status(404).json({ error: "User account not found." });
   account.dailySignalLimit = limit;
-  writeDemoAccounts(accounts);
+  await writeDemoAccounts(accounts);
   res.json({ ok: true, userId, dailySignalLimit: limit });
 });
 
-app.post("/api/admin/set-level", requireAdmin, (req, res) => {
+app.post("/api/admin/set-level", requireAdmin, async (req, res) => {
   const { userId, level } = req.body || {};
   if (!userId || typeof userId !== "string") return res.status(400).json({ error: "userId is required." });
   const lvl = Number(level);
   if (!Number.isFinite(lvl) || lvl < 0 || lvl > 9) return res.status(400).json({ error: "level must be between 0 and 9." });
-  const users = readUsers();
+  const users = await readUsers();
   const user = users.find(u => u.id === userId);
   if (!user) return res.status(404).json({ error: "User not found." });
   user.level = lvl;
-  writeUsers(users);
+  await writeUsers(users);
   res.json({ ok: true, userId, level: lvl });
 });
 
-app.get("/api/admin/user-lookup", requireAdmin, (req, res) => {
+app.get("/api/admin/user-lookup", requireAdmin, async (req, res) => {
   const { uid } = req.query;
   if (!uid) return res.status(400).json({ error: "uid query param required." });
-  const users = readUsers();
+  const users = await readUsers();
   const user = users.find(u => String(u.uid) === String(uid));
   if (!user) return res.status(404).json({ error: "No user found with that UID." });
-  const accounts = readDemoAccounts();
+  const accounts = await readDemoAccounts();
   const account = accounts[user.id] || {};
   res.json({ ok: true, userId: user.id, email: user.email, uid: user.uid, dailySignalLimit: account.dailySignalLimit || DEFAULT_DAILY_SIGNAL_LIMIT });
 });
 
-const SIGNAL_CONFIG_FILE = path.join(__dirname, "data", "signal-config.json");
-function readSignalConfig() { return readJsonFile(SIGNAL_CONFIG_FILE, { signalActive: false, globalDailyLimit: null }); }
-function writeSignalConfig(cfg) { writeJsonFile(SIGNAL_CONFIG_FILE, cfg); }
+async function readSignalConfig() { return await dbRead('signal_config'); }
+async function writeSignalConfig(cfg) { await dbWrite('signal_config', cfg); }
+async function readCandleOverrides() { return await dbRead('candle_overrides'); }
+async function writeCandleOverrides(list) { await dbWrite('candle_overrides', list); }
 
-const CANDLE_OVERRIDE_FILE = path.join(__dirname, "data", "candle-overrides.json");
-function readCandleOverrides() { return readJsonFile(CANDLE_OVERRIDE_FILE, []); }
-function writeCandleOverrides(list) { writeJsonFile(CANDLE_OVERRIDE_FILE, list); }
-
-app.post("/api/admin/signal-release", requireAdmin, (req, res) => {
+app.post("/api/admin/signal-release", requireAdmin, async (req, res) => {
   const { active } = req.body || {};
-  const cfg = readSignalConfig();
+  const cfg = await readSignalConfig();
   cfg.signalActive = !!active;
-  writeSignalConfig(cfg);
+  await writeSignalConfig(cfg);
   res.json({ ok: true, signalActive: cfg.signalActive });
 });
 
-app.get("/api/admin/signal-release", requireAdmin, (req, res) => {
-  const cfg = readSignalConfig();
+app.get("/api/admin/signal-release", requireAdmin, async (req, res) => {
+  const cfg = await readSignalConfig();
   res.json({ ok: true, signalActive: !!cfg.signalActive, globalDailyLimit: cfg.globalDailyLimit || null, referralSignalTime: cfg.referralSignalTime || null, referralSignalWindow: cfg.referralSignalWindow || 15, referralDirection: cfg.referralDirection || 'up', referralSymbol: cfg.referralSymbol || 'BTCUSDT' });
 });
 
 // Set the daily referral signal session — admin picks time, duration, direction, and coin
-app.post("/api/admin/referral-signal-time", requireAdmin, (req, res) => {
+app.post("/api/admin/referral-signal-time", requireAdmin, async (req, res) => {
   const { time, windowMinutes, direction, symbol } = req.body || {};
   if (!time || !/^\d{2}:\d{2}$/.test(time)) return res.status(400).json({ error: "Time must be HH:MM format." });
   const win = Number(windowMinutes) || 15;
@@ -1660,14 +1632,14 @@ app.post("/api/admin/referral-signal-time", requireAdmin, (req, res) => {
   const validSymbols = Object.values(PAIR_TO_SYMBOL);
   const sym = symbol || "BTCUSDT";
   if (!validSymbols.includes(sym)) return res.status(400).json({ error: "Invalid symbol." });
-  const cfg = readSignalConfig();
+  const cfg = await readSignalConfig();
   cfg.referralSignalTime = time;
   cfg.referralSignalWindow = win;
   cfg.referralDirection = direction;
   cfg.referralSymbol = sym;
-  writeSignalConfig(cfg);
+  await writeSignalConfig(cfg);
 
-  const overrides = readCandleOverrides();
+  const overrides = await readCandleOverrides();
   overrides.items = (overrides.items || []).filter(o => !o.isReferralAuto);
   overrides.items.push({
     symbol: sym,
@@ -1676,24 +1648,24 @@ app.post("/api/admin/referral-signal-time", requireAdmin, (req, res) => {
     durationMinutes: win,
     isReferralAuto: true,
   });
-  writeCandleOverrides(overrides);
+  await writeCandleOverrides(overrides);
 
   res.json({ ok: true, referralSignalTime: time, referralSignalWindow: win, referralDirection: direction, referralSymbol: sym });
 });
 
 // Global daily signal limit for ALL users
-app.post("/api/admin/global-signal-limit", requireAdmin, (req, res) => {
+app.post("/api/admin/global-signal-limit", requireAdmin, async (req, res) => {
   const { limit } = req.body || {};
   const n = Number(limit);
   if (!Number.isInteger(n) || n < 1 || n > 100) return res.status(400).json({ error: "Limit must be 1-100." });
-  const cfg = readSignalConfig();
+  const cfg = await readSignalConfig();
   cfg.globalDailyLimit = n;
-  writeSignalConfig(cfg);
+  await writeSignalConfig(cfg);
   res.json({ ok: true, globalDailyLimit: n });
 });
 
 // Candle override — admin schedules coin + direction at a specific time for a duration
-app.post("/api/admin/candle-override", requireAdmin, (req, res) => {
+app.post("/api/admin/candle-override", requireAdmin, async (req, res) => {
   const { symbol, direction, durationMinutes, scheduledTime } = req.body || {};
   if (!["up", "down"].includes(direction)) return res.status(400).json({ error: "Direction must be 'up' or 'down'." });
   const dur = Number(durationMinutes) || 2;
@@ -1711,38 +1683,38 @@ app.post("/api/admin/candle-override", requireAdmin, (req, res) => {
     startsAt = Date.now();
   }
   const now = Date.now();
-  const overrides = readCandleOverrides().filter(o => o.endsAt > now);
+  const overrides = (await readCandleOverrides()).filter(o => o.endsAt > now);
   overrides.push({ symbol, direction, startsAt, endsAt: startsAt + dur * 60 * 1000 });
-  writeCandleOverrides(overrides);
+  await writeCandleOverrides(overrides);
   res.json({ ok: true, override: overrides[overrides.length - 1] });
 });
 
-app.delete("/api/admin/candle-override", requireAdmin, (req, res) => {
+app.delete("/api/admin/candle-override", requireAdmin, async (req, res) => {
   const { index } = req.body || {};
   const now = Date.now();
-  const overrides = readCandleOverrides().filter(o => o.endsAt > now);
+  const overrides = (await readCandleOverrides()).filter(o => o.endsAt > now);
   if (index >= 0 && index < overrides.length) overrides.splice(index, 1);
-  writeCandleOverrides(overrides);
+  await writeCandleOverrides(overrides);
   res.json({ ok: true, overrides });
 });
 
-app.get("/api/admin/candle-overrides", requireAdmin, (req, res) => {
+app.get("/api/admin/candle-overrides", requireAdmin, async (req, res) => {
   const now = Date.now();
-  const active = readCandleOverrides().filter(o => o.endsAt > now);
+  const active = (await readCandleOverrides()).filter(o => o.endsAt > now);
   res.json({ ok: true, overrides: active });
 });
 
 // Public endpoint for frontend chart to check active overrides
-app.get("/api/candle-overrides/active", (req, res) => {
+app.get("/api/candle-overrides/active", async (req, res) => {
   const now = Date.now();
-  const active = readCandleOverrides().filter(o => o.startsAt <= now && o.endsAt > now);
+  const active = (await readCandleOverrides()).filter(o => o.startsAt <= now && o.endsAt > now);
   res.json({ ok: true, overrides: active });
 });
 
 // Today's active referrers (referred someone who has deposited)
-app.get("/api/admin/referral-active", requireAdmin, (req, res) => {
-  const users = readUsers();
-  const accounts = readDemoAccounts();
+app.get("/api/admin/referral-active", requireAdmin, async (req, res) => {
+  const users = await readUsers();
+  const accounts = await readDemoAccounts();
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
   const result = [];
   for (const u of users) {
@@ -1769,25 +1741,25 @@ app.get("/api/admin/referral-active", requireAdmin, (req, res) => {
 });
 
 // Grant referral bonus signals to a user
-app.post("/api/admin/referral-bonus", requireAdmin, (req, res) => {
+app.post("/api/admin/referral-bonus", requireAdmin, async (req, res) => {
   const { userId, bonusSignals } = req.body || {};
   const n = Number(bonusSignals);
   if (!Number.isInteger(n) || n < 1 || n > 100) return res.status(400).json({ error: "Bonus must be 1-100." });
-  const accounts = readDemoAccounts();
-  const users = readUsers();
+  const accounts = await readDemoAccounts();
+  const users = await readUsers();
   const user = users.find(u => u.id === userId);
   if (!user) return res.status(404).json({ error: "User not found." });
   const account = getDemoAccount(accounts, userId);
   account.referralBonusSignals = (account.referralBonusSignals || 0) + n;
   account.totalBonusGranted = (account.totalBonusGranted || 0) + n;
-  writeDemoAccounts(accounts);
-  pushMessage(userId, "Referral Reward", `You earned ${n} bonus signal(s) as a referral reward!`);
+  await writeDemoAccounts(accounts);
+  await pushMessage(userId, "Referral Reward", `You earned ${n} bonus signal(s) as a referral reward!`);
   res.json({ ok: true, referralBonusSignals: account.referralBonusSignals });
 });
 
-app.get("/api/admin/users", requireAdmin, (req, res) => {
-  const users = readUsers();
-  const accounts = readDemoAccounts();
+app.get("/api/admin/users", requireAdmin, async (req, res) => {
+  const users = await readUsers();
+  const accounts = await readDemoAccounts();
   const list = users.map(u => {
     const acct = accounts[u.id] || {};
     const lvlInfo = calculateLevel(u.uid, users, accounts);
@@ -1814,11 +1786,11 @@ app.get("/api/admin/users", requireAdmin, (req, res) => {
   res.json({ ok: true, users: list });
 });
 
-app.post("/api/admin/user/:userId/balance", requireAdmin, (req, res) => {
+app.post("/api/admin/user/:userId/balance", requireAdmin, async (req, res) => {
   const { amount, wallet } = req.body || {};
   const amt = Number(amount);
   if (!Number.isFinite(amt)) return res.status(400).json({ error: "Valid amount required." });
-  const accounts = readDemoAccounts();
+  const accounts = await readDemoAccounts();
   const account = getDemoAccount(accounts, req.params.userId);
   if (wallet === 'signal') {
     account.signalBalance = Math.round((account.signalBalance + amt) * 100) / 100;
@@ -1827,54 +1799,54 @@ app.post("/api/admin/user/:userId/balance", requireAdmin, (req, res) => {
     if (amt > 0) account.totalDeposited = Math.round(((account.totalDeposited || 0) + amt) * 100) / 100;
   }
   addLedgerEntry(account, amt > 0 ? 'admin_credit' : 'admin_debit', wallet === 'signal' ? 'signal' : 'spot', amt, `Admin adjustment ${amt > 0 ? '+' : ''}${amt.toFixed(2)} USDT`);
-  writeDemoAccounts(accounts);
-  const users = readUsers();
+  await writeDemoAccounts(accounts);
+  const users = await readUsers();
   const user = users.find(u => u.id === req.params.userId);
-  if (user) pushMessage(user.id, "Balance updated", `Your ${wallet === 'signal' ? 'Signal' : 'Spot'} balance was adjusted by ${amt > 0 ? '+' : ''}${amt.toFixed(2)} USDT.`);
+  if (user) await pushMessage(user.id, "Balance updated", `Your ${wallet === 'signal' ? 'Signal' : 'Spot'} balance was adjusted by ${amt > 0 ? '+' : ''}${amt.toFixed(2)} USDT.`);
   res.json({ ok: true, balance: account.balance, signalBalance: account.signalBalance });
 });
 
-app.post("/api/admin/user/:userId/message", requireAdmin, (req, res) => {
+app.post("/api/admin/user/:userId/message", requireAdmin, async (req, res) => {
   const { title, body } = req.body || {};
   if (!title?.trim() || !body?.trim()) return res.status(400).json({ error: "Title and body required." });
-  pushMessage(req.params.userId, title.trim(), body.trim());
+  await pushMessage(req.params.userId, title.trim(), body.trim());
   res.json({ ok: true });
 });
 
-app.post("/api/admin/user/:userId/block", requireAdmin, (req, res) => {
-  const users = readUsers();
+app.post("/api/admin/user/:userId/block", requireAdmin, async (req, res) => {
+  const users = await readUsers();
   const user = users.find(u => u.id === req.params.userId);
   if (!user) return res.status(404).json({ error: "User not found." });
   user.closed = !user.closed;
-  writeUsers(users);
+  await writeUsers(users);
   if (user.closed) {
-    const blocked = readBlockedEmails();
-    if (!blocked.includes(user.email.toLowerCase())) { blocked.push(user.email.toLowerCase()); writeBlockedEmails(blocked); }
+    const blocked = await readBlockedEmails();
+    if (!blocked.includes(user.email.toLowerCase())) { blocked.push(user.email.toLowerCase()); await writeBlockedEmails(blocked); }
   }
   res.json({ ok: true, closed: user.closed });
 });
 
-app.delete("/api/admin/user/:userId", requireAdmin, (req, res) => {
-  const users = readUsers();
+app.delete("/api/admin/user/:userId", requireAdmin, async (req, res) => {
+  const users = await readUsers();
   const idx = users.findIndex(u => u.id === req.params.userId);
   if (idx === -1) return res.status(404).json({ error: "User not found." });
   const user = users[idx];
   users.splice(idx, 1);
-  writeUsers(users);
-  const accounts = readDemoAccounts();
+  await writeUsers(users);
+  const accounts = await readDemoAccounts();
   delete accounts[req.params.userId];
-  writeDemoAccounts(accounts);
-  const msgs = readAllMessages();
+  await writeDemoAccounts(accounts);
+  const msgs = await readAllMessages();
   delete msgs[req.params.userId];
-  writeAllMessages(msgs);
-  const blocked = readBlockedEmails();
-  if (!blocked.includes(user.email.toLowerCase())) { blocked.push(user.email.toLowerCase()); writeBlockedEmails(blocked); }
+  await writeAllMessages(msgs);
+  const blocked = await readBlockedEmails();
+  if (!blocked.includes(user.email.toLowerCase())) { blocked.push(user.email.toLowerCase()); await writeBlockedEmails(blocked); }
   res.json({ ok: true });
 });
 
-app.get("/api/admin/user/:userId/team", requireAdmin, (req, res) => {
-  const users = readUsers();
-  const accounts = readDemoAccounts();
+app.get("/api/admin/user/:userId/team", requireAdmin, async (req, res) => {
+  const users = await readUsers();
+  const accounts = await readDemoAccounts();
   const user = users.find(u => u.id === req.params.userId);
   if (!user) return res.status(404).json({ error: "User not found." });
 
@@ -1898,9 +1870,9 @@ app.get("/api/admin/user/:userId/team", requireAdmin, (req, res) => {
   res.json({ ok: true, user: { id: user.id, uid: user.uid, name: user.name, email: user.email, level: lvlInfo.level, levelInfo: lvlInfo }, tree });
 });
 
-app.get("/api/signal-status", authenticate, (req, res) => {
-  const cfg = readSignalConfig();
-  const accounts = readDemoAccounts();
+app.get("/api/signal-status", authenticate, async (req, res) => {
+  const cfg = await readSignalConfig();
+  const accounts = await readDemoAccounts();
   const account = getDemoAccount(accounts, req.user.sub);
   const bonusSignals = account.referralBonusSignals || 0;
   let referralWindowOpen = false;
@@ -1934,7 +1906,7 @@ app.get("/api/signal-status", authenticate, (req, res) => {
 // Referral bonus signal — auto direction, auto settle at window end
 app.post("/api/demo/referral-signal", authenticate, async (req, res) => {
   try {
-    const cfg = readSignalConfig();
+    const cfg = await readSignalConfig();
     if (!cfg.referralSignalTime || !cfg.referralDirection) {
       return res.status(403).json({ error: "Referral signal session not configured." });
     }
@@ -1947,23 +1919,23 @@ app.post("/api/demo/referral-signal", authenticate, async (req, res) => {
       return res.status(403).json({ error: `Referral signal available only ${cfg.referralSignalTime} — ${winEnd.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}.` });
     }
 
-    const accounts = readDemoAccounts();
+    const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
     settleDuePositions(account);
 
     const bonusSignals = account.referralBonusSignals || 0;
     if (bonusSignals <= 0) {
-      writeDemoAccounts(accounts);
+      await writeDemoAccounts(accounts);
       return res.status(400).json({ error: "No referral bonus signals available." });
     }
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const bonusUsedToday = (account.positions || []).filter(p => p.openedAt >= todayStart.getTime() && p.isReferralBonus).length;
     if (bonusUsedToday >= 1) {
-      writeDemoAccounts(accounts);
+      await writeDemoAccounts(accounts);
       return res.status(400).json({ error: "Today's bonus signal already used." });
     }
     if (account.signalBalance < 200) {
-      writeDemoAccounts(accounts);
+      await writeDemoAccounts(accounts);
       return res.status(400).json({ error: "Minimum $200 Signal balance required." });
     }
 
@@ -1990,7 +1962,7 @@ app.post("/api/demo/referral-signal", authenticate, async (req, res) => {
       settled: false,
       isReferralBonus: true,
     });
-    writeDemoAccounts(accounts);
+    await writeDemoAccounts(accounts);
     res.json({ ok: true, signalBalance: account.signalBalance, positions: account.positions, direction, pair: pairName, settleAt });
   } catch (err) {
     console.error("referral-signal error:", err);
@@ -2004,7 +1976,7 @@ const SIGNAL_STAKE_RATE = 0.01;
 
 app.post("/api/demo/predict", authenticate, async (req, res) => {
   try {
-    const signalCfg = readSignalConfig();
+    const signalCfg = await readSignalConfig();
     if (!signalCfg.signalActive) {
       return res.status(403).json({ error: "Signals are currently disabled. Please wait for admin to activate the next signal session." });
     }
@@ -2021,16 +1993,16 @@ app.post("/api/demo/predict", authenticate, async (req, res) => {
       return res.status(400).json({ error: "Unsupported trading pair." });
     }
 
-    const accounts = readDemoAccounts();
+    const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
     settleDuePositions(account);
 
     if (account.signalBalance < 200) {
-      writeDemoAccounts(accounts);
+      await writeDemoAccounts(accounts);
       return res.status(400).json({ error: "Minimum $200 Signal balance required to place signals. Transfer funds from Spot first." });
     }
 
-    const signalCfgLimits = readSignalConfig();
+    const signalCfgLimits = await readSignalConfig();
     const globalLimit = signalCfgLimits.globalDailyLimit;
     const userLimit = account.dailySignalLimit || globalLimit || DEFAULT_DAILY_SIGNAL_LIMIT;
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
@@ -2041,7 +2013,7 @@ app.post("/api/demo/predict", authenticate, async (req, res) => {
     const maxBonusPerDay = 1;
     const totalAllowed = userLimit + (bonusSignals > 0 && bonusUsedToday < maxBonusPerDay ? 1 : 0);
     if (todaySignals >= totalAllowed) {
-      writeDemoAccounts(accounts);
+      await writeDemoAccounts(accounts);
       const msg = bonusSignals > 0 && bonusUsedToday >= maxBonusPerDay
         ? `Daily limit reached (${userLimit} + 1 bonus used). Try again tomorrow.`
         : `Daily signal limit reached (${userLimit} per day). Try again tomorrow.`;
@@ -2049,7 +2021,7 @@ app.post("/api/demo/predict", authenticate, async (req, res) => {
     }
     let isReferralBonus = false;
     if (todaySignals >= userLimit && bonusSignals > 0 && bonusUsedToday < maxBonusPerDay) {
-      const sCfg = readSignalConfig();
+      const sCfg = await readSignalConfig();
       if (sCfg.referralSignalTime) {
         const [rh, rm] = sCfg.referralSignalTime.split(":").map(Number);
         const nowD = new Date();
@@ -2059,7 +2031,7 @@ app.post("/api/demo/predict", authenticate, async (req, res) => {
           isReferralBonus = true;
           account.referralBonusSignals = bonusSignals - 1;
         } else {
-          writeDemoAccounts(accounts);
+          await writeDemoAccounts(accounts);
           return res.status(400).json({ error: `Bonus signal available only during referral window (${sCfg.referralSignalTime}). Try again at that time.` });
         }
       } else {
@@ -2070,7 +2042,7 @@ app.post("/api/demo/predict", authenticate, async (req, res) => {
 
     const stake = Math.round(account.signalBalance * SIGNAL_STAKE_RATE * 100) / 100;
     if (!stake || stake <= 0) {
-      writeDemoAccounts(accounts);
+      await writeDemoAccounts(accounts);
       return res.status(400).json({ error: "Signal balance is too low to trade. Transfer funds from Spot first." });
     }
 
@@ -2092,7 +2064,7 @@ app.post("/api/demo/predict", authenticate, async (req, res) => {
       settled: false,
       isReferralBonus,
     });
-    writeDemoAccounts(accounts);
+    await writeDemoAccounts(accounts);
     res.json({ ok: true, signalBalance: account.signalBalance, positions: account.positions });
   } catch (err) {
     console.error("predict error:", err);
@@ -2101,12 +2073,12 @@ app.post("/api/demo/predict", authenticate, async (req, res) => {
 });
 
 // --- CANCEL DEMO TRADE ROUTE ---
-app.post("/api/demo/cancel", authenticate, (req, res) => {
+app.post("/api/demo/cancel", authenticate, async (req, res) => {
   try {
     const { id } = req.body;
     if (!id) return res.status(400).json({ error: "Missing position ID." });
 
-    const accounts = readDemoAccounts();
+    const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
     
     // Find the specific trade
@@ -2130,7 +2102,7 @@ app.post("/api/demo/cancel", authenticate, (req, res) => {
     position.cancelled = true;
     position.profit = 0;
 
-    writeDemoAccounts(accounts);
+    await writeDemoAccounts(accounts);
     res.json({ ok: true, message: "Trade cancelled successfully", signalBalance: account.signalBalance, positions: account.positions });
   } catch (err) {
     console.error("cancel trade error:", err);
@@ -2148,11 +2120,11 @@ app.post("/api/demo/spot/buy", authenticate, async (req, res) => {
     const spend = Number(usdtAmount);
     if (!Number.isFinite(spend) || spend <= 0) return res.status(400).json({ error: "Enter a valid amount greater than 0." });
 
-    const accounts = readDemoAccounts();
+    const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
     settleDuePositions(account);
     if (spend > account.balance) {
-      writeDemoAccounts(accounts);
+      await writeDemoAccounts(accounts);
       return res.status(400).json({ error: "Insufficient demo balance." });
     }
 
@@ -2164,7 +2136,7 @@ app.post("/api/demo/spot/buy", authenticate, async (req, res) => {
     account.holdings[pair] = (account.holdings[pair] || 0) + quantity;
     account.trades.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type: "spot", side: "buy", pair, quantity, price, amount: spend, riskFee, at: Date.now() });
 
-    writeDemoAccounts(accounts);
+    await writeDemoAccounts(accounts);
     res.json({ ok: true, balance: account.balance, holdings: account.holdings, filledPrice: price, quantity, riskFee });
   } catch (err) {
     console.error("spot buy error:", err);
@@ -2179,12 +2151,12 @@ app.post("/api/demo/spot/sell", authenticate, async (req, res) => {
     const qty = Number(quantity);
     if (!Number.isFinite(qty) || qty <= 0) return res.status(400).json({ error: "Enter a valid quantity greater than 0." });
 
-    const accounts = readDemoAccounts();
+    const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
     settleDuePositions(account);
     const held = account.holdings[pair] || 0;
     if (qty > held) {
-      writeDemoAccounts(accounts);
+      await writeDemoAccounts(accounts);
       return res.status(400).json({ error: `You only hold ${held} ${pair.split("/")[0]}.` });
     }
 
@@ -2197,7 +2169,7 @@ app.post("/api/demo/spot/sell", authenticate, async (req, res) => {
     if (account.holdings[pair] < 1e-9) delete account.holdings[pair];
     account.trades.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type: "spot", side: "sell", pair, quantity: qty, price, amount: proceeds, riskFee, at: Date.now() });
 
-    writeDemoAccounts(accounts);
+    await writeDemoAccounts(accounts);
     res.json({ ok: true, balance: account.balance, holdings: account.holdings, filledPrice: price, proceeds, riskFee });
   } catch (err) {
     console.error("spot sell error:", err);
@@ -2219,11 +2191,11 @@ app.post("/api/demo/futures/open", authenticate, async (req, res) => {
     const marginAmount = Number(margin);
     if (!Number.isFinite(marginAmount) || marginAmount <= 0) return res.status(400).json({ error: "Enter a valid margin amount greater than 0." });
 
-    const accounts = readDemoAccounts();
+    const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
     settleDuePositions(account);
     if (marginAmount > account.balance) {
-      writeDemoAccounts(accounts);
+      await writeDemoAccounts(accounts);
       return res.status(400).json({ error: "Insufficient demo balance." });
     }
 
@@ -2238,7 +2210,7 @@ app.post("/api/demo/futures/open", authenticate, async (req, res) => {
       openedAt: now,
       closed: false,
     });
-    writeDemoAccounts(accounts);
+    await writeDemoAccounts(accounts);
     res.json({ ok: true, balance: account.balance, futures: account.futures, riskFee });
   } catch (err) {
     console.error("futures open error:", err);
@@ -2249,7 +2221,7 @@ app.post("/api/demo/futures/open", authenticate, async (req, res) => {
 app.post("/api/demo/futures/close", authenticate, async (req, res) => {
   try {
     const { positionId } = req.body || {};
-    const accounts = readDemoAccounts();
+    const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
     const position = account.futures.find((p) => p.id === positionId && !p.closed);
     if (!position) return res.status(404).json({ error: "Open position not found." });
@@ -2267,7 +2239,7 @@ app.post("/api/demo/futures/close", authenticate, async (req, res) => {
     position.closedAt = Date.now();
     position.pnl = Math.round((payout - position.margin) * 100) / 100;
 
-    writeDemoAccounts(accounts);
+    await writeDemoAccounts(accounts);
     res.json({ ok: true, balance: account.balance, futures: account.futures });
   } catch (err) {
     console.error("futures close error:", err);
@@ -2277,4 +2249,9 @@ app.post("/api/demo/futures/close", authenticate, async (req, res) => {
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
-app.listen(PORT, '0.0.0.0', () => console.log(`KYNEX backend running on http://0.0.0.0:${PORT}`));
+initDb().then(() => {
+  app.listen(PORT, '0.0.0.0', () => console.log(`KYNEX backend running on http://0.0.0.0:${PORT}`));
+}).catch(err => {
+  console.error("Database init failed:", err);
+  process.exit(1);
+});
