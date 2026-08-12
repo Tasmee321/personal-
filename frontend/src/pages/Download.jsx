@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Zap, TrendingUp, Shield, Globe, Award } from 'lucide-react';
+import { ArrowLeft, Zap, TrendingUp, Shield, Globe, Award, Smartphone, RefreshCw, Wifi, HardDrive, Download as DownloadIcon, CheckCircle } from 'lucide-react';
 import { CoinIcon } from '../components/CoinIcons';
 import { useTheme } from '../ThemeContext';
 
@@ -92,8 +92,6 @@ const CertBadge = ({ title, body, regNo, color, seal, idx }) => {
         minHeight: '180px',
       }}>
         <div style={{ position:'absolute', inset:0, opacity:0.025, pointerEvents:'none', backgroundImage:pat(gold) }} />
-
-        {/* Corner flourishes */}
         {[{t:2,l:2,s:''},{t:2,r:2,s:'scaleX(-1)'},{b:2,l:2,s:'scaleY(-1)'},{b:2,r:2,s:'scale(-1)'}].map((pos,pi) => (
           <svg key={pi} style={{position:'absolute',top:pos.t,bottom:pos.b,left:pos.l,right:pos.r,transform:pos.s}} width="28" height="28" viewBox="0 0 28 28">
             <path d="M0,0 L28,0 L28,4 Q14,4 4,14 L4,28 L0,28 Z" fill={gold} opacity="0.2" />
@@ -101,30 +99,20 @@ const CertBadge = ({ title, body, regNo, color, seal, idx }) => {
             <circle cx="4" cy="4" r="1.5" fill={gold} opacity="0.4" />
           </svg>
         ))}
-
-        {/* Unique seal */}
         <div style={{ textAlign:'center', marginBottom:'8px' }}>
           <MiniSealSVG idx={idx} color={color} />
         </div>
-
-        {/* Title */}
         <div style={{ textAlign:'center', marginBottom:'4px' }}>
           <div style={{ fontSize:'7px', letterSpacing:'2.5px', color:'#888', textTransform:'uppercase', marginBottom:'4px' }}>{seal}</div>
           <div style={{ fontSize:'11px', fontWeight:'700', color:'#1a1a1a', fontFamily:'Georgia, "Times New Roman", serif', lineHeight:1.3 }}>{title}</div>
         </div>
-
-        {/* Body */}
         <div style={{ textAlign:'center', fontSize:'8.5px', color:'#555', lineHeight:'1.6', margin:'8px 0', fontFamily:'Georgia, "Times New Roman", serif' }}>
           <div style={{ fontWeight:'700', color:'#111', fontSize:'11px', letterSpacing:'1.5px', margin:'4px 0' }}>KYNEX AG</div>
           <div>{body}</div>
         </div>
-
-        {/* Reg number */}
         <div style={{ textAlign:'center', margin:'8px 0 6px' }}>
           <span style={{ fontSize:'7px', color:'#777', letterSpacing:'0.8px', fontFamily:'monospace', background:`${gold}11`, padding:'3px 8px', borderRadius:'2px', border:`1px solid ${gold}22` }}>{regNo}</span>
         </div>
-
-        {/* Unique signature + unique stamp */}
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginTop:'10px' }}>
           <div style={{ fontSize:'7px', color:'#999' }}>
             <MiniSigSVG idx={idx} />
@@ -158,6 +146,13 @@ const Download = () => {
     { icon: <Globe size={28} />, badge: iconBadges.blue, title: 'Trade anytime, anywhere', desc: 'Our platform is available 24/7 across all devices with real-time market data' },
   ];
 
+  const appBenefits = [
+    { icon: <RefreshCw size={18} />, title: 'Always Up-to-Date', desc: 'App updates automatically with the platform — no manual updates needed' },
+    { icon: <Wifi size={18} />, title: 'Live Web Technology', desc: 'Built as a smart web app that loads the latest version every time you open it' },
+    { icon: <HardDrive size={18} />, title: 'Lightweight (~3 MB)', desc: 'Small because the app is a smart launcher — all features load from our secure servers' },
+    { icon: <Smartphone size={18} />, title: 'Native App Feel', desc: 'Fullscreen experience with no browser bar — looks and feels like a native app' },
+  ];
+
   return (
     <div style={{ minHeight: '100vh', backgroundColor: theme.bg, color: theme.text }}>
       <style>{`
@@ -177,6 +172,8 @@ const Download = () => {
         @media (max-width: 520px) {
           .dl-feature-grid { grid-template-columns: 1fr !important; }
           .dl-cert-grid { grid-template-columns: 1fr 1fr !important; }
+          .dl-platform-grid { grid-template-columns: 1fr !important; }
+          .dl-benefits-grid { grid-template-columns: 1fr !important; }
         }
       `}</style>
 
@@ -197,31 +194,23 @@ const Download = () => {
         position: 'relative', overflow: 'hidden',
         padding: '60px 20px 50px', textAlign: 'center',
         background: `linear-gradient(180deg, ${theme.bg} 0%, ${theme.card} 50%, ${theme.bg} 100%)`,
-        minHeight: '420px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        minHeight: '340px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       }}>
-
-        {/* Grid pattern overlay */}
         <div style={{
           position: 'absolute', inset: 0, zIndex: 0,
-          backgroundImage: `
-            linear-gradient(${theme.cardBorder} 1px, transparent 1px),
-            linear-gradient(90deg, ${theme.cardBorder} 1px, transparent 1px)
-          `,
+          backgroundImage: `linear-gradient(${theme.cardBorder} 1px, transparent 1px), linear-gradient(90deg, ${theme.cardBorder} 1px, transparent 1px)`,
           backgroundSize: '60px 60px',
           animation: 'gridPulse 8s ease-in-out infinite',
         }} />
 
-        {/* Diamond grid lines */}
         <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 0, opacity: 0.1 }} preserveAspectRatio="none" viewBox="0 0 400 500">
           <line x1="100" y1="0" x2="300" y2="500" stroke={theme.text} strokeWidth="0.5" />
           <line x1="300" y1="0" x2="100" y2="500" stroke={theme.text} strokeWidth="0.5" />
           <line x1="0" y1="150" x2="400" y2="150" stroke={theme.text} strokeWidth="0.5" />
           <line x1="0" y1="350" x2="400" y2="350" stroke={theme.text} strokeWidth="0.5" />
           <rect x="120" y="80" width="160" height="160" stroke={theme.text} strokeWidth="0.5" fill="none" transform="rotate(45, 200, 160)" />
-          <rect x="140" y="100" width="120" height="120" stroke={theme.text} strokeWidth="0.3" fill="none" transform="rotate(45, 200, 160)" />
         </svg>
 
-        {/* Sparkle dots */}
         {[
           { top: '15%', left: '30%', delay: '0s' },
           { top: '25%', right: '25%', delay: '1.5s' },
@@ -236,7 +225,6 @@ const Download = () => {
           }} />
         ))}
 
-        {/* Floating crypto coins */}
         <FloatingCoin symbol="BTC" size={48} top="18%" left="8%" delay="0s" duration="7s" />
         <FloatingCoin symbol="ETH" size={40} top="30%" right="10%" delay="1s" duration="5.5s" />
         <FloatingCoin symbol="USDT" size={36} bottom="25%" right="8%" delay="2s" duration="6.5s" />
@@ -244,7 +232,6 @@ const Download = () => {
         <FloatingCoin symbol="BNB" size={28} top="12%" right="22%" delay="1.5s" duration="5s" />
         <FloatingCoin symbol="LTC" size={30} bottom="15%" left="28%" delay="3s" duration="7.5s" />
 
-        {/* KYNEX Logo */}
         <div style={{
           width: 64, height: 64, borderRadius: 16,
           background: theme.primaryGradient || theme.primary,
@@ -256,90 +243,164 @@ const Download = () => {
           K
         </div>
 
-        <h1 style={{
-          fontSize: '32px', fontWeight: 800, margin: '0 0 10px', letterSpacing: '-0.5px',
-          position: 'relative', zIndex: 2,
-        }}>
-          Download App
+        <h1 style={{ fontSize: '32px', fontWeight: 800, margin: '0 0 10px', letterSpacing: '-0.5px', position: 'relative', zIndex: 2 }}>
+          Get KYNEX App
         </h1>
-        <p style={{
-          color: theme.faint, fontSize: '14px', margin: '0 0 36px',
-          position: 'relative', zIndex: 2,
-        }}>
-          Multiple platform terminal transactions anywhere or time
+        <p style={{ color: theme.faint, fontSize: '14px', margin: '0 0 36px', position: 'relative', zIndex: 2, maxWidth: 360 }}>
+          Trade crypto on the go with our fast, secure & always up-to-date application
         </p>
+      </div>
 
-        {/* iPhone / Android buttons */}
-        <div style={{
-          display: 'flex', gap: '14px', justifyContent: 'center', flexWrap: 'wrap',
-          position: 'relative', zIndex: 2, marginBottom: 36,
-        }}>
-          <button
-            onClick={() => setShowIosGuide(true)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '10px',
-              padding: '14px 36px', borderRadius: '10px', border: 'none',
-              background: theme.primaryGradient || theme.primary,
-              color: 'white', fontWeight: 700, fontSize: '15px', cursor: 'pointer',
-              boxShadow: '0 6px 24px rgba(59,130,246,0.4)',
-              minWidth: '150px', justifyContent: 'center',
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-            iPhone
-          </button>
-          <a
-            href={`${window.location.origin}/kynex.apk`}
-            download
-            style={{
-              display: 'flex', alignItems: 'center', gap: '10px',
-              padding: '14px 36px', borderRadius: '10px', border: 'none',
-              background: theme.primaryGradient || theme.primary,
-              color: 'white', fontWeight: 700, fontSize: '15px', cursor: 'pointer',
-              boxShadow: '0 6px 24px rgba(59,130,246,0.4)',
-              minWidth: '150px', justifyContent: 'center', textDecoration: 'none',
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M17.523 2.237a.625.625 0 0 0-.803.368L15.482 6H8.518L7.28 2.605a.625.625 0 1 0-1.17.435L7.24 6H4.625a.625.625 0 0 0 0 1.25h.838L7.1 17.563A2.625 2.625 0 0 0 9.69 19.75h4.62a2.625 2.625 0 0 0 2.59-2.188L18.537 7.25h.838a.625.625 0 0 0 0-1.25H16.76l1.13-2.96a.625.625 0 0 0-.368-.803zM9.5 15.5a.625.625 0 0 1-1.25 0v-5a.625.625 0 0 1 1.25 0v5zm3.25 0a.625.625 0 0 1-1.25 0v-5a.625.625 0 0 1 1.25 0v5zm3.25 0a.625.625 0 0 1-1.25 0v-5a.625.625 0 0 1 1.25 0v5z"/></svg>
-            Android
-          </a>
+      {/* Platform Download Cards */}
+      <div style={{ padding: '0 20px 40px', maxWidth: '600px', margin: '-30px auto 0' }}>
+        <div className="dl-platform-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', position: 'relative', zIndex: 3 }}>
+
+          {/* Android Card */}
+          <div style={{
+            padding: '24px 20px', borderRadius: '16px',
+            backgroundColor: theme.card, border: `1px solid ${theme.cardBorder}`,
+            boxShadow: theme.shadowElevated || theme.shadow,
+            backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center',
+          }}>
+            <div style={{
+              width: 52, height: 52, borderRadius: 14,
+              background: 'linear-gradient(135deg, #3DDC84, #2DA65A)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              marginBottom: 14, boxShadow: '0 4px 16px rgba(61,220,132,0.3)',
+            }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="white"><path d="M17.523 2.237a.625.625 0 0 0-.803.368L15.482 6H8.518L7.28 2.605a.625.625 0 1 0-1.17.435L7.24 6H4.625a.625.625 0 0 0 0 1.25h.838L7.1 17.563A2.625 2.625 0 0 0 9.69 19.75h4.62a2.625 2.625 0 0 0 2.59-2.188L18.537 7.25h.838a.625.625 0 0 0 0-1.25H16.76l1.13-2.96a.625.625 0 0 0-.368-.803z"/></svg>
+            </div>
+            <h3 style={{ margin: '0 0 4px', fontSize: '16px', fontWeight: 700 }}>Android</h3>
+            <p style={{ margin: '0 0 6px', fontSize: '11px', color: theme.faint }}>APK Download</p>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              fontSize: '11px', color: theme.up, fontWeight: 600,
+              backgroundColor: `${theme.up}15`, padding: '3px 10px', borderRadius: 20,
+              marginBottom: 14,
+            }}>
+              <CheckCircle size={12} /> v1.0 — 3.4 MB
+            </div>
+            <a
+              href={`${window.location.origin}/kynex.apk`}
+              download
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                padding: '12px 24px', borderRadius: '10px', border: 'none', width: '100%',
+                background: 'linear-gradient(135deg, #3DDC84, #2DA65A)',
+                color: 'white', fontWeight: 700, fontSize: '14px', cursor: 'pointer',
+                textDecoration: 'none', boxShadow: '0 4px 16px rgba(61,220,132,0.3)',
+              }}
+            >
+              <DownloadIcon size={16} /> Download
+            </a>
+          </div>
+
+          {/* iOS Card */}
+          <div style={{
+            padding: '24px 20px', borderRadius: '16px',
+            backgroundColor: theme.card, border: `1px solid ${theme.cardBorder}`,
+            boxShadow: theme.shadowElevated || theme.shadow,
+            backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center',
+          }}>
+            <div style={{
+              width: 52, height: 52, borderRadius: 14,
+              background: 'linear-gradient(135deg, #555, #222)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              marginBottom: 14, boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+            }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+            </div>
+            <h3 style={{ margin: '0 0 4px', fontSize: '16px', fontWeight: 700 }}>iPhone</h3>
+            <p style={{ margin: '0 0 6px', fontSize: '11px', color: theme.faint }}>Add to Home Screen</p>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              fontSize: '11px', color: theme.primary, fontWeight: 600,
+              backgroundColor: `${theme.primary}15`, padding: '3px 10px', borderRadius: 20,
+              marginBottom: 14,
+            }}>
+              <Smartphone size={12} /> No download needed
+            </div>
+            <button
+              onClick={() => setShowIosGuide(true)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                padding: '12px 24px', borderRadius: '10px', border: 'none', width: '100%',
+                background: 'linear-gradient(135deg, #555, #222)',
+                color: 'white', fontWeight: 700, fontSize: '14px', cursor: 'pointer',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+              }}
+            >
+              View Guide
+            </button>
+          </div>
         </div>
 
-        {/* QR Code area */}
+        {/* Why Small Size Info */}
         <div style={{
-          width: 140, height: 140, backgroundColor: 'white', borderRadius: 12,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          position: 'relative', zIndex: 2,
-          boxShadow: theme.shadowElevated || theme.shadow,
-          margin: '0 auto 12px',
+          marginTop: 20, padding: '18px 20px', borderRadius: '14px',
+          backgroundColor: theme.card, border: `1px solid ${theme.cardBorder}`,
+          boxShadow: theme.shadow,
+          backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)',
         }}>
-          <svg width="110" height="110" viewBox="0 0 110 110">
-            <rect x="0" y="0" width="35" height="35" rx="4" fill="#111827"/>
-            <rect x="5" y="5" width="25" height="25" rx="2" fill="white"/>
-            <rect x="10" y="10" width="15" height="15" rx="1" fill="#111827"/>
-            <rect x="75" y="0" width="35" height="35" rx="4" fill="#111827"/>
-            <rect x="80" y="5" width="25" height="25" rx="2" fill="white"/>
-            <rect x="85" y="10" width="15" height="15" rx="1" fill="#111827"/>
-            <rect x="0" y="75" width="35" height="35" rx="4" fill="#111827"/>
-            <rect x="5" y="80" width="25" height="25" rx="2" fill="white"/>
-            <rect x="10" y="85" width="15" height="15" rx="1" fill="#111827"/>
-            <rect x="42" y="42" width="26" height="26" rx="4" fill="#3B82F6"/>
-            <text x="55" y="59" textAnchor="middle" fill="white" fontSize="14" fontWeight="900">K</text>
-            {[40,47,54,61,68].map(x => [40,47,54,61,68].map(y => (
-              (x < 42 || x > 64 || y < 42 || y > 64) &&
-              <rect key={`${x}-${y}`} x={x} y={y} width="5" height="5" rx="1" fill="#111827" opacity={(x+y) % 14 < 7 ? 0.8 : 0.3} />
-            )))}
-            {[0,7,14,21,28].map(x => [40,47,54,61,68].map(y => (
-              <rect key={`h${x}-${y}`} x={x+40} y={y < 40 ? y+36 : y} width="4" height="4" rx="0.5" fill="#111827" opacity={(x+y) % 2 === 0 ? 0.6 : 0.2} />
-            )))}
-          </svg>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+            <RefreshCw size={16} style={{ color: theme.brand }} />
+            <span style={{ fontWeight: 700, fontSize: '14px' }}>Why is the app only 3 MB?</span>
+          </div>
+          <p style={{ margin: '0 0 14px', fontSize: '12px', color: theme.subtext, lineHeight: 1.7 }}>
+            KYNEX is a <strong style={{ color: theme.text }}>smart web application</strong> — the app acts as a secure launcher that connects directly to our servers. All features, data, and updates load in real-time from the cloud.
+          </p>
+          <div className="dl-benefits-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            {appBenefits.map((b, i) => (
+              <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                  backgroundColor: `${theme.primary}15`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: theme.primary,
+                }}>
+                  {b.icon}
+                </div>
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: 700, marginBottom: 2 }}>{b.title}</div>
+                  <div style={{ fontSize: '10px', color: theme.faint, lineHeight: 1.5 }}>{b.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-        <p style={{
-          color: theme.faint, fontSize: '13px',
-          position: 'relative', zIndex: 2, margin: 0,
-        }}>
-          Scan here to download
-        </p>
+
+        {/* QR Code */}
+        <div style={{ textAlign: 'center', marginTop: 30 }}>
+          <div style={{
+            width: 130, height: 130, backgroundColor: 'white', borderRadius: 12,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: theme.shadowElevated || theme.shadow,
+            marginBottom: 10,
+          }}>
+            <svg width="100" height="100" viewBox="0 0 110 110">
+              <rect x="0" y="0" width="35" height="35" rx="4" fill="#111827"/>
+              <rect x="5" y="5" width="25" height="25" rx="2" fill="white"/>
+              <rect x="10" y="10" width="15" height="15" rx="1" fill="#111827"/>
+              <rect x="75" y="0" width="35" height="35" rx="4" fill="#111827"/>
+              <rect x="80" y="5" width="25" height="25" rx="2" fill="white"/>
+              <rect x="85" y="10" width="15" height="15" rx="1" fill="#111827"/>
+              <rect x="0" y="75" width="35" height="35" rx="4" fill="#111827"/>
+              <rect x="5" y="80" width="25" height="25" rx="2" fill="white"/>
+              <rect x="10" y="85" width="15" height="15" rx="1" fill="#111827"/>
+              <rect x="42" y="42" width="26" height="26" rx="4" fill="#3B82F6"/>
+              <text x="55" y="59" textAnchor="middle" fill="white" fontSize="14" fontWeight="900">K</text>
+              {[40,47,54,61,68].map(x => [40,47,54,61,68].map(y => (
+                (x < 42 || x > 64 || y < 42 || y > 64) &&
+                <rect key={`${x}-${y}`} x={x} y={y} width="5" height="5" rx="1" fill="#111827" opacity={(x+y) % 14 < 7 ? 0.8 : 0.3} />
+              )))}
+            </svg>
+          </div>
+          <p style={{ color: theme.faint, fontSize: '12px', margin: 0 }}>
+            Scan to open KYNEX on your phone
+          </p>
+        </div>
       </div>
 
       {/* Divider */}
@@ -370,7 +431,6 @@ const Download = () => {
           ))}
         </div>
 
-        {/* Open Web App CTA */}
         <button
           onClick={() => navigate('/auth')}
           style={{
@@ -391,7 +451,7 @@ const Download = () => {
       {/* Divider */}
       <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${theme.cardBorder}, transparent)`, margin: '0 20px' }} />
 
-      {/* iOS Add to Home Screen Guide Modal */}
+      {/* iOS Guide Modal */}
       {showIosGuide && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 9999,
@@ -411,25 +471,28 @@ const Download = () => {
             </div>
 
             <p style={{ color: theme.subtext, fontSize: '13px', marginBottom: '20px', lineHeight: 1.6 }}>
-              Follow these steps to add KYNEX to your home screen for a native app experience:
+              KYNEX works as a full-screen app on iPhone — no App Store needed. Just follow these steps:
             </p>
 
             {[
-              { step: 1, title: 'Open in Safari', desc: 'Open this website in Safari browser (not Chrome or other browsers).' },
-              { step: 2, title: 'Tap the Share button', desc: 'Tap the Share icon (square with an arrow pointing up) at the bottom of Safari.' },
-              { step: 3, title: 'Scroll down & tap "Add to Home Screen"', desc: 'Scroll through the share menu and select "Add to Home Screen".' },
-              { step: 4, title: 'Tap "Add"', desc: 'Confirm the name as "KYNEX" and tap "Add" in the top right corner.' },
-              { step: 5, title: 'Done!', desc: 'KYNEX icon will appear on your home screen. Open it for a full-screen app experience.' },
+              { step: 1, title: 'Open in Safari', desc: 'Open kynex.site in Safari browser (not Chrome or other browsers).', icon: <Globe size={16} /> },
+              { step: 2, title: 'Tap the Share button', desc: 'Tap the Share icon (square with arrow pointing up) at the bottom of Safari.', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> },
+              { step: 3, title: 'Add to Home Screen', desc: 'Scroll down in the share menu and tap "Add to Home Screen".', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg> },
+              { step: 4, title: 'Confirm & Add', desc: 'Keep the name "KYNEX" and tap "Add" in the top right corner.', icon: <CheckCircle size={16} /> },
+              { step: 5, title: 'Done!', desc: 'KYNEX icon appears on your home screen. Open it for a full-screen app experience.', icon: <Smartphone size={16} /> },
             ].map(s => (
               <div key={s.step} style={{ display: 'flex', gap: '14px', marginBottom: '16px' }}>
                 <div style={{
-                  width: '32px', height: '32px', borderRadius: '10px', flexShrink: 0,
+                  width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0,
                   background: theme.primaryGradient || theme.primary,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: 'white', fontWeight: 'bold', fontSize: '14px',
-                }}>{s.step}</div>
+                  color: 'white',
+                }}>{s.icon}</div>
                 <div>
-                  <div style={{ fontWeight: '700', fontSize: '14px', color: theme.text, marginBottom: '2px' }}>{s.title}</div>
+                  <div style={{ fontWeight: '700', fontSize: '14px', color: theme.text, marginBottom: '2px' }}>
+                    <span style={{ color: theme.faint, marginRight: 6, fontSize: '12px' }}>Step {s.step}</span>
+                    {s.title}
+                  </div>
                   <div style={{ fontSize: '12px', color: theme.subtext, lineHeight: 1.5 }}>{s.desc}</div>
                 </div>
               </div>
