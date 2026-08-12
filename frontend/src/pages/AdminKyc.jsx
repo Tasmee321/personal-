@@ -93,7 +93,7 @@ const AdminKyc = () => {
     setActiveOverrides(co.data?.overrides || []);
     setActiveReferrers(ref.data?.referrers || []);
     if (dw.ok) setDepositWallets(dw.data.wallets || { trc20: '', erc20: '', bep20: '' });
-    if (dp.ok) setPendingDeposits(dp.data.deposits || []);
+    if (dp.ok) setPendingDeposits(dp.data.pending || []);
     setAuthed(true);
     sessionStorage.setItem(KEY_STORAGE, key);
   }, []);
