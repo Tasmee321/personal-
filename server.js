@@ -458,11 +458,10 @@ function settleDuePositions(account) {
 // ---- In-memory pending OTPs ----
 const pendingSignups = new Map();
 
-// ---- Mailer (Updated to Port 587 TLS for stable Gmail connection) ----
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || "smtp.gmail.com",
-  port: 587,
-  secure: false, // false for port 587 (TLS)
+  port: Number(process.env.SMTP_PORT) || 465,
+  secure: true,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
