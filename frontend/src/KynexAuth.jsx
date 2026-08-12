@@ -18,8 +18,8 @@ const translations = {
     noAccount: "Don't have an account?", signUpNow: 'Sign Up now',
     verifyTitle: 'Enter Verification Code', verifySent: 'We sent a 6-digit verification code to',
     verifyBtn: 'Verify Email', verifying: 'Verifying...', passwordMismatch: 'Passwords do not match',
-    passwordHint: 'Start with a capital letter, then lowercase letters, then a number',
-    passwordInvalid: 'Password must start with a capital letter, followed by lowercase letters, then a number (e.g. Kynex123)',
+    passwordHint: 'At least 6 chars, uppercase, lowercase & number. Special characters optional (e.g. Kynex@123)',
+    passwordInvalid: 'Password must be at least 6 characters with an uppercase letter, a lowercase letter, and a number.',
     emailTab: 'Email', phoneTab: 'Phone', phoneNumber: 'Phone number',
     forgotPassword: 'Forgot Password', rememberPassword: 'Remember Password',
     phoneComingSoon: 'Phone login is coming soon — please use Email for now.',
@@ -124,7 +124,7 @@ function EyeIcon({ off }) {
   );
 }
 
-const PASSWORD_PATTERN = /^[A-Z][a-z]+[0-9]+$/;
+const PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,}$/;
 const REMEMBERED_EMAIL_KEY = 'kynex_remembered_email';
 
 export default function KynexAuth() {
