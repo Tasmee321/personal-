@@ -153,6 +153,25 @@ export default function KynexAuth() {
   const [newPassword, setNewPassword] = useState('');
   const [resetMessage, setResetMessage] = useState('');
 
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
+
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0) return;
+    try {
+      const res = await fetch(`${API_URL}/api/resend-otp`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: formData.email }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not resend code.');
+      setResendCooldown(60);
+      setError('');
+    } catch (err) { setError(err.message); }
+  };
+
   const [langCode, setLangCodeState] = useState(() => localStorage.getItem('kynex_language') || 'en');
   const setLangCode = (code) => { setLangCodeState(code); localStorage.setItem('kynex_language', code); };
   const [isOpen, setIsOpen] = useState(false);
@@ -180,6 +199,7 @@ export default function KynexAuth() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Registration failed');
       setStep(2);
+      setResendCooldown(60);
     } catch (err) { setError(err.message); } finally { setLoading(false); }
   };
 
@@ -458,6 +478,9 @@ export default function KynexAuth() {
                     <input type="text" placeholder="• • • • • •" className="ka-input" value={otp} onChange={(e) => setOtp(e.target.value)} required maxLength={6} style={{ textAlign: 'center', fontSize: '28px', letterSpacing: '8px' }} />
                     <button type="submit" className={`ka-btn ${otp.length === 6 ? 'active' : ''}`} disabled={loading}>{loading ? t.verifying : t.verifyBtn}</button>
                   </form>
+                  <button type="button" onClick={handleResendOtp} disabled={resendCooldown > 0} style={{ background: 'none', border: 'none', color: resendCooldown > 0 ? theme.subtext : theme.accent, cursor: resendCooldown > 0 ? 'default' : 'pointer', marginTop: '16px', fontSize: '14px' }}>
+                    {resendCooldown > 0 ? `Resend Code in ${resendCooldown}s` : 'Resend Code'}
+                  </button>
                 </>
               )}
             </div>
