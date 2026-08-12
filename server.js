@@ -458,24 +458,31 @@ function settleDuePositions(account) {
 // ---- In-memory pending OTPs ----
 const pendingSignups = new Map();
 
-async function sendEmailViaResend({ from, to, subject, text, html }) {
-  const res = await fetch("https://api.resend.com/emails", {
+async function sendEmail({ to, subject, text, html }) {
+  const senderName = process.env.MAIL_FROM_NAME || "KYNEX";
+  const senderEmail = process.env.MAIL_FROM_EMAIL || "noreply@kynex.site";
+  const res = await fetch("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${process.env.RESEND_API_KEY}`,
+      "api-key": process.env.BREVO_API_KEY,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ from, to: [to], subject, text, html }),
+    body: JSON.stringify({
+      sender: { name: senderName, email: senderEmail },
+      to: [{ email: to }],
+      subject,
+      textContent: text,
+      htmlContent: html,
+    }),
   });
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`Resend API error ${res.status}: ${err}`);
+    throw new Error(`Brevo API error ${res.status}: ${err}`);
   }
   return res.json();
 }
 
 async function sendOtpEmail(toEmail, name, otp, purpose) {
-  const fromName = process.env.MAIL_FROM_NAME || "KYNEX";
   const purposeLabels = {
     registration: "Account Registration",
     login: "Login Verification",
@@ -498,9 +505,7 @@ async function sendOtpEmail(toEmail, name, otp, purpose) {
     "fund-password": "You are setting up your Fund Password for KYNEX withdrawals.",
   };
   const purposeDesc = purposeDescriptions[purpose] || "This code is for verifying your identity on KYNEX.";
-  const fromAddr = process.env.RESEND_FROM || "KYNEX <onboarding@resend.dev>";
-  await sendEmailViaResend({
-    from: fromAddr,
+  await sendEmail({
     to: toEmail,
     subject: `${otp} — KYNEX ${purposeText} Code`,
     text: `Hi ${name},\n\nYour KYNEX verification code for ${purposeText} is: ${otp}\n\nPurpose: ${purposeDesc}\n\nThis code expires in ${process.env.OTP_EXPIRY_MINUTES || 10} minutes.\n\nIf you didn't request this, you can ignore this email.`,
@@ -513,10 +518,8 @@ function generateOtp() {
 }
 
 async function sendNotificationEmail(toEmail, name, subject, heading, bodyHtml) {
-  const fromAddr = process.env.RESEND_FROM || "KYNEX <onboarding@resend.dev>";
   try {
-    await sendEmailViaResend({
-      from: fromAddr,
+    await sendEmail({
       to: toEmail,
       subject: `KYNEX — ${subject}`,
       html: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px"><h2 style="color:#3B82F6;margin:0 0 16px">KYNEX</h2><p>Hi ${name},</p><h3>${heading}</h3>${bodyHtml}<hr style="border:none;border-top:1px solid #eee;margin:20px 0"/><p style="color:#888;font-size:12px">This is an automated notification from KYNEX. Do not reply to this email.<br/>Support: supportkynex@gmail.com</p></div>`,
