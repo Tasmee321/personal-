@@ -29,7 +29,9 @@ const WithdrawPage = () => {
   const [withdrawalRequests, setWithdrawalRequests] = useState([]);
   const [view, setView] = useState('withdraw');
 
-  const wdFee = Math.round(Number(wdAmt || 0) * 0.05 * 100) / 100;
+  const wdFee = Number(wdAmt || 0) > 0
+    ? (Number(wdAmt) < 100 ? 5 : Math.round(Number(wdAmt) * 0.05 * 100) / 100)
+    : 0;
   const wdNetAmt = Number(wdAmt || 0) - wdFee;
 
   useEffect(() => {
@@ -101,7 +103,7 @@ const WithdrawPage = () => {
               {Number(wdAmt) > 0 && (
                 <div style={{ backgroundColor: theme.inputBg, borderRadius: '14px', padding: '14px', marginBottom: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px' }}><span style={{ color: theme.subtext }}>Amount</span><span style={{ fontWeight: 'bold' }}>{fmt(Number(wdAmt))} USDT</span></div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px' }}><span style={{ color: theme.down }}>Fee (5%)</span><span style={{ fontWeight: 'bold', color: theme.down }}>-{wdFee.toFixed(2)} USDT</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px' }}><span style={{ color: theme.down }}>Fee ({Number(wdAmt) < 100 ? '$5 flat' : '5%'})</span><span style={{ fontWeight: 'bold', color: theme.down }}>-{wdFee.toFixed(2)} USDT</span></div>
                   <div style={{ borderTop: `1px solid ${theme.cardBorder}`, paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}><span style={{ color: theme.subtext, fontWeight: '600' }}>You Receive</span><span style={{ fontWeight: 'bold', color: theme.up }}>{wdNetAmt > 0 ? wdNetAmt.toFixed(2) : '0.00'} USDT</span></div>
                 </div>
               )}
