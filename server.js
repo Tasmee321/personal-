@@ -96,7 +96,7 @@ async function verifyEVM(txHash, expectedAddr, expectedAmt, network) {
   try {
     const chainId = network === 'bep20' ? 56 : 1;
     const contractAddr = USDT_CONTRACTS[network].toLowerCase();
-    const url = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=account&action=tokentx&contractaddress=${contractAddr}&sort=desc&page=1&offset=50&apikey=${ETHERSCAN_API_KEY}`;
+    const url = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=account&action=tokentx&contractaddress=${contractAddr}&address=${expectedAddr}&sort=desc&page=1&offset=50&apikey=${ETHERSCAN_API_KEY}`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (!data.result || !Array.isArray(data.result)) return { verified: false, reason: "Could not fetch token transfers." };
