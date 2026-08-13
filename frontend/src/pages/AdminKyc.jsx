@@ -296,6 +296,22 @@ const AdminKyc = () => {
     } catch (err) { setError(err.message); }
   };
 
+  const resetUser = async (user) => {
+    if (!confirm(`RESET account for "${user.name}" (${user.email})?
+
+This will zero all balances, positions, deposits and withdrawal history.
+This cannot be undone!`)) return;
+    try {
+      const res = await fetch(`${API_URL}/api/admin/user/${user.id}/reset`, {
+        method: 'POST', headers: adminHeaders(adminKey),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      showToast('Account reset successfully');
+      loadAll(adminKey);
+    } catch (err) { setError(err.message); }
+  };
+
   const loadTeam = async (user) => {
     setLoadingTree(true);
     try {
@@ -629,6 +645,9 @@ const AdminKyc = () => {
                   </button>
                   <button onClick={() => toggleBlock(selectedUser)} style={selectedUser.closed ? btnSuccess : btnDanger}>
                     {selectedUser.closed ? 'Unblock Account' : 'Block Account'}
+                  </button>
+                  <button onClick={() => resetUser(selectedUser)} style={{ ...btnDanger, backgroundColor: '#92400e' }}>
+                    Reset Account
                   </button>
                   <button onClick={() => deleteUser(selectedUser)} style={{ ...btnDanger, backgroundColor: '#7f1d1d' }}>
                     Delete User
