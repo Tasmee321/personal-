@@ -1562,8 +1562,11 @@ app.post("/api/demo/withdraw", authenticate, rateLimit(60 * 1000, 5), async (req
     return res.status(400).json({ error: "Insufficient Spot balance." });
   }
 
-  const fee = Math.round(amt * 0.05 * 100) / 100;
+  const fee = amt < 100
+    ? 5
+    : Math.round(amt * 0.05 * 100) / 100;
   const netPayout = Math.round((amt - fee) * 100) / 100;
+  const feeLabel = amt < 100 ? '$5.00 flat fee' : '5% platform fee';
   const requestId = `wd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   if (!me.whitelistedAddresses) me.whitelistedAddresses = [];
@@ -1578,12 +1581,12 @@ app.post("/api/demo/withdraw", authenticate, rateLimit(60 * 1000, 5), async (req
     network, walletAddress: walletAddress.trim(),
     status: 'pending', createdAt: Date.now(), reviewedAt: null, txid: null,
   });
-  addLedgerEntry(account, 'withdrawal_lock', 'spot', -amt, `Withdrawal request ${amt.toFixed(2)} USDT (5% fee: ${fee.toFixed(2)})`, requestId);
+  addLedgerEntry(account, 'withdrawal_lock', 'spot', -amt, `Withdrawal request ${amt.toFixed(2)} USDT (${feeLabel}: ${fee.toFixed(2)})`, requestId);
   await writeDemoAccounts(accounts);
-  await pushMessage(req.user.sub, "Withdrawal submitted", `Your withdrawal of ${netPayout.toFixed(2)} USDT (after 5% fee) is pending review.`);
+  await pushMessage(req.user.sub, "Withdrawal submitted", `Your withdrawal of ${netPayout.toFixed(2)} USDT (after ${feeLabel}) is pending review.`);
 
   sendNotificationEmail(me.email, me.name, "Withdrawal Request Submitted", "Withdrawal Request Submitted",
-    `<p>Your withdrawal request has been submitted and is pending review.</p><p><b>Amount:</b> ${amt.toFixed(2)} USDT<br/><b>Fee (5%):</b> ${fee.toFixed(2)} USDT<br/><b>You Receive:</b> ${netPayout.toFixed(2)} USDT<br/><b>Network:</b> ${network.toUpperCase()}<br/><b>Wallet:</b> ${walletAddress.trim()}<br/><b>Date:</b> ${new Date().toLocaleString()}</p><p>You will be notified once your withdrawal is processed.</p>`
+    `<p>Your withdrawal request has been submitted and is pending review.</p><p><b>Amount:</b> ${amt.toFixed(2)} USDT<br/><b>Fee (${feeLabel}):</b> ${fee.toFixed(2)} USDT<br/><b>You Receive:</b> ${netPayout.toFixed(2)} USDT<br/><b>Network:</b> ${network.toUpperCase()}<br/><b>Wallet:</b> ${walletAddress.trim()}<br/><b>Date:</b> ${new Date().toLocaleString()}</p><p>You will be notified once your withdrawal is processed.</p>`
   );
 
   res.json({ ok: true, requestId, amount: amt, fee, netPayout, status: 'pending', balance: account.balance });
