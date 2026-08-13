@@ -1926,6 +1926,28 @@ app.post("/api/admin/signal-release", requireAdmin, async (req, res) => {
   const cfg = await readSignalConfig();
   cfg.signalActive = !!active;
   await writeSignalConfig(cfg);
+
+  // When admin DEACTIVATES signals — mark all unsettled positions as timedOut, refund stakes
+  if (!active) {
+    try {
+      const accounts = await readDemoAccounts();
+      for (const account of Object.values(accounts)) {
+        if (!account.positions) continue;
+        for (const pos of account.positions) {
+          if (pos.settled || pos.cancelled || pos.timedOut) continue;
+          account.signalBalance = Math.round((account.signalBalance + pos.stake) * 100) / 100;
+          pos.settled = true;
+          pos.timedOut = true;
+          pos.won = null;
+          pos.profit = 0;
+        }
+      }
+      await writeDemoAccounts(accounts);
+    } catch (e) {
+      console.error("Signal deactivate — timedOut error:", e);
+    }
+  }
+
   res.json({ ok: true, signalActive: cfg.signalActive });
 });
 
