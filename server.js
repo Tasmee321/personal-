@@ -712,23 +712,46 @@ async function getLivePrice(pair) {
   throw new Error("Could not fetch live price for " + pair);
 }
 
-// Settles any demo position whose window has passed, using the REAL market price at settlement time —
-function settleDuePositions(account) {
+// Settles any demo position whose window has passed.
+// Checks active candle overrides — if override matches pair at settle time,
+// forces win/loss based on override direction vs user direction.
+async function settleDuePositions(account) {
   const now = Date.now();
+  let overrideData;
+  try { overrideData = await readCandleOverrides(); } catch (_) { overrideData = { items: [] }; }
+  const activeOverrides = (overrideData.items || []).filter(o => o.startsAt <= now && o.endsAt > now);
+
   for (const pos of account.positions) {
     if (pos.settled || pos.settleAt > now) continue;
     pos.settled = true;
     pos.settledAt = now;
-    pos.won = true;
+
+    const symbol = PAIR_TO_SYMBOL[pos.pair] || pos.pair.replace("/", "").toUpperCase();
+    const override = activeOverrides.find(o => o.symbol === symbol || o.symbol === pos.pair);
+
+    // If override active: user wins only if their direction matches override direction
+    // If no override: user always wins (default)
+    const userWins = override ? (pos.direction === override.direction) : true;
+
+    pos.won = userWins;
     const nudge = pos.entryPrice * (0.001 + Math.random() * 0.004);
-    pos.closePrice = pos.direction === "up"
-      ? +(pos.entryPrice + nudge).toFixed(8)
-      : +(pos.entryPrice - nudge).toFixed(8);
-    const originalBalance = account.signalBalance + pos.stake;
-    const rate = pos.isReferralBonus ? 0.01 : SIGNAL_PROFIT_RATE;
-    const profit = Math.round(originalBalance * rate * 100) / 100;
-    pos.profit = profit;
-    account.signalBalance = Math.round((account.signalBalance + pos.stake + profit) * 100) / 100;
+
+    if (userWins) {
+      pos.closePrice = pos.direction === "up"
+        ? +(pos.entryPrice + nudge).toFixed(8)
+        : +(pos.entryPrice - nudge).toFixed(8);
+      const originalBalance = account.signalBalance + pos.stake;
+      const rate = pos.isReferralBonus ? 0.01 : SIGNAL_PROFIT_RATE;
+      const profit = Math.round(originalBalance * rate * 100) / 100;
+      pos.profit = profit;
+      account.signalBalance = Math.round((account.signalBalance + pos.stake + profit) * 100) / 100;
+    } else {
+      // Loses — close price moves against user direction
+      pos.closePrice = pos.direction === "up"
+        ? +(pos.entryPrice - nudge).toFixed(8)
+        : +(pos.entryPrice + nudge).toFixed(8);
+      pos.profit = 0;
+    }
   }
 }
 
@@ -1422,7 +1445,7 @@ app.post("/api/messages/read-all", authenticate, async (req, res) => {
 app.get("/api/demo/account", authenticate, async (req, res) => {
   const accounts = await readDemoAccounts();
   const account = getDemoAccount(accounts, req.user.sub);
-  settleDuePositions(account);
+  await settleDuePositions(account);
   await writeDemoAccounts(accounts);
   res.json({
     ok: true,
@@ -2210,7 +2233,7 @@ app.post("/api/demo/referral-signal", authenticate, async (req, res) => {
 
     const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
-    settleDuePositions(account);
+    await settleDuePositions(account);
 
     const bonusSignals = account.referralBonusSignals || 0;
     if (bonusSignals <= 0) {
@@ -2284,7 +2307,7 @@ app.post("/api/demo/predict", authenticate, async (req, res) => {
 
     const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
-    settleDuePositions(account);
+    await settleDuePositions(account);
 
     if (account.signalBalance < 200) {
       await writeDemoAccounts(accounts);
@@ -2411,7 +2434,7 @@ app.post("/api/demo/spot/buy", authenticate, async (req, res) => {
 
     const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
-    settleDuePositions(account);
+    await settleDuePositions(account);
     if (spend > account.balance) {
       await writeDemoAccounts(accounts);
       return res.status(400).json({ error: "Insufficient demo balance." });
@@ -2442,7 +2465,7 @@ app.post("/api/demo/spot/sell", authenticate, async (req, res) => {
 
     const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
-    settleDuePositions(account);
+    await settleDuePositions(account);
     const held = account.holdings[pair] || 0;
     if (qty > held) {
       await writeDemoAccounts(accounts);
@@ -2482,7 +2505,7 @@ app.post("/api/demo/futures/open", authenticate, async (req, res) => {
 
     const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
-    settleDuePositions(account);
+    await settleDuePositions(account);
     if (marginAmount > account.balance) {
       await writeDemoAccounts(accounts);
       return res.status(400).json({ error: "Insufficient demo balance." });
