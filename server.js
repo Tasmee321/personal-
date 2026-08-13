@@ -94,21 +94,245 @@ async function verifyTRC20(txHash, expectedAddr, expectedAmt) {
 
 async function verifyEVM(txHash, expectedAddr, expectedAmt, network) {
   try {
-    const chainId = network === 'bep20' ? 56 : 1;
-    const contractAddr = USDT_CONTRACTS[network].toLowerCase();
-    const url = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=account&action=tokentx&contractaddress=${contractAddr}&address=${expectedAddr}&sort=desc&page=1&offset=50&apikey=${ETHERSCAN_API_KEY}`;
-    const resp = await fetch(url);
-    const data = await resp.json();
-    if (!data.result || !Array.isArray(data.result)) return { verified: false, reason: "Could not fetch token transfers." };
-    const tx = data.result.find(t => t.hash.toLowerCase() === txHash.toLowerCase());
-    if (!tx) return { verified: false, reason: "Transaction not found in USDT transfers." };
-    if (tx.to.toLowerCase() !== expectedAddr.toLowerCase()) return { verified: false, reason: "Receiver address does not match." };
-    const decimals = Number(tx.tokenDecimal || (network === 'bep20' ? 18 : 6));
-    const onChainAmt = Number(tx.value) / Math.pow(10, decimals);
-    if (Math.abs(onChainAmt - expectedAmt) > 0.5) return { verified: false, reason: `Amount mismatch: expected ${expectedAmt}, found ${onChainAmt}.` };
-    return { verified: true, onChainAmount: onChainAmt };
+    // ERC20 (Ethereum) — existing Etherscan V2 API
+    if (network === "erc20") {
+      const chainId = 1;
+      const contractAddr = USDT_CONTRACTS.erc20.toLowerCase();
+
+      const url =
+        `https://api.etherscan.io/v2/api` +
+        `?chainid=${chainId}` +
+        `&module=account` +
+        `&action=tokentx` +
+        `&contractaddress=${contractAddr}` +
+        `&address=${expectedAddr}` +
+        `&sort=desc` +
+        `&page=1` +
+        `&offset=50` +
+        `&apikey=${ETHERSCAN_API_KEY}`;
+
+      const resp = await fetch(url);
+      const data = await resp.json();
+
+      if (!Array.isArray(data.result)) {
+        console.error("Etherscan ERC20 API error:", data);
+        return {
+          verified: false,
+          reason: `Could not fetch token transfers: ${data.result || data.message || "Unknown API error"}`
+        };
+      }
+
+      const tx = data.result.find(
+        t => t.hash?.toLowerCase() === txHash.toLowerCase()
+      );
+
+      if (!tx) {
+        return {
+          verified: false,
+          reason: "Transaction not found in USDT transfers."
+        };
+      }
+
+      if (tx.to?.toLowerCase() !== expectedAddr.toLowerCase()) {
+        return {
+          verified: false,
+          reason: "Receiver address does not match."
+        };
+      }
+
+      const decimals = Number(tx.tokenDecimal || 6);
+      const onChainAmt =
+        Number(tx.value) / Math.pow(10, decimals);
+
+      if (Math.abs(onChainAmt - expectedAmt) > 0.5) {
+        return {
+          verified: false,
+          reason: `Amount mismatch: expected ${expectedAmt}, found ${onChainAmt}.`
+        };
+      }
+
+      return {
+        verified: true,
+        onChainAmount: onChainAmt
+      };
+    }
+
+    // BEP20 (BNB Smart Chain)
+    // Uses public BSC JSON-RPC — no second API key required.
+    if (network === "bep20") {
+      const BSC_RPC_URLS = [
+        "https://bsc-dataseed.binance.org/",
+        "https://bsc-dataseed1.binance.org/",
+        "https://bsc-dataseed2.binance.org/"
+      ];
+
+      const TRANSFER_TOPIC =
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a8df523b3ef";
+
+      let receipt = null;
+      let latestBlock = null;
+      let lastRpcError = null;
+
+      for (const rpcUrl of BSC_RPC_URLS) {
+        try {
+          const response = await fetch(rpcUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              method: "eth_getTransactionReceipt",
+              params: [txHash]
+            })
+          });
+
+          const data = await response.json();
+
+          if (data.result) {
+            receipt = data.result;
+            break;
+          }
+
+          if (data.error) {
+            lastRpcError = data.error.message;
+          }
+        } catch (err) {
+          lastRpcError = err.message;
+        }
+      }
+
+      if (!receipt) {
+        return {
+          verified: false,
+          reason: lastRpcError
+            ? `Could not fetch BSC transaction: ${lastRpcError}`
+            : "Transaction not found on BNB Smart Chain."
+        };
+      }
+
+      // Transaction failed on-chain
+      if (receipt.status !== "0x1") {
+        return {
+          verified: false,
+          reason: "BEP20 transaction failed on-chain."
+        };
+      }
+
+      const expectedContract =
+        USDT_CONTRACTS.bep20.toLowerCase();
+
+      const expectedReceiver =
+        expectedAddr.toLowerCase().replace(/^0x/, "");
+
+      // Find USDT Transfer event
+      const transferLog = (receipt.logs || []).find(log => {
+        if (!log.address) return false;
+        if (log.address.toLowerCase() !== expectedContract) return false;
+        if (!log.topics || log.topics.length < 3) return false;
+        if (log.topics[0].toLowerCase() !== TRANSFER_TOPIC) return false;
+
+        const toAddress =
+          log.topics[2].slice(-40).toLowerCase();
+
+        return toAddress === expectedReceiver;
+      });
+
+      if (!transferLog) {
+        return {
+          verified: false,
+          reason: "No matching BEP20 USDT transfer found."
+        };
+      }
+
+      // ERC20/BEP20 Transfer event:
+      // topics[2] = receiver
+      // data = token amount
+      const toAddress =
+        "0x" + transferLog.topics[2].slice(-40);
+
+      if (toAddress.toLowerCase() !== expectedAddr.toLowerCase()) {
+        return {
+          verified: false,
+          reason: "Receiver address does not match."
+        };
+      }
+
+      const rawValue = BigInt(transferLog.data);
+
+      // BSC USDT uses 18 decimals
+      const onChainAmt =
+        Number(rawValue) / Math.pow(10, 18);
+
+      if (Math.abs(onChainAmt - expectedAmt) > 0.5) {
+        return {
+          verified: false,
+          reason:
+            `Amount mismatch: expected ${expectedAmt}, found ${onChainAmt}.`
+        };
+      }
+
+      // Check confirmations
+      for (const rpcUrl of BSC_RPC_URLS) {
+        try {
+          const response = await fetch(rpcUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: 2,
+              method: "eth_blockNumber",
+              params: []
+            })
+          });
+
+          const data = await response.json();
+
+          if (data.result) {
+            latestBlock = parseInt(data.result, 16);
+            break;
+          }
+        } catch (err) {
+          // Try next RPC
+        }
+      }
+
+      if (latestBlock !== null && receipt.blockNumber) {
+        const txBlock = parseInt(receipt.blockNumber, 16);
+        const confirmations = latestBlock - txBlock + 1;
+
+        if (confirmations < MIN_CONFIRMATIONS.bep20) {
+          return {
+            verified: false,
+            reason:
+              `Transaction has only ${confirmations} confirmations. ` +
+              `${MIN_CONFIRMATIONS.bep20} required.`
+          };
+        }
+      }
+
+      return {
+        verified: true,
+        onChainAmount: onChainAmt
+      };
+    }
+
+    return {
+      verified: false,
+      reason: "Unsupported EVM network."
+    };
+
   } catch (err) {
-    return { verified: false, reason: "Could not verify — API error. Will be reviewed manually.", apiError: true };
+    console.error("EVM verification error:", err);
+
+    return {
+      verified: false,
+      reason: "Could not verify — API/RPC error. Will be reviewed manually.",
+      apiError: true
+    };
   }
 }
 
