@@ -648,8 +648,9 @@ const Signals = () => {
           {historyPositions.map((p) => {
             const coin = COINS.find((c) => c.pair === p.pair);
             const isCancelled = !!p.cancelled;
-            const statusLabel = isCancelled ? 'CANCELLED' : (p.won ? 'WIN' : 'LOSS');
-            const statusColor = isCancelled ? theme.faint : (p.won ? theme.up : theme.down);
+            const isTimedOut = !!p.timedOut;
+            const statusLabel = isTimedOut ? 'TIMED OUT' : isCancelled ? 'CANCELLED' : (p.won ? 'WIN' : 'LOSS');
+            const statusColor = isTimedOut ? '#f59e0b' : isCancelled ? theme.faint : (p.won ? theme.up : theme.down);
             return (
               <div key={p.id} style={{ ...glassCard(theme), padding: '14px', marginBottom: '10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
@@ -661,15 +662,18 @@ const Signals = () => {
                 </div>
                 <div style={{ color: theme.subtext, fontSize: '12px' }}>
                   Stake: {fmtUsd(p.stake)} USDT · Entry: {fmtUsd(p.entryPrice)}
-                  {!isCancelled && <> → Close: {fmtUsd(p.closePrice)}</>}
+                  {!isCancelled && !isTimedOut && <> → Close: {fmtUsd(p.closePrice)}</>}
                 </div>
-                {!isCancelled && (
+                {!isCancelled && !isTimedOut && (
                   <div style={{ color: p.won ? theme.up : theme.down, fontSize: '13px', fontWeight: 'bold', marginTop: '4px' }}>
                     {p.profit >= 0 ? '+' : ''}{fmtUsd(p.profit)} USDT
                   </div>
                 )}
                 {isCancelled && (
                   <div style={{ color: theme.faint, fontSize: '13px', marginTop: '4px' }}>Stake refunded</div>
+                )}
+                {isTimedOut && (
+                  <div style={{ color: '#f59e0b', fontSize: '13px', marginTop: '4px' }}>Signal ended by admin · Stake refunded</div>
                 )}
               </div>
             );
