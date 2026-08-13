@@ -2024,19 +2024,19 @@ app.delete("/api/admin/candle-override", requireAdmin, async (req, res) => {
   if (index >= 0 && index < overrides.length) overrides.splice(index, 1);
   await writeCandleOverrides(overrides);
 
-  // Cancel all unsettled signal positions across all users and refund stakes
+  // Mark all unsettled signal positions as timedOut — no win, no loss, no cancel, stake refunded
   try {
     const accounts = await readDemoAccounts();
     for (const account of Object.values(accounts)) {
       if (!account.positions) continue;
       for (const pos of account.positions) {
-        if (pos.settled || pos.cancelled) continue;
+        if (pos.settled || pos.cancelled || pos.timedOut) continue;
         if (pos.source !== "prediction" && pos.source !== "referral-signal") continue;
-        // Refund stake
+        // Refund stake silently
         account.signalBalance = Math.round((account.signalBalance + pos.stake) * 100) / 100;
         pos.settled = true;
-        pos.cancelled = true;
-        pos.cancelledByAdmin = true;
+        pos.timedOut = true;
+        pos.won = null;
         pos.profit = 0;
       }
     }
@@ -2346,6 +2346,16 @@ app.post("/api/demo/predict", authenticate, async (req, res) => {
     const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
     await settleDuePositions(account);
+
+    // BLOCK: Only one active (unsettled, uncancelled) signal allowed at a time
+    const activeSignal = (account.positions || []).find(p => !p.settled && !p.cancelled);
+    if (activeSignal) {
+      await writeDemoAccounts(accounts);
+      return res.status(400).json({
+        error: "You already have an active signal running. Please wait for it to complete or cancel it before placing a new one.",
+        activeSignalId: activeSignal.id
+      });
+    }
 
     if (account.signalBalance < 200) {
       await writeDemoAccounts(accounts);
