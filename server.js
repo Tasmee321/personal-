@@ -644,10 +644,31 @@ function consumeSecurityOtp(userId, purpose, otp) {
 
 async function getLivePrice(pair) {
   const symbol = PAIR_TO_SYMBOL[pair] || pair.replace("/", "").toUpperCase();
-  const response = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`);
-  if (!response.ok) throw new Error("Could not fetch live price for " + pair);
-  const data = await response.json();
-  return parseFloat(data.price);
+
+  // Try Bybit first (works on Render — Binance geo-blocks US servers)
+  try {
+    const bybitRes = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`, {
+      signal: AbortSignal.timeout(5000)
+    });
+    if (bybitRes.ok) {
+      const bybitData = await bybitRes.json();
+      const price = bybitData?.result?.list?.[0]?.lastPrice;
+      if (price) return parseFloat(price);
+    }
+  } catch (_) { /* fall through */ }
+
+  // Fallback: Binance (may fail on Render free tier due to geo-block)
+  try {
+    const binanceRes = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`, {
+      signal: AbortSignal.timeout(5000)
+    });
+    if (binanceRes.ok) {
+      const binanceData = await binanceRes.json();
+      return parseFloat(binanceData.price);
+    }
+  } catch (_) { /* fall through */ }
+
+  throw new Error("Could not fetch live price for " + pair);
 }
 
 // Settles any demo position whose window has passed, using the REAL market price at settlement time —
