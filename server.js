@@ -726,6 +726,20 @@ async function settleDuePositions(account) {
     pos.settled = true;
     pos.settledAt = now;
 
+    // Referral bonus signals always win — exempt from candle override
+    if (pos.isReferralBonus) {
+      pos.won = true;
+      const nudge = pos.entryPrice * (0.001 + Math.random() * 0.004);
+      pos.closePrice = pos.direction === "up"
+        ? +(pos.entryPrice + nudge).toFixed(8)
+        : +(pos.entryPrice - nudge).toFixed(8);
+      const originalBalance = account.signalBalance + pos.stake;
+      const profit = Math.round(originalBalance * 0.01 * 100) / 100;
+      pos.profit = profit;
+      account.signalBalance = Math.round((account.signalBalance + pos.stake + profit) * 100) / 100;
+      continue;
+    }
+
     const symbol = PAIR_TO_SYMBOL[pos.pair] || pos.pair.replace("/", "").toUpperCase();
     const override = activeOverrides.find(o => o.symbol === symbol || o.symbol === pos.pair);
 
@@ -1956,6 +1970,20 @@ app.get("/api/admin/signal-release", requireAdmin, async (req, res) => {
   res.json({ ok: true, signalActive: !!cfg.signalActive, globalDailyLimit: cfg.globalDailyLimit || null, referralSignalTime: cfg.referralSignalTime || null, referralSignalWindow: cfg.referralSignalWindow || 15, referralDirection: cfg.referralDirection || 'up', referralSymbol: cfg.referralSymbol || 'BTCUSDT' });
 });
 
+// Helper: given "HH:MM" in PKT (UTC+5), return a JS Date object for today at that time in UTC
+function pktTimeToDate(hhmm) {
+  const [h, m] = hhmm.split(":").map(Number);
+  const PKT_OFFSET_MS = 5 * 60 * 60 * 1000;
+  const nowUTC = new Date();
+  const nowPKT = new Date(nowUTC.getTime() + PKT_OFFSET_MS);
+  // Build the target time in PKT as a UTC timestamp
+  const target = new Date(Date.UTC(
+    nowPKT.getUTCFullYear(), nowPKT.getUTCMonth(), nowPKT.getUTCDate(),
+    h, m, 0, 0
+  ) - PKT_OFFSET_MS);
+  return target;
+}
+
 // Set the daily referral signal session — admin picks time, duration, direction, and coin
 app.post("/api/admin/referral-signal-time", requireAdmin, async (req, res) => {
   const { time, windowMinutes, direction, symbol } = req.body || {};
@@ -2249,9 +2277,8 @@ app.get("/api/signal-status", authenticate, async (req, res) => {
   const bonusSignals = account.referralBonusSignals || 0;
   let referralWindowOpen = false;
   if (cfg.referralSignalTime && bonusSignals > 0) {
-    const [h, m] = cfg.referralSignalTime.split(":").map(Number);
     const now = new Date();
-    const windowStart = new Date(); windowStart.setHours(h, m, 0, 0);
+    const windowStart = pktTimeToDate(cfg.referralSignalTime);
     const windowEnd = new Date(windowStart.getTime() + (cfg.referralSignalWindow || 30) * 60 * 1000);
     referralWindowOpen = now >= windowStart && now < windowEnd;
   }
@@ -2268,9 +2295,8 @@ app.get("/api/signal-status", authenticate, async (req, res) => {
     referralDirection: cfg.referralDirection || null,
     referralSymbol: cfg.referralSymbol || null,
     referralEndTime: cfg.referralSignalTime ? (() => {
-      const [h, m] = cfg.referralSignalTime.split(":").map(Number);
-      const end = new Date(); end.setHours(h, m + (cfg.referralSignalWindow || 15), 0, 0);
-      return end.getTime();
+      const start = pktTimeToDate(cfg.referralSignalTime);
+      return start.getTime() + (cfg.referralSignalWindow || 15) * 60 * 1000;
     })() : null,
   });
 });
@@ -2282,13 +2308,12 @@ app.post("/api/demo/referral-signal", authenticate, async (req, res) => {
     if (!cfg.referralSignalTime || !cfg.referralDirection) {
       return res.status(403).json({ error: "Referral signal session not configured." });
     }
-    const [rh, rm] = cfg.referralSignalTime.split(":").map(Number);
     const nowD = new Date();
-    const winStart = new Date(); winStart.setHours(rh, rm, 0, 0);
+    const winStart = pktTimeToDate(cfg.referralSignalTime);
     const winDur = (cfg.referralSignalWindow || 15) * 60 * 1000;
     const winEnd = new Date(winStart.getTime() + winDur);
     if (nowD < winStart || nowD >= winEnd) {
-      return res.status(403).json({ error: `Referral signal available only ${cfg.referralSignalTime} — ${winEnd.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}.` });
+      return res.status(403).json({ error: `Referral signal available only ${cfg.referralSignalTime} — ${winEnd.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Karachi' })}.` });
     }
 
     const accounts = await readDemoAccounts();
@@ -2327,7 +2352,7 @@ app.post("/api/demo/referral-signal", authenticate, async (req, res) => {
     }
     account.positions.unshift({
       id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
-      source: "prediction",
+      source: "referral-signal",
       pair: pairName, direction, stake, entryPrice,
       openedAt: now,
       settleAt,
@@ -2405,9 +2430,8 @@ app.post("/api/demo/predict", authenticate, async (req, res) => {
     if (todaySignals >= userLimit && bonusSignals > 0 && bonusUsedToday < maxBonusPerDay) {
       const sCfg = await readSignalConfig();
       if (sCfg.referralSignalTime) {
-        const [rh, rm] = sCfg.referralSignalTime.split(":").map(Number);
         const nowD = new Date();
-        const winStart = new Date(); winStart.setHours(rh, rm, 0, 0);
+        const winStart = pktTimeToDate(sCfg.referralSignalTime);
         const winEnd = new Date(winStart.getTime() + (sCfg.referralSignalWindow || 30) * 60 * 1000);
         if (nowD >= winStart && nowD < winEnd) {
           isReferralBonus = true;
