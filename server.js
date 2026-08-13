@@ -2244,6 +2244,37 @@ app.delete("/api/admin/user/:userId", requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Reset user account — zeroes all balances, positions, trades, deposits, withdrawals
+app.post("/api/admin/user/:userId/reset", requireAdmin, async (req, res) => {
+  const { userId } = req.params;
+  const users = await readUsers();
+  const user = users.find(u => u.id === userId);
+  if (!user) return res.status(404).json({ error: "User not found." });
+
+  const accounts = await readDemoAccounts();
+  // Completely reset the account to fresh state
+  accounts[userId] = {
+    balance: 0,
+    signalBalance: 0,
+    holdings: {},
+    positions: [],
+    futures: [],
+    trades: [],
+    ledger: [],
+    withdrawalRequests: [],
+    totalDeposited: 0,
+    totalRewarded: 0,
+    firstRewardClaimed: false,
+    referralBonusSignals: 0,
+    volumeData: { depositBase: 0, requiredVolume: 0, tradedVolume: 0, signalTradeCount: 0, firstDepositAt: null },
+    depositAddresses: accounts[userId]?.depositAddresses || {},
+    dailySignalLimit: accounts[userId]?.dailySignalLimit || null,
+  };
+  await writeDemoAccounts(accounts);
+  await pushMessage(userId, "Account Reset", "Your account has been reset by admin. All balances and history have been cleared.");
+  res.json({ ok: true });
+});
+
 app.get("/api/admin/user/:userId/team", requireAdmin, async (req, res) => {
   const users = await readUsers();
   const accounts = await readDemoAccounts();
