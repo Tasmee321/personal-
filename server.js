@@ -1419,7 +1419,7 @@ app.post("/api/demo/deposit/request", authenticate, rateLimit(60 * 1000, 5), asy
 
   // Get admin wallet address for this network
   const signalConfig = await dbRead('signal_config');
-  const wallets = signalConfig.depositWallets || {};
+  const wallets = signalConfig.adminWallets || {};
   const expectedAddr = wallets[network] || "";
 
   const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
