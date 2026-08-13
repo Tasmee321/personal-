@@ -642,29 +642,70 @@ function consumeSecurityOtp(userId, purpose, otp) {
   return { ok: true };
 }
 
+// CoinGecko coin ID map — used by getLivePrice fallback chain
+const COINGECKO_IDS = {
+  "BTCUSDT":  "bitcoin",    "ETHUSDT":  "ethereum",   "SOLUSDT":  "solana",
+  "BNBUSDT":  "binancecoin","XRPUSDT":  "ripple",     "ADAUSDT":  "cardano",
+  "LTCUSDT":  "litecoin",   "BCHUSDT":  "bitcoin-cash","TRXUSDT": "tron",
+  "DOGEUSDT": "dogecoin",   "AVAXUSDT": "avalanche-2", "DOTUSDT": "polkadot",
+  "MATICUSDT":"matic-network","LINKUSDT":"chainlink",  "UNIUSDT":  "uniswap",
+  "ATOMUSDT": "cosmos",     "SHIBUSDT": "shiba-inu",  "FILUSDT":  "filecoin",
+  "NEARUSDT": "near",       "APTUSDT":  "aptos",      "OPUSDT":   "optimism",
+};
+
+// Kraken symbol map (their format differs)
+const KRAKEN_SYMBOLS = {
+  "BTCUSDT": "XBTUSDT", "ETHUSDT": "ETHUSDT", "SOLUSDT": "SOLUSDT",
+  "XRPUSDT": "XRPUSDT", "ADAUSDT": "ADAUSDT", "LTCUSDT": "LTCUSDT",
+  "DOGEUSDT":"DOGEUSDT","DOTUSDT": "DOTUSDT", "LINKUSDT":"LINKUSDT",
+  "ATOMUSDT":"ATOMUSDT","NEARUSDT":"NEARUSDT","UNIUSDT": "UNIUSDT",
+};
+
 async function getLivePrice(pair) {
   const symbol = PAIR_TO_SYMBOL[pair] || pair.replace("/", "").toUpperCase();
 
-  // Try Bybit first (works on Render — Binance geo-blocks US servers)
+  // 1. OKX — no geo-block on Render
   try {
-    const bybitRes = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`, {
-      signal: AbortSignal.timeout(5000)
+    const okxSymbol = symbol.replace("USDT", "-USDT");
+    const res = await fetch(`https://www.okx.com/api/v5/market/ticker?instId=${okxSymbol}`, {
+      signal: AbortSignal.timeout(6000)
     });
-    if (bybitRes.ok) {
-      const bybitData = await bybitRes.json();
-      const price = bybitData?.result?.list?.[0]?.lastPrice;
+    if (res.ok) {
+      const d = await res.json();
+      const price = d?.data?.[0]?.last;
       if (price) return parseFloat(price);
     }
   } catch (_) { /* fall through */ }
 
-  // Fallback: Binance (may fail on Render free tier due to geo-block)
+  // 2. CoinGecko free API — reliable on Render
   try {
-    const binanceRes = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`, {
-      signal: AbortSignal.timeout(5000)
+    const geckoId = COINGECKO_IDS[symbol];
+    if (geckoId) {
+      const res = await fetch(
+        `https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd`,
+        { signal: AbortSignal.timeout(8000) }
+      );
+      if (res.ok) {
+        const d = await res.json();
+        const price = d?.[geckoId]?.usd;
+        if (price) return parseFloat(price);
+      }
+    }
+  } catch (_) { /* fall through */ }
+
+  // 3. Kraken — EU-based, Render can reach it
+  try {
+    const krakenSymbol = KRAKEN_SYMBOLS[symbol] || symbol;
+    const res = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${krakenSymbol}`, {
+      signal: AbortSignal.timeout(6000)
     });
-    if (binanceRes.ok) {
-      const binanceData = await binanceRes.json();
-      return parseFloat(binanceData.price);
+    if (res.ok) {
+      const d = await res.json();
+      const keys = Object.keys(d.result || {});
+      if (keys.length) {
+        const price = d.result[keys[0]]?.c?.[0];
+        if (price) return parseFloat(price);
+      }
     }
   } catch (_) { /* fall through */ }
 
