@@ -25,16 +25,12 @@ export async function initDb() {
       [k, defaults]
     );
   }
-  const scDefault = JSON.stringify({
-    signalActive: false, globalDailyLimit: 3,
-    referralSignalTime: "14:00", referralSignalWindow: 60,
-    referralDirection: "up", referralSymbol: "BTCUSDT",
-    adminWallets: { trc20: "", erc20: "", bep20: "" },
-  });
-  await pool.query(
-    `UPDATE kv_store SET value = $1::jsonb WHERE key = 'signal_config' AND value = '{}'::jsonb`,
-    [scDefault]
-  );
+  await pool.query(`
+    UPDATE kv_store
+    SET value = value || '{"adminWallets": {"trc20": "", "erc20": "", "bep20": ""}}'::jsonb
+    WHERE key = 'signal_config'
+    AND value->'adminWallets' IS NULL
+  `);
 }
 
 export async function dbRead(key) {
