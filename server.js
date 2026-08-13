@@ -95,25 +95,16 @@ async function verifyTRC20(txHash, expectedAddr, expectedAmt) {
 async function verifyEVM(txHash, expectedAddr, expectedAmt, network) {
   try {
     const chainId = network === 'bep20' ? 56 : 1;
-    const url = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=account&action=tokentx&sort=desc&page=1&offset=10&apikey=${ETHERSCAN_API_KEY}`;
-    const addrUrl = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=proxy&action=eth_getTransactionReceipt&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
-    const resp = await fetch(addrUrl);
-    const data = await resp.json();
-    if (!data.result || data.result.status === "0x0") return { verified: false, reason: "Transaction failed or not found." };
-    const receipt = data.result;
-    const logs = receipt.logs || [];
-    const transferTopic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
     const contractAddr = USDT_CONTRACTS[network].toLowerCase();
-    const usdtLog = logs.find(l =>
-      l.address?.toLowerCase() === contractAddr &&
-      l.topics?.[0] === transferTopic
-    );
-    if (!usdtLog) return { verified: false, reason: "No USDT transfer found in this transaction." };
-    const toAddrRaw = usdtLog.topics?.[2];
-    const toAddr = toAddrRaw ? "0x" + toAddrRaw.slice(26) : "";
-    if (toAddr.toLowerCase() !== expectedAddr.toLowerCase()) return { verified: false, reason: "Receiver address does not match." };
-    const decimals = network === 'bep20' ? 18 : 6;
-    const onChainAmt = parseInt(usdtLog.data, 16) / Math.pow(10, decimals);
+    const url = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=account&action=tokentx&contractaddress=${contractAddr}&sort=desc&page=1&offset=50&apikey=${ETHERSCAN_API_KEY}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (!data.result || !Array.isArray(data.result)) return { verified: false, reason: "Could not fetch token transfers." };
+    const tx = data.result.find(t => t.hash.toLowerCase() === txHash.toLowerCase());
+    if (!tx) return { verified: false, reason: "Transaction not found in USDT transfers." };
+    if (tx.to.toLowerCase() !== expectedAddr.toLowerCase()) return { verified: false, reason: "Receiver address does not match." };
+    const decimals = Number(tx.tokenDecimal || (network === 'bep20' ? 18 : 6));
+    const onChainAmt = Number(tx.value) / Math.pow(10, decimals);
     if (Math.abs(onChainAmt - expectedAmt) > 0.5) return { verified: false, reason: `Amount mismatch: expected ${expectedAmt}, found ${onChainAmt}.` };
     return { verified: true, onChainAmount: onChainAmt };
   } catch (err) {
