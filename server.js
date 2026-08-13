@@ -1984,29 +1984,67 @@ app.post("/api/admin/candle-override", requireAdmin, async (req, res) => {
   if (dur < 1 || dur > 30) return res.status(400).json({ error: "Duration must be 1-30 minutes." });
   const validSymbols = Object.values(PAIR_TO_SYMBOL);
   if (!validSymbols.includes(symbol)) return res.status(400).json({ error: "Invalid symbol." });
+
+  // FIX 1: Pakistan time (PKT = UTC+5) — convert HH:MM from PKT to UTC timestamp
   let startsAt;
   if (scheduledTime) {
     const [h, m] = scheduledTime.split(":").map(Number);
-    const d = new Date();
-    d.setHours(h, m, 0, 0);
-    if (d.getTime() < Date.now()) d.setDate(d.getDate() + 1);
-    startsAt = d.getTime();
+    const nowDate = new Date();
+    // Build today's date in PKT (UTC+5)
+    const pktOffsetMs = 5 * 60 * 60 * 1000;
+    const nowPKT = new Date(nowDate.getTime() + pktOffsetMs);
+    // Set scheduled HH:MM in PKT
+    const scheduledPKT = new Date(Date.UTC(
+      nowPKT.getUTCFullYear(), nowPKT.getUTCMonth(), nowPKT.getUTCDate(),
+      h, m, 0, 0
+    ) - pktOffsetMs); // convert back to UTC
+    // If time already passed today, schedule for tomorrow
+    if (scheduledPKT.getTime() < Date.now()) {
+      scheduledPKT.setUTCDate(scheduledPKT.getUTCDate() + 1);
+    }
+    startsAt = scheduledPKT.getTime();
   } else {
     startsAt = Date.now();
   }
+
   const now = Date.now();
-  const overrides = (await readCandleOverrides()).filter(o => o.endsAt > now);
+  // FIX 2: Only one active override allowed at a time — clear all existing before adding new
+  // This prevents multiple conflicting signals
+  const overrides = [];
   overrides.push({ symbol, direction, startsAt, endsAt: startsAt + dur * 60 * 1000 });
   await writeCandleOverrides(overrides);
-  res.json({ ok: true, override: overrides[overrides.length - 1] });
+  res.json({ ok: true, override: overrides[0] });
 });
 
+// FIX 3: Admin cancel override — also cancel all unsettled user positions and refund stakes
 app.delete("/api/admin/candle-override", requireAdmin, async (req, res) => {
   const { index } = req.body || {};
   const now = Date.now();
   const overrides = (await readCandleOverrides()).filter(o => o.endsAt > now);
   if (index >= 0 && index < overrides.length) overrides.splice(index, 1);
   await writeCandleOverrides(overrides);
+
+  // Cancel all unsettled signal positions across all users and refund stakes
+  try {
+    const accounts = await readDemoAccounts();
+    for (const account of Object.values(accounts)) {
+      if (!account.positions) continue;
+      for (const pos of account.positions) {
+        if (pos.settled || pos.cancelled) continue;
+        if (pos.source !== "prediction" && pos.source !== "referral-signal") continue;
+        // Refund stake
+        account.signalBalance = Math.round((account.signalBalance + pos.stake) * 100) / 100;
+        pos.settled = true;
+        pos.cancelled = true;
+        pos.cancelledByAdmin = true;
+        pos.profit = 0;
+      }
+    }
+    await writeDemoAccounts(accounts);
+  } catch (e) {
+    console.error("Admin cancel positions error:", e);
+  }
+
   res.json({ ok: true, overrides });
 });
 
