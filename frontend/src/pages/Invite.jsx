@@ -94,16 +94,17 @@ function MemberRow({ item, i, theme }) {
 }
 
 /* ── Requirement Card ── */
-function ReqCard({ req, levelInfo, currentLevel, theme }) {
+function ReqCard({ req, levelInfo, qualifiedTeamCount, currentLevel, theme }) {
   const achieved = currentLevel >= req.level;
   const isNext = currentLevel === req.level - 1;
 
   const qdCount = levelInfo?.qualifiedDirectCount || 0;
   const qdDeposit = levelInfo?.qualifiedTeamDeposit || 0;
+  const qtCount = qualifiedTeamCount || 0;
   const dlCounts = levelInfo?.directLevelCounts || {};
 
   const directOk = qdCount >= req.direct;
-  const depositOk = qdDeposit >= req.teamDeposit;
+  const depositOk = qtCount >= req.teamDeposit;
 
   const subLevelRows = Object.entries(req.directLevels || {}).map(([lvl, need]) => {
     const have = dlCounts[Number(lvl)] || 0;
@@ -140,7 +141,7 @@ function ReqCard({ req, levelInfo, currentLevel, theme }) {
 
       {/* Team members required */}
       {req.teamDeposit > 0 && (
-        <ReqRow label="Team Members" have={qdDeposit} need={req.teamDeposit} ok={depositOk} prefix="" theme={theme} />
+        <ReqRow label="Team Members" have={qtCount} need={req.teamDeposit} ok={depositOk} prefix="" theme={theme} />
       )}
 
       {/* Sub-level requirements */}
@@ -396,6 +397,7 @@ const Invite = () => {
               key={req.level}
               req={req}
               levelInfo={summary?.levelInfo}
+              qualifiedTeamCount={summary?.qualifiedTeamCount || 0}
               currentLevel={currentLevel}
               theme={theme}
             />
