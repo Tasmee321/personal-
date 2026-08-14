@@ -2283,6 +2283,31 @@ app.post("/api/admin/user/:userId/reset", requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+
+// User deposit history
+app.get("/api/admin/user/:userId/deposits", requireAdmin, async (req, res) => {
+  const accounts = await readDemoAccounts();
+  const account = accounts[req.params.userId] || {};
+  const ledger = (account.ledger || []).filter(e => e.type === 'deposit' || e.type === 'manual_credit');
+  res.json({ ok: true, deposits: ledger.sort((a,b) => b.at - a.at) });
+});
+
+// User withdrawal history
+app.get("/api/admin/user/:userId/withdrawals", requireAdmin, async (req, res) => {
+  const accounts = await readDemoAccounts();
+  const account = accounts[req.params.userId] || {};
+  const withdrawals = (account.withdrawalRequests || []).sort((a,b) => b.requestedAt - a.requestedAt);
+  res.json({ ok: true, withdrawals });
+});
+
+// User signal history
+app.get("/api/admin/user/:userId/signals", requireAdmin, async (req, res) => {
+  const accounts = await readDemoAccounts();
+  const account = accounts[req.params.userId] || {};
+  const positions = (account.positions || []).sort((a,b) => b.openedAt - a.openedAt);
+  res.json({ ok: true, signals: positions });
+});
+
 app.get("/api/admin/user/:userId/team", requireAdmin, async (req, res) => {
   const users = await readUsers();
   const accounts = await readDemoAccounts();
