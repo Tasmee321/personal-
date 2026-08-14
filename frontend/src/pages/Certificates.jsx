@@ -57,9 +57,9 @@ const CertFinCEN = ({ cert }) => {
   const red = '#BF0A30';
   const gold = '#C5A028';
   return (
-    <div style={{ fontFamily: '"Times New Roman", Georgia, serif', marginBottom: 28 }}>
-      <div style={{ background: '#FAFBFD', border: `4px double ${blue}`, borderRadius: 4, padding: 3, boxShadow: '0 6px 28px rgba(0,40,104,0.13)' }}>
-        <div style={{ border: `1.5px solid ${gold}`, padding: '28px 30px', position: 'relative', overflow: 'hidden', background: '#FAFBFD' }}>
+    <div style={{ fontFamily: '"Times New Roman", Georgia, serif', marginBottom: 28, width: '100%', boxSizing: 'border-box' }}>
+      <div style={{ background: '#FAFBFD', border: `4px double ${blue}`, borderRadius: 4, padding: 3, boxShadow: '0 6px 28px rgba(0,40,104,0.13)', width: '100%', boxSizing: 'border-box' }}>
+        <div style={{ border: `1.5px solid ${gold}`, padding: '20px 16px', position: 'relative', overflow: 'hidden', background: '#FAFBFD', boxSizing: 'border-box' }}>
           {/* Stars watermark */}
           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-evenly', alignItems: 'center', opacity: 0.025, pointerEvents: 'none', fontSize: 22, color: blue, lineHeight: 2.2 }}>
             {'★ ☆ ★ ☆ ★ ☆ ★ ☆ ★ ☆ ★ ☆ ★ ☆ ★ ☆ ★ ☆ ★ ☆ ★ ☆ ★ ☆ ★ ☆ ★ ☆ ★ ☆'.split(' ').map((s,i)=><span key={i}>{s} </span>)}
@@ -94,7 +94,7 @@ const CertFinCEN = ({ cert }) => {
               {cert.regNumber}
             </div>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: `1px solid ${gold}40`, paddingTop: 14, fontSize: 10, color: '#555' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: `1px solid ${gold}40`, paddingTop: 14, fontSize: 10, color: '#555', gap: 10 }}>
             <div>
               <div><b>Date of Registration:</b> {cert.issued}</div>
               <div><b>Renewal Date:</b> {cert.expires}</div>
@@ -102,11 +102,11 @@ const CertFinCEN = ({ cert }) => {
             </div>
             <div style={{ textAlign: 'center' }}>
               <Sig idx={0}/>
-              <div style={{ borderTop: '1px solid #aaa', paddingTop: 3, fontSize: 9, minWidth: 120 }}>Andrea M. Gacki</div>
+              <div style={{ borderTop: '1px solid #aaa', paddingTop: 3, fontSize: 9, minWidth: 100 }}>Andrea M. Gacki</div>
               <div style={{ fontSize: 8, color: '#999' }}>Director, FinCEN</div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <svg width="56" height="56" viewBox="0 0 56 56" style={{ transform: 'rotate(-14deg)', opacity: 0.35 }}>
+              <svg width="48" height="48" viewBox="0 0 56 56" style={{ transform: 'rotate(-14deg)', opacity: 0.35 }}>
                 <circle cx="28" cy="28" r="26" fill="none" stroke={blue} strokeWidth="2"/>
                 <circle cx="28" cy="28" r="21" fill="none" stroke={red} strokeWidth="1"/>
                 {[0,72,144,216,288].map((a,i)=>{const r=23.5,rad=a*Math.PI/180;return <text key={i} x={28+Math.cos(rad)*r} y={28+Math.sin(rad)*r} textAnchor="middle" fontSize="5" fill={blue} fontWeight="700">★</text>})}
@@ -129,10 +129,10 @@ const CertSEC = ({ cert }) => {
   const navy = '#1B2B5E';
   const accent = '#C8102E';
   return (
-    <div style={{ fontFamily: '"Times New Roman", Georgia, serif', marginBottom: 28 }}>
-      <div style={{ background: '#fff', border: `1px solid #C8B870`, boxShadow: '0 8px 32px rgba(27,43,94,0.12)', borderRadius: 3 }}>
+    <div style={{ fontFamily: '"Times New Roman", Georgia, serif', marginBottom: 28, width: '100%', boxSizing: 'border-box' }}>
+      <div style={{ background: '#fff', border: `1px solid #C8B870`, boxShadow: '0 8px 32px rgba(27,43,94,0.12)', borderRadius: 3, width: '100%', boxSizing: 'border-box' }}>
         {/* Top banner */}
-        <div style={{ background: `linear-gradient(135deg, ${navy} 0%, #2d4a8a 100%)`, padding: '18px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ background: `linear-gradient(135deg, ${navy} 0%, #2d4a8a 100%)`, padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
           <div>
             <div style={{ color: '#C8B870', fontSize: 8, letterSpacing: 4, textTransform: 'uppercase', marginBottom: 3 }}>United States of America</div>
             <div style={{ color: '#fff', fontSize: 14, fontWeight: 700, letterSpacing: 1 }}>Securities and Exchange Commission</div>
@@ -145,7 +145,7 @@ const CertSEC = ({ cert }) => {
             <circle cx="27" cy="26" r="5" fill="none" stroke="#C8B870" strokeWidth="1" opacity="0.5"/>
           </svg>
         </div>
-        <div style={{ padding: '24px 28px', background: '#FFFEF8' }}>
+        <div style={{ padding: '16px', background: '#FFFEF8', boxSizing: 'border-box' }}>
           {/* Diagonal watermark */}
           <div style={{ position: 'relative' }}>
             <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%,-50%) rotate(-28deg)', fontSize: 56, fontWeight: 900, color: `${navy}05`, letterSpacing: 8, whiteSpace: 'nowrap', pointerEvents: 'none', zIndex: 0 }}>SEC REGISTERED</div>
@@ -171,14 +171,14 @@ const CertSEC = ({ cert }) => {
                   </div>
                 ))}
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: '1px solid #C8B87030', paddingTop: 14, fontSize: 10, color: '#555' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: '1px solid #C8B87030', paddingTop: 14, fontSize: 10, color: '#555', gap: 10 }}>
                 <div>
                   <div><b>Effective Date:</b> {cert.issued}</div>
                   <div><b>Valid Through:</b> {cert.expires}</div>
                 </div>
                 <div style={{ textAlign: 'center' }}>
                   <Sig idx={1}/>
-                  <div style={{ borderTop: '1px solid #bbb', paddingTop: 3, fontSize: 9, minWidth: 130 }}>Gary T. Blumenthal, J.D.</div>
+                  <div style={{ borderTop: '1px solid #bbb', paddingTop: 3, fontSize: 9, minWidth: 110 }}>Gary T. Blumenthal, J.D.</div>
                   <div style={{ fontSize: 8, color: '#999' }}>Director, Division of Trading & Markets · SEC</div>
                 </div>
                 <svg width="52" height="52" viewBox="0 0 52 52" style={{ transform: 'rotate(-10deg)', opacity: 0.3 }}>
@@ -191,7 +191,7 @@ const CertSEC = ({ cert }) => {
             </div>
           </div>
         </div>
-        <div style={{ background: navy, padding: '6px 28px', display: 'flex', justifyContent: 'space-between', fontSize: 8, color: '#aab8d8' }}>
+        <div style={{ background: navy, padding: '6px 12px', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4, fontSize: 8, color: '#aab8d8' }}>
           <span>Official Electronic Record — sec.gov/cgi-bin/browse-edgar</span>
           <span>Form ATS-N · File No. {cert.regNumber}</span>
         </div>
@@ -206,9 +206,9 @@ const CertCFTC = ({ cert }) => {
   const lightGreen = '#2E7D32';
   const gold = '#B8860B';
   return (
-    <div style={{ fontFamily: '"Times New Roman", Georgia, serif', marginBottom: 28 }}>
-      <div style={{ border: `3px solid ${gold}`, borderRadius: 2, padding: 3, background: '#FEFEF8', boxShadow: '0 4px 22px rgba(27,94,32,0.1)' }}>
-        <div style={{ border: `1.5px solid ${green}`, padding: '26px 28px', position: 'relative', overflow: 'hidden', background: '#FEFEF8' }}>
+    <div style={{ fontFamily: '"Times New Roman", Georgia, serif', marginBottom: 28, width: '100%', boxSizing: 'border-box' }}>
+      <div style={{ border: `3px solid ${gold}`, borderRadius: 2, padding: 3, background: '#FEFEF8', boxShadow: '0 4px 22px rgba(27,94,32,0.1)', width: '100%', boxSizing: 'border-box' }}>
+        <div style={{ border: `1.5px solid ${green}`, padding: '18px 14px', position: 'relative', overflow: 'hidden', background: '#FEFEF8', boxSizing: 'border-box' }}>
           {/* Guilloché-style radial watermark */}
           <svg style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', opacity: 0.025, pointerEvents: 'none' }} width="300" height="300" viewBox="0 0 300 300">
             {Array.from({length: 16}).map((_,i)=><ellipse key={i} cx="150" cy="150" rx="130" ry="45" fill="none" stroke={green} strokeWidth="0.7" transform={`rotate(${i*22.5} 150 150)`}/>)}
@@ -242,7 +242,7 @@ const CertCFTC = ({ cert }) => {
           <div style={{ background: `${green}08`, border: `1px solid ${green}20`, borderRadius: 4, padding: '8px 14px', textAlign: 'center', marginBottom: 16 }}>
             <span style={{ fontFamily: 'monospace', fontSize: 12, color: green, fontWeight: 700, letterSpacing: 1.5 }}>{cert.regNumber}</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: `1px solid ${gold}40`, paddingTop: 14 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: `1px solid ${gold}40`, paddingTop: 14, gap: 10 }}>
             <div style={{ fontSize: 10, color: '#555' }}>
               <div><b>NFA ID:</b> 0543917</div>
               <div><b>Registration Date:</b> {cert.issued}</div>
@@ -251,7 +251,7 @@ const CertCFTC = ({ cert }) => {
             </div>
             <div style={{ textAlign: 'center' }}>
               <Sig idx={2}/>
-              <div style={{ borderTop: '1px solid #bbb', paddingTop: 3, fontSize: 9, minWidth: 130 }}>Rostin Behnam</div>
+              <div style={{ borderTop: '1px solid #bbb', paddingTop: 3, fontSize: 9, minWidth: 110 }}>Rostin Behnam</div>
               <div style={{ fontSize: 8, color: '#999' }}>Chairman, CFTC</div>
             </div>
             <svg width="54" height="54" viewBox="0 0 54 54" style={{ transform: 'rotate(-8deg)', opacity: 0.32 }}>
@@ -274,9 +274,9 @@ const CertOCC = ({ cert }) => {
   const gold = '#C9A84C';
   const cream = '#FFFEF5';
   return (
-    <div style={{ fontFamily: '"Times New Roman", Georgia, serif', marginBottom: 28 }}>
-      <div style={{ background: `linear-gradient(180deg, ${charcoal} 0%, #16213E 100%)`, padding: 3, borderRadius: 4, boxShadow: '0 8px 36px rgba(26,26,46,0.25)' }}>
-        <div style={{ background: cream, padding: '28px 30px', position: 'relative', overflow: 'hidden' }}>
+    <div style={{ fontFamily: '"Times New Roman", Georgia, serif', marginBottom: 28, width: '100%', boxSizing: 'border-box' }}>
+      <div style={{ background: `linear-gradient(180deg, ${charcoal} 0%, #16213E 100%)`, padding: 3, borderRadius: 4, boxShadow: '0 8px 36px rgba(26,26,46,0.25)', width: '100%', boxSizing: 'border-box' }}>
+        <div style={{ background: cream, padding: '18px 14px', position: 'relative', overflow: 'hidden', boxSizing: 'border-box' }}>
           {/* Grid watermark */}
           <div style={{ position: 'absolute', inset: 0, backgroundImage: `repeating-linear-gradient(0deg, ${gold}0A 0px, ${gold}0A 1px, transparent 1px, transparent 18px), repeating-linear-gradient(90deg, ${gold}0A 0px, ${gold}0A 1px, transparent 1px, transparent 18px)`, pointerEvents: 'none' }}/>
           {/* Embossed circle center */}
@@ -315,15 +315,15 @@ const CertOCC = ({ cert }) => {
             <div style={{ fontStyle: 'italic' }}>authorizing custody of digital assets, stablecoin operations,</div>
             <div style={{ fontStyle: 'italic' }}>and cryptocurrency exchange services for US and international clients</div>
           </div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
             {[['Charter Number', cert.regNumber],['Charter Type','Federal DA Trust'],['Issued',cert.issued],['Valid Through',cert.expires]].map(([l,v])=>(
-              <div key={l} style={{ flex: 1, background: `${charcoal}07`, border: `1px solid ${gold}30`, borderRadius: 4, padding: '7px 8px', textAlign: 'center' }}>
+              <div key={l} style={{ background: `${charcoal}07`, border: `1px solid ${gold}30`, borderRadius: 4, padding: '7px 8px', textAlign: 'center' }}>
                 <div style={{ fontSize: 7.5, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 3 }}>{l}</div>
                 <div style={{ fontSize: 10, fontWeight: 600, color: charcoal }}>{v}</div>
               </div>
             ))}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: `1px solid ${gold}40`, paddingTop: 14 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: `1px solid ${gold}40`, paddingTop: 14, gap: 10 }}>
             <div style={{ fontSize: 10, color: '#555' }}>
               <div><b>CAMELS Rating:</b> Confidential</div>
               <div><b>Exam Cycle:</b> Annual</div>
@@ -331,7 +331,7 @@ const CertOCC = ({ cert }) => {
             </div>
             <div style={{ textAlign: 'center' }}>
               <Sig idx={3}/>
-              <div style={{ borderTop: '1px solid #bbb', paddingTop: 3, fontSize: 9, minWidth: 130 }}>Michael J. Hsu</div>
+              <div style={{ borderTop: '1px solid #bbb', paddingTop: 3, fontSize: 9, minWidth: 110 }}>Michael J. Hsu</div>
               <div style={{ fontSize: 8, color: '#999' }}>Acting Comptroller of the Currency</div>
             </div>
             <svg width="56" height="56" viewBox="0 0 56 56" style={{ transform: 'rotate(-16deg)', opacity: 0.28 }}>
@@ -353,9 +353,9 @@ const CertNFA = ({ cert }) => {
   const teal = '#006064';
   const amber = '#FF8F00';
   return (
-    <div style={{ fontFamily: '"Times New Roman", Georgia, serif', marginBottom: 28 }}>
-      <div style={{ borderRadius: 6, overflow: 'hidden', boxShadow: '0 6px 28px rgba(0,96,100,0.14)', border: `1px solid ${teal}30` }}>
-        <div style={{ background: `linear-gradient(160deg, ${teal} 0%, #004D40 100%)`, padding: '20px 26px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div style={{ fontFamily: '"Times New Roman", Georgia, serif', marginBottom: 28, width: '100%', boxSizing: 'border-box' }}>
+      <div style={{ borderRadius: 6, overflow: 'hidden', boxShadow: '0 6px 28px rgba(0,96,100,0.14)', border: `1px solid ${teal}30`, width: '100%', boxSizing: 'border-box' }}>
+        <div style={{ background: `linear-gradient(160deg, ${teal} 0%, #004D40 100%)`, padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
           <div>
             <div style={{ color: '#80CBC4', fontSize: 8, letterSpacing: 3, textTransform: 'uppercase', marginBottom: 3 }}>Membership Certificate</div>
             <div style={{ color: '#fff', fontSize: 15, fontWeight: 700, letterSpacing: 0.5 }}>National Futures Association</div>
@@ -367,7 +367,7 @@ const CertNFA = ({ cert }) => {
             <text x="26" y="30" textAnchor="middle" fontSize="10" fill="white" fontWeight="800">NFA</text>
           </svg>
         </div>
-        <div style={{ background: '#FAFFFE', padding: '22px 26px' }}>
+        <div style={{ background: '#FAFFFE', padding: '16px', boxSizing: 'border-box' }}>
           <div style={{ textAlign: 'center', marginBottom: 14 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{cert.title}</div>
             <div style={{ fontSize: 8.5, color: '#999', letterSpacing: 1.5, marginTop: 4, textTransform: 'uppercase' }}>Pursuant to the Commodity Exchange Act</div>
@@ -393,14 +393,14 @@ const CertNFA = ({ cert }) => {
             <span style={{ fontSize: 10, color: '#666' }}>Reference: {cert.regNumber}</span>
             <span style={{ fontSize: 10, color: '#0a7c3e', fontWeight: 700, marginLeft: 'auto' }}>ACTIVE MEMBER</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: `1px solid ${teal}20`, paddingTop: 14 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: `1px solid ${teal}20`, paddingTop: 14, gap: 10 }}>
             <div style={{ fontSize: 10, color: '#555' }}>
               <div><b>Issue Date:</b> {cert.issued}</div>
               <div><b>Renewal Date:</b> {cert.expires}</div>
             </div>
             <div style={{ textAlign: 'center' }}>
               <Sig idx={4}/>
-              <div style={{ borderTop: '1px solid #bbb', paddingTop: 3, fontSize: 9, minWidth: 130 }}>Thomas W. Sexton III</div>
+              <div style={{ borderTop: '1px solid #bbb', paddingTop: 3, fontSize: 9, minWidth: 110 }}>Thomas W. Sexton III</div>
               <div style={{ fontSize: 8, color: '#999' }}>President & CEO, NFA</div>
             </div>
             <svg width="52" height="52" viewBox="0 0 52 52" style={{ transform: 'rotate(-12deg)', opacity: 0.3 }}>
@@ -421,14 +421,14 @@ const CertISO = ({ cert }) => {
   const cobalt = '#1565C0';
   const silver = '#546E7A';
   return (
-    <div style={{ fontFamily: '"Helvetica Neue", Arial, sans-serif', marginBottom: 28 }}>
-      <div style={{ background: '#fff', border: `1px solid #CFD8DC`, borderRadius: 6, boxShadow: '0 4px 24px rgba(21,101,192,0.09)', overflow: 'hidden' }}>
+    <div style={{ fontFamily: '"Helvetica Neue", Arial, sans-serif', marginBottom: 28, width: '100%', boxSizing: 'border-box' }}>
+      <div style={{ background: '#fff', border: `1px solid #CFD8DC`, borderRadius: 6, boxShadow: '0 4px 24px rgba(21,101,192,0.09)', overflow: 'hidden', width: '100%', boxSizing: 'border-box' }}>
         {/* Left accent bar */}
         <div style={{ display: 'flex' }}>
           <div style={{ width: 8, background: `linear-gradient(180deg, ${cobalt} 0%, #0D47A1 100%)`, flexShrink: 0 }}/>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
             {/* Header */}
-            <div style={{ padding: '18px 24px 14px', borderBottom: '1px solid #ECEFF1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ padding: '14px 14px 12px', borderBottom: '1px solid #ECEFF1', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
               <div>
                 <div style={{ fontSize: 9.5, fontWeight: 700, color: cobalt, letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4 }}>International Organization for Standardization</div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#222' }}>ISO/IEC 27001:2022</div>
@@ -440,10 +440,10 @@ const CertISO = ({ cert }) => {
                 <div style={{ fontSize: 8, color: '#bbb' }}>ANAB Cert. No. 0448</div>
               </div>
             </div>
-            <div style={{ padding: '18px 24px' }}>
+            <div style={{ padding: '14px', boxSizing: 'border-box' }}>
               <div style={{ textAlign: 'center', marginBottom: 14 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 4 }}>{cert.title}</div>
-                <div style={{ display: 'inline-block', background: `${cobalt}0E`, border: `1px solid ${cobalt}22`, borderRadius: 3, padding: '3px 12px', fontSize: 9, color: cobalt, letterSpacing: 1 }}>CERTIFICATION NO. {cert.regNumber}</div>
+                <div style={{ display: 'inline-block', background: `${cobalt}0E`, border: `1px solid ${cobalt}22`, borderRadius: 3, padding: '3px 12px', fontSize: 9, color: cobalt, letterSpacing: 1, wordBreak: 'break-all' }}>CERTIFICATION NO. {cert.regNumber}</div>
               </div>
               <div style={{ fontSize: 12, textAlign: 'center', color: '#333', lineHeight: 1.8, marginBottom: 14 }}>
                 <div style={{ color: '#777', marginBottom: 4 }}>This is to certify that the organization</div>
@@ -454,7 +454,7 @@ const CertISO = ({ cert }) => {
                 <div style={{ fontWeight: 700, color: cobalt }}>ISO/IEC 27001:2022</div>
                 <div>covering: Digital Asset Exchange, Custody, and Trading Platform Operations</div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 7, marginBottom: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7, marginBottom: 14 }}>
                 {[['Audit Body','Deloitte & Touche LLP'],['Certificate No.',cert.regNumber],['Initial Certification',cert.issued],['Surveillance Audit','Annually'],['Valid Until',cert.expires],['Scope','Full Platform']].map(([l,v])=>(
                   <div key={l} style={{ borderLeft: `3px solid ${cobalt}30`, paddingLeft: 8 }}>
                     <div style={{ fontSize: 7.5, color: '#999', textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 2 }}>{l}</div>
@@ -462,14 +462,14 @@ const CertISO = ({ cert }) => {
                   </div>
                 ))}
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: '1px solid #ECEFF1', paddingTop: 12 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: '1px solid #ECEFF1', paddingTop: 12, gap: 10 }}>
                 <div style={{ fontSize: 9, color: '#777' }}>
                   <div>Conformity assessed per ISO/IEC 17021-1:2015</div>
                   <div style={{ color: '#0a7c3e', fontWeight: 700, marginTop: 2 }}>● Certificate Status: VALID</div>
                 </div>
                 <div style={{ textAlign: 'center' }}>
                   <Sig idx={5}/>
-                  <div style={{ borderTop: '1px solid #ccc', paddingTop: 3, fontSize: 9, minWidth: 130 }}>Dr. Patricia L. Strand, CISA</div>
+                  <div style={{ borderTop: '1px solid #ccc', paddingTop: 3, fontSize: 9, minWidth: 110 }}>Dr. Patricia L. Strand, CISA</div>
                   <div style={{ fontSize: 8, color: '#aaa' }}>Lead Auditor · Deloitte & Touche LLP</div>
                 </div>
                 <svg width="48" height="48" viewBox="0 0 48 48" style={{ transform: 'rotate(-6deg)', opacity: 0.28 }}>
@@ -493,12 +493,12 @@ const CertSOC2 = ({ cert }) => {
   const accent = '#1565C0';
   const gold = '#D4AC0D';
   return (
-    <div style={{ fontFamily: '"Helvetica Neue", Arial, sans-serif', marginBottom: 28 }}>
-      <div style={{ background: '#fff', borderRadius: 6, overflow: 'hidden', boxShadow: '0 6px 30px rgba(30,58,95,0.13)' }}>
+    <div style={{ fontFamily: '"Helvetica Neue", Arial, sans-serif', marginBottom: 28, width: '100%', boxSizing: 'border-box' }}>
+      <div style={{ background: '#fff', borderRadius: 6, overflow: 'hidden', boxShadow: '0 6px 30px rgba(30,58,95,0.13)', width: '100%', boxSizing: 'border-box' }}>
         {/* Top stripe */}
         <div style={{ height: 5, background: `linear-gradient(90deg, ${slate}, ${accent}, ${slate})` }}/>
-        <div style={{ padding: '22px 26px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18, paddingBottom: 14, borderBottom: `1px solid #E8ECEF` }}>
+        <div style={{ padding: '16px', boxSizing: 'border-box' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18, paddingBottom: 14, borderBottom: `1px solid #E8ECEF`, gap: 10 }}>
             <div>
               <div style={{ fontSize: 9, fontWeight: 700, color: accent, letterSpacing: 3, textTransform: 'uppercase', marginBottom: 4 }}>Service Organization Control Report</div>
               <div style={{ fontSize: 14, fontWeight: 700, color: slate }}>SOC 2 Type II</div>
@@ -531,7 +531,7 @@ const CertSOC2 = ({ cert }) => {
               </div>
             ))}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: '1px solid #E8ECEF', paddingTop: 14 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: '1px solid #E8ECEF', paddingTop: 14, gap: 10 }}>
             <div style={{ fontSize: 9, color: '#666' }}>
               <div style={{ color: '#0a7c3e', fontWeight: 700, marginBottom: 4 }}>● No Exceptions Noted · Unqualified Opinion</div>
               <div>Engagement Partner: Douglas R. Coleman, CPA</div>
@@ -539,7 +539,7 @@ const CertSOC2 = ({ cert }) => {
             </div>
             <div style={{ textAlign: 'center' }}>
               <Sig idx={6}/>
-              <div style={{ borderTop: '1px solid #ccc', paddingTop: 3, fontSize: 9, minWidth: 130 }}>Douglas R. Coleman, CPA</div>
+              <div style={{ borderTop: '1px solid #ccc', paddingTop: 3, fontSize: 9, minWidth: 110 }}>Douglas R. Coleman, CPA</div>
               <div style={{ fontSize: 8, color: '#aaa' }}>Engagement Partner · Deloitte & Touche LLP</div>
             </div>
             <svg width="52" height="52" viewBox="0 0 52 52" style={{ transform: 'rotate(-14deg)', opacity: 0.28 }}>
@@ -625,7 +625,7 @@ const CERTS = [
 const Certificates = () => {
   const { theme } = useTheme();
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: theme.bg, color: theme.text }}>
+    <div style={{ minHeight: '100vh', backgroundColor: theme.bg, color: theme.text, overflowX: 'hidden', width: '100%', boxSizing: 'border-box' }}>
       {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: '14px',
@@ -642,7 +642,7 @@ const Certificates = () => {
         </div>
       </div>
 
-      <div style={{ padding: '20px', maxWidth: '560px', margin: '0 auto', paddingBottom: '50px' }}>
+      <div style={{ padding: '16px', maxWidth: '100%', boxSizing: 'border-box', overflowX: 'hidden', paddingBottom: '50px' }}>
         {/* Intro banner */}
         <div style={{
           backgroundColor: theme.card, border: `1px solid ${theme.cardBorder}`,
