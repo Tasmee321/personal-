@@ -882,7 +882,6 @@ This cannot be undone!`)) return;
                 </div>
               );
             })()}
-            )}
           </>
         )}
 
