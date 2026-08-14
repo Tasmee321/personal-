@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, ArrowLeftRight, Wallet, ArrowDownToLine, Users, Download, Headset, Globe, User, TrendingUp, TrendingDown, BarChart3, Info, Eye, EyeOff } from 'lucide-react';
+import { Search, ArrowLeftRight, Wallet, ArrowDownToLine, Users, Download, Headset, Globe, User, TrendingUp, TrendingDown, BarChart3, Info, Eye, EyeOff, Award } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
 import { CoinIcon } from '../components/CoinIcons';
 import { getToken } from '../utils/auth';
@@ -15,6 +15,7 @@ const QUICK_ACTIONS = [
   { to: '/invite', label: 'Invite', icon: Users, badgeKey: 'purple' },
   { to: '/download', label: 'Download', icon: Download, badgeKey: 'amber' },
   { to: '/legal/about', label: 'About', icon: Info, badgeKey: 'green' },
+  { to: '/certificates', label: 'Certificates', icon: Award, badgeKey: 'teal' },
 ];
 
 function fmtPrice(n) {
