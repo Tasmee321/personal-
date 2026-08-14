@@ -52,6 +52,11 @@ const AdminKyc = () => {
   const [teamTree, setTeamTree] = useState(null);
   const [teamUser, setTeamUser] = useState(null);
   const [loadingTree, setLoadingTree] = useState(false);
+  const [userDetailTab, setUserDetailTab] = useState('info');
+  const [userDeposits, setUserDeposits] = useState([]);
+  const [userWithdrawals, setUserWithdrawals] = useState([]);
+  const [userSignals, setUserSignals] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   const [depositWallets, setDepositWallets] = useState({ trc20: '', erc20: '', bep20: '' });
   const [pendingDeposits, setPendingDeposits] = useState([]);
@@ -312,6 +317,37 @@ This cannot be undone!`)) return;
     } catch (err) { setError(err.message); }
   };
 
+  const loadUserHistory = async (user, tab) => {
+    setUserDetailTab(tab);
+    if (tab === 'deposits' && userDeposits.length === 0) {
+      setLoadingHistory(true);
+      try {
+        const res = await fetch(`${API_URL}/api/admin/user/${user.id}/deposits`, { headers: adminHeaders(adminKey) });
+        const data = await res.json();
+        setUserDeposits(data.deposits || []);
+      } catch(e) {} finally { setLoadingHistory(false); }
+    }
+    if (tab === 'withdrawals' && userWithdrawals.length === 0) {
+      setLoadingHistory(true);
+      try {
+        const res = await fetch(`${API_URL}/api/admin/user/${user.id}/withdrawals`, { headers: adminHeaders(adminKey) });
+        const data = await res.json();
+        setUserWithdrawals(data.withdrawals || []);
+      } catch(e) {} finally { setLoadingHistory(false); }
+    }
+    if (tab === 'signals' && userSignals.length === 0) {
+      setLoadingHistory(true);
+      try {
+        const res = await fetch(`${API_URL}/api/admin/user/${user.id}/signals`, { headers: adminHeaders(adminKey) });
+        const data = await res.json();
+        setUserSignals(data.signals || []);
+      } catch(e) {} finally { setLoadingHistory(false); }
+    }
+    if (tab === 'tree') {
+      loadTeam(user);
+    }
+  };
+
   const loadTeam = async (user) => {
     setLoadingTree(true);
     try {
@@ -555,7 +591,7 @@ This cannot be undone!`)) return;
                 <tbody>
                   {filteredUsers.map(u => (
                     <tr key={u.id} style={{ borderBottom: `1px solid ${theme.cardBorder}`, cursor: 'pointer' }}
-                      onClick={() => { setSelectedUser(u); setNewLevel(String(u.level || 0)); setNewLimit(String(u.dailySignalLimit || 3)); }}>
+                      onClick={() => { setSelectedUser(u); setNewLevel(String(u.level || 0)); setNewLimit(String(u.dailySignalLimit || 3)); setUserDetailTab('info'); setUserDeposits([]); setUserWithdrawals([]); setUserSignals([]); setTeamTree(null); }}>
                       <td style={{ padding: '10px 8px', fontFamily: 'monospace', fontSize: '12px' }}>{u.uid}</td>
                       <td style={{ padding: '10px 8px', fontWeight: '600' }}>{u.name}</td>
                       <td style={{ padding: '10px 8px', color: theme.subtext }}>{u.email}</td>
@@ -596,7 +632,25 @@ This cannot be undone!`)) return;
             <button onClick={() => setSelectedUser(null)} style={{ background: 'none', border: 'none', color: theme.primary, cursor: 'pointer', fontSize: '13px', fontWeight: '600', marginBottom: '16px', padding: 0 }}>
               ← Back to Users
             </button>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            {/* Detail tabs */}
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', flexWrap: 'wrap' }}>
+              {[
+                { key: 'info', label: 'Info & Actions' },
+                { key: 'deposits', label: 'Deposit History' },
+                { key: 'withdrawals', label: 'Withdrawal History' },
+                { key: 'signals', label: 'Signal History' },
+                { key: 'tree', label: 'Team Tree' },
+              ].map(t => (
+                <button key={t.key} onClick={() => loadUserHistory(selectedUser, t.key)} style={{
+                  padding: '6px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600',
+                  backgroundColor: userDetailTab === t.key ? theme.primary : theme.card,
+                  color: userDetailTab === t.key ? '#fff' : theme.text,
+                }}>{t.label}</button>
+              ))}
+            </div>
+
+            {/* INFO & ACTIONS TAB */}
+            {userDetailTab === 'info' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div style={card}>
                 <div style={{ fontWeight: 'bold', fontSize: '16px', marginBottom: '4px' }}>{selectedUser.name}</div>
                 <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '16px' }}>{selectedUser.email} · UID {selectedUser.uid}</div>
@@ -702,7 +756,80 @@ This cannot be undone!`)) return;
               </div>
             </div>
 
-            {teamTree && teamUser && teamUser.id === selectedUser.id && (() => {
+            </div>}
+
+            {/* DEPOSIT HISTORY TAB */}
+            {userDetailTab === 'deposits' && (
+              <div style={card}>
+                <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '14px' }}>Deposit History</div>
+                {loadingHistory && <div style={{ color: theme.faint, textAlign: 'center', padding: '30px' }}>Loading...</div>}
+                {!loadingHistory && userDeposits.length === 0 && <div style={{ color: theme.faint, textAlign: 'center', padding: '30px' }}>No deposits found</div>}
+                {!loadingHistory && userDeposits.map((d, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme.cardBorder}` }}>
+                    <div>
+                      <div style={{ fontWeight: '600', fontSize: '13px' }}>{d.type === 'manual_credit' ? 'Manual Credit' : 'Deposit'}</div>
+                      <div style={{ fontSize: '11px', color: theme.faint }}>{d.at ? new Date(d.at).toLocaleString('en-GB', { timeZone: 'Asia/Karachi' }) : '-'}</div>
+                      {d.note && <div style={{ fontSize: '11px', color: theme.subtext }}>{d.note}</div>}
+                    </div>
+                    <div style={{ fontWeight: 'bold', color: theme.up, fontSize: '14px' }}>+${d.amount?.toLocaleString()}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* WITHDRAWAL HISTORY TAB */}
+            {userDetailTab === 'withdrawals' && (
+              <div style={card}>
+                <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '14px' }}>Withdrawal History</div>
+                {loadingHistory && <div style={{ color: theme.faint, textAlign: 'center', padding: '30px' }}>Loading...</div>}
+                {!loadingHistory && userWithdrawals.length === 0 && <div style={{ color: theme.faint, textAlign: 'center', padding: '30px' }}>No withdrawals found</div>}
+                {!loadingHistory && userWithdrawals.map((w, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme.cardBorder}` }}>
+                    <div>
+                      <div style={{ fontWeight: '600', fontSize: '13px' }}>{w.network || 'Withdrawal'} — <code style={{ fontSize: '11px' }}>{w.address?.slice(0,16)}...</code></div>
+                      <div style={{ fontSize: '11px', color: theme.faint }}>{w.requestedAt ? new Date(w.requestedAt).toLocaleString('en-GB', { timeZone: 'Asia/Karachi' }) : '-'}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: 'bold', color: theme.down, fontSize: '14px' }}>-${w.amount?.toLocaleString()}</div>
+                      <div style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', marginTop: '2px',
+                        backgroundColor: w.status === 'approved' ? theme.upSoft : w.status === 'rejected' ? theme.downSoft : `${theme.faint}22`,
+                        color: w.status === 'approved' ? theme.up : w.status === 'rejected' ? theme.down : theme.faint,
+                        fontWeight: '700'
+                      }}>{(w.status || 'pending').toUpperCase()}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* SIGNAL HISTORY TAB */}
+            {userDetailTab === 'signals' && (
+              <div style={card}>
+                <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '14px' }}>Signal History</div>
+                {loadingHistory && <div style={{ color: theme.faint, textAlign: 'center', padding: '30px' }}>Loading...</div>}
+                {!loadingHistory && userSignals.length === 0 && <div style={{ color: theme.faint, textAlign: 'center', padding: '30px' }}>No signals found</div>}
+                {!loadingHistory && userSignals.map((s, i) => {
+                  const statusLabel = s.timedOut ? 'TIMED OUT' : s.cancelled ? 'CANCELLED' : !s.settled ? 'ACTIVE' : s.won ? 'WIN' : 'LOSS';
+                  const statusColor = s.timedOut ? '#f59e0b' : s.cancelled ? theme.faint : !s.settled ? theme.primary : s.won ? theme.up : theme.down;
+                  return (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme.cardBorder}` }}>
+                      <div>
+                        <div style={{ fontWeight: '600', fontSize: '13px' }}>{s.pair} — <span style={{ color: s.direction === 'up' ? theme.up : theme.down }}>{s.direction?.toUpperCase()}</span></div>
+                        <div style={{ fontSize: '11px', color: theme.faint }}>{s.openedAt ? new Date(s.openedAt).toLocaleString('en-GB', { timeZone: 'Asia/Karachi' }) : '-'}</div>
+                        <div style={{ fontSize: '11px', color: theme.subtext }}>Stake: ${s.stake} · Entry: ${s.entryPrice?.toLocaleString()}</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontWeight: 'bold', color: statusColor, fontSize: '13px' }}>{statusLabel}</div>
+                        {s.won && <div style={{ fontSize: '12px', color: theme.up }}>+${s.profit}</div>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* TEAM TREE TAB */}
+            {userDetailTab === 'tree' && teamTree && teamUser && teamUser.id === selectedUser.id && (() => {
               const countAll = (nodes) => nodes.reduce((s, n) => s + 1 + countAll(n.children || []), 0);
               const totalMembers = countAll(teamTree);
               const directCount = teamTree.length;
@@ -757,6 +884,7 @@ This cannot be undone!`)) return;
                 </div>
               );
             })()}
+            )}
           </>
         )}
 
