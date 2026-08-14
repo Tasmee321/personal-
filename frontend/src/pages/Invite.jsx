@@ -138,9 +138,9 @@ function ReqCard({ req, levelInfo, currentLevel, theme }) {
       {/* Direct qualified */}
       <ReqRow label="Qualified Direct" have={qdCount} need={req.direct} ok={directOk} theme={theme} />
 
-      {/* Team deposit */}
+      {/* Team members required */}
       {req.teamDeposit > 0 && (
-        <ReqRow label="Team Deposit" have={qdDeposit} need={req.teamDeposit} ok={depositOk} prefix="$" theme={theme} />
+        <ReqRow label="Team Members" have={qdDeposit} need={req.teamDeposit} ok={depositOk} prefix="" theme={theme} />
       )}
 
       {/* Sub-level requirements */}
@@ -424,8 +424,8 @@ const Invite = () => {
                 </div>
                 {req.teamDeposit > 0 && (
                   <div>
-                    <div style={{ fontSize: '11px', color: theme.faint }}>Team Deposit</div>
-                    <div style={{ fontSize: '15px', fontWeight: '700', color: theme.text }}>${req.teamDeposit.toLocaleString()}</div>
+                    <div style={{ fontSize: '11px', color: theme.faint }}>Team Members</div>
+                    <div style={{ fontSize: '15px', fontWeight: '700', color: theme.text }}>{req.teamDeposit.toLocaleString()}</div>
                   </div>
                 )}
                 {Object.entries(req.directLevels || {}).map(([lvl, cnt]) => (
