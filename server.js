@@ -2380,12 +2380,18 @@ app.get("/api/admin/user/:userId/team", requireAdmin, async (req, res) => {
     const directs = users.filter(u => u.referredByUid === uid);
     return directs.map(d => {
       const acct = accounts[d.id] || {};
+      const balance = Math.round(((acct.balance || 0) + (acct.signalBalance || 0)) * 100) / 100;
+      const isQualified = d.kyc?.status === 'certified' && balance >= TEAM_MEMBER_MIN_BALANCE;
+      const dlvl = calculateLevel(d.uid, users, accounts);
       return {
         id: d.id, uid: d.uid, name: d.name, email: d.email,
-        level: calculateLevel(d.uid, users, accounts).level,
+        level: dlvl.level,
+        levelInfo: dlvl,
         kycStatus: d.kyc?.status || 'not_started',
-        balance: Math.round(((acct.balance || 0) + (acct.signalBalance || 0)) * 100) / 100,
+        balance,
         totalDeposited: Math.round((acct.totalDeposited || 0) * 100) / 100,
+        isQualified,
+        minBalance: TEAM_MEMBER_MIN_BALANCE,
         children: buildTree(d.uid),
       };
     });
@@ -2393,7 +2399,50 @@ app.get("/api/admin/user/:userId/team", requireAdmin, async (req, res) => {
 
   const tree = buildTree(user.uid);
   const lvlInfo = calculateLevel(user.uid, users, accounts);
-  res.json({ ok: true, user: { id: user.id, uid: user.uid, name: user.name, email: user.email, level: lvlInfo.level, levelInfo: lvlInfo }, tree });
+
+  // Flat qualified/unqualified lists for summary panel
+  const teamFlat = getTeamMembers(user.uid, users, accounts);
+  const qualifiedDirect = teamFlat.filter(m => m.isDirect && m.isQualified);
+  const unqualifiedDirect = teamFlat.filter(m => m.isDirect && !m.isQualified);
+
+  // Per-level qualified member lists
+  const directByLevel = {};
+  for (const m of qualifiedDirect) {
+    const ml = m.level || 0;
+    for (let l = 1; l <= ml; l++) {
+      if (!directByLevel[l]) directByLevel[l] = [];
+      directByLevel[l].push({
+        uid: m.uid, name: m.name, joinedAt: m.createdAt,
+        balance: Math.round(((m.acct.balance || 0) + (m.acct.signalBalance || 0)) * 100) / 100,
+        totalDeposited: Math.round((m.acct.totalDeposited || 0) * 100) / 100,
+        isQualified: true, memberLevel: m.level || 0,
+      });
+    }
+  }
+
+  res.json({
+    ok: true,
+    user: { id: user.id, uid: user.uid, name: user.name, email: user.email, level: lvlInfo.level, levelInfo: lvlInfo },
+    tree,
+    levelRequirements: LEVEL_REQUIREMENTS,
+    minBalance: TEAM_MEMBER_MIN_BALANCE,
+    qualifiedDirectCount: qualifiedDirect.length,
+    unqualifiedDirectCount: unqualifiedDirect.length,
+    directByLevel,
+    qualifiedDirectList: qualifiedDirect.map(m => ({
+      uid: m.uid, name: m.name, joinedAt: m.createdAt,
+      balance: Math.round(((m.acct.balance || 0) + (m.acct.signalBalance || 0)) * 100) / 100,
+      totalDeposited: Math.round((m.acct.totalDeposited || 0) * 100) / 100,
+      isQualified: true, memberLevel: m.level || 0,
+    })),
+    unqualifiedDirectList: unqualifiedDirect.map(m => ({
+      uid: m.uid, name: m.name, joinedAt: m.createdAt,
+      balance: Math.round(((m.acct.balance || 0) + (m.acct.signalBalance || 0)) * 100) / 100,
+      totalDeposited: Math.round((m.acct.totalDeposited || 0) * 100) / 100,
+      isQualified: false, memberLevel: m.level || 0,
+      reason: m.kyc?.status !== 'certified' ? 'KYC not certified' : `Balance $${Math.round(((m.acct.balance || 0) + (m.acct.signalBalance || 0)) * 100) / 100} < $${TEAM_MEMBER_MIN_BALANCE}`,
+    })),
+  });
 });
 
 app.get("/api/signal-status", authenticate, async (req, res) => {
