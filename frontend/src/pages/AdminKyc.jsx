@@ -972,39 +972,7 @@ This cannot be undone!`)) return;
               </div>
             </div>
 
-            {/* Referral signal session */}
-            <div style={{ ...card, marginBottom: '16px' }}>
-              <div style={{ fontWeight: 'bold', fontSize: '13px', marginBottom: '10px' }}>Referral Signal Session</div>
-              <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '10px' }}>
-                Set the daily referral signal. Users with bonus signals just click one button — direction, coin, and settle time are all auto from here.
-              </div>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '8px' }}>
-                <select value={referralSymbol} onChange={(e) => setReferralSymbol(e.target.value)} style={{ ...inputStyle, width: 'auto' }}>
-                  {['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','ADAUSDT','DOGEUSDT','LTCUSDT'].map(s => (
-                    <option key={s} value={s}>{s.replace('USDT','')}</option>
-                  ))}
-                </select>
-                <select value={referralDirection} onChange={(e) => setReferralDirection(e.target.value)} style={{ ...inputStyle, width: 'auto' }}>
-                  <option value="up">UP</option>
-                  <option value="down">DOWN</option>
-                </select>
-                <input type="time" value={referralSignalTime} onChange={(e) => setReferralSignalTime(e.target.value)}
-                  style={{ ...inputStyle, width: '130px' }} title="Start time" />
-                <input type="number" min="5" max="120" value={referralSignalWindow} onChange={(e) => setReferralSignalWindow(e.target.value)}
-                  style={{ ...inputStyle, width: '70px' }} placeholder="min" />
-                <span style={{ fontSize: '12px', color: theme.subtext }}>min</span>
-                <button onClick={saveReferralSignalTime} style={btnPrimary}>Set</button>
-              </div>
-              {referralSignalTime && (
-                <div style={{ fontSize: '11px', color: theme.up, marginTop: '4px' }}>
-                  Daily session: <b>{referralSymbol.replace('USDT','')} {referralDirection.toUpperCase()}</b> from <b>{referralSignalTime}</b> to <b>{(() => {
-                    const [h, m] = referralSignalTime.split(':').map(Number);
-                    const end = new Date(); end.setHours(h, m + Number(referralSignalWindow), 0, 0);
-                    return end.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-                  })()}</b> — users click one button, trade auto-settles at end, always wins with 1% profit
-                </div>
-              )}
-            </div>
+            {/* Referral signal session — hardcoded 20:00-20:20 PKT on server, no UI needed */}
 
             {/* Referral bonus signals */}
             <div style={{ ...card, marginBottom: '16px' }}>
