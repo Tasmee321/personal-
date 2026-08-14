@@ -2490,19 +2490,14 @@ app.post("/api/demo/predict", authenticate, async (req, res) => {
     let isReferralBonus = false;
     if (todaySignals >= userLimit && bonusSignals > 0 && bonusUsedToday < maxBonusPerDay) {
       const sCfg = await readSignalConfig();
-      {
-        const nowD = new Date();
-        const { start: winStart, end: winEnd } = getReferralWindow();
-        if (nowD >= winStart && nowD < winEnd) {
-          isReferralBonus = true;
-          account.referralBonusSignals = bonusSignals - 1;
-        } else {
-          await writeDemoAccounts(accounts);
-          return res.status(400).json({ error: `Bonus signal available only during referral window (${sCfg.referralSignalTime}). Try again at that time.` });
-        }
-      } else {
+      const nowD = new Date();
+      const { start: winStart, end: winEnd } = getReferralWindow();
+      if (nowD >= winStart && nowD < winEnd) {
         isReferralBonus = true;
         account.referralBonusSignals = bonusSignals - 1;
+      } else {
+        await writeDemoAccounts(accounts);
+        return res.status(400).json({ error: `Bonus signal available only 8:00 PM — 8:20 PM (PKT) daily.` });
       }
     }
 
