@@ -1055,18 +1055,72 @@ app.get("/api/invite/summary", authenticate, async (req, res) => {
   if (!me) return res.status(404).json({ error: "Account not found." });
 
   const referrer = me.referredByUid ? users.find((u) => u.uid === me.referredByUid) : null;
-  const team = users.filter((u) => u.referredByUid === me.uid);
+  const accounts = await readDemoAccounts();
+
+  // Full level calculation using existing calculateLevel()
+  const lvlInfo = calculateLevel(me.uid, users, accounts);
+
+  // All direct members with qualification status
+  const teamFull = getTeamMembers(me.uid, users, accounts);
+  const directMembers = teamFull.filter(m => m.isDirect);
+  const qualifiedDirect = directMembers.filter(m => m.isQualified);
+  const topUpUsers = teamFull.filter(m => (m.acct.totalDeposited || 0) > 0);
+
+  // Build per-level qualified direct list (direct members whose own level >= N)
+  // Level N qualified direct = direct member with m.level >= N
+  const directByLevel = {};
+  for (const m of qualifiedDirect) {
+    const mLevel = m.level || 0;
+    for (let l = 1; l <= mLevel; l++) {
+      if (!directByLevel[l]) directByLevel[l] = [];
+      directByLevel[l].push({ uid: m.uid, name: m.name, joinedAt: m.createdAt, balance: (m.acct.balance || 0) + (m.acct.signalBalance || 0), totalDeposited: m.acct.totalDeposited || 0, isQualified: m.isQualified, memberLevel: mLevel });
+    }
+  }
+
+  // All qualified direct members for level 1 display
+  const qualifiedDirectList = qualifiedDirect.map(m => ({
+    uid: m.uid, name: m.name, joinedAt: m.createdAt,
+    balance: (m.acct.balance || 0) + (m.acct.signalBalance || 0),
+    totalDeposited: m.acct.totalDeposited || 0,
+    isQualified: m.isQualified, memberLevel: m.level || 0,
+  }));
 
   res.json({
     ok: true,
     uid: me.uid,
     inviteCode: me.inviteCode,
     referrerUid: referrer ? referrer.uid : null,
-    teamMembers: team.length,
-    levelOneCount: team.length,
-    topUpUsers: 0,
-    teamRechargeAmount: 0,
-    invites: team.map((u) => ({ uid: u.uid, name: u.name, joinedAt: u.createdAt })),
+    // summary counts
+    teamMembers: teamFull.length,
+    qualifiedTeamCount: lvlInfo.qualifiedTeamCount,
+    topUpUsers: topUpUsers.length,
+    teamRechargeAmount: lvlInfo.qualifiedTeamDeposit,
+    // current achieved level
+    currentLevel: lvlInfo.level,
+    // level calculation details
+    levelInfo: {
+      qualifiedDirectCount: lvlInfo.qualifiedDirectCount,
+      qualifiedTeamDeposit: lvlInfo.qualifiedTeamDeposit,
+      directLevelCounts: lvlInfo.directLevelCounts,
+    },
+    // requirements list (all 10 levels)
+    levelRequirements: LEVEL_REQUIREMENTS,
+    // direct invites raw list (for Team Members drawer)
+    invites: directMembers.map(m => ({
+      uid: m.uid, name: m.name, joinedAt: m.createdAt,
+      balance: (m.acct.balance || 0) + (m.acct.signalBalance || 0),
+      totalDeposited: m.acct.totalDeposited || 0,
+      isQualified: m.isQualified, memberLevel: m.level || 0,
+    })),
+    // qualified direct list (for Level N drawers)
+    qualifiedDirectList,
+    directByLevel,
+    // top-up users list
+    topUpList: topUpUsers.map(m => ({
+      uid: m.uid, name: m.name, joinedAt: m.createdAt,
+      totalDeposited: m.acct.totalDeposited || 0,
+      isQualified: m.isQualified,
+    })),
   });
 });
 
