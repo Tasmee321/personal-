@@ -1945,18 +1945,26 @@ app.post("/api/admin/signal-release", requireAdmin, async (req, res) => {
   if (!active) {
     try {
       const accounts = await readDemoAccounts();
-      for (const account of Object.values(accounts)) {
-        if (!account.positions) continue;
+      const affectedUserIds = [];
+      for (const [userId, account] of Object.entries(accounts)) {
+        if (!account || !Array.isArray(account.positions)) continue;
+        let userAffected = false;
         for (const pos of account.positions) {
           if (pos.settled || pos.cancelled || pos.timedOut) continue;
-          account.signalBalance = Math.round((account.signalBalance + pos.stake) * 100) / 100;
+          account.signalBalance = Math.round(((account.signalBalance || 0) + pos.stake) * 100) / 100;
           pos.settled = true;
           pos.timedOut = true;
           pos.won = null;
           pos.profit = 0;
+          userAffected = true;
         }
+        if (userAffected) affectedUserIds.push(userId);
       }
       await writeDemoAccounts(accounts);
+      // Notify each affected user so their frontend updates immediately on next poll
+      for (const userId of affectedUserIds) {
+        await pushMessage(userId, "Signal ended", "The admin has ended the current signal session. Your active signal was cancelled and your stake has been refunded.");
+      }
     } catch (e) {
       console.error("Signal deactivate — timedOut error:", e);
     }
