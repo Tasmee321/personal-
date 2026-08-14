@@ -51,6 +51,7 @@ const AdminKyc = () => {
   const [userFilter, setUserFilter] = useState('all');
   const [teamTree, setTeamTree] = useState(null);
   const [teamUser, setTeamUser] = useState(null);
+  const [teamData, setTeamData] = useState(null);
   const [loadingTree, setLoadingTree] = useState(false);
   const [userDetailTab, setUserDetailTab] = useState('info');
   const [userDeposits, setUserDeposits] = useState([]);
@@ -356,6 +357,7 @@ This cannot be undone!`)) return;
       if (!res.ok) throw new Error(data.error);
       setTeamTree(data.tree);
       setTeamUser(data.user);
+      setTeamData(data);
     } catch (err) { setError(err.message); }
     finally { setLoadingTree(false); }
   };
@@ -591,7 +593,7 @@ This cannot be undone!`)) return;
                 <tbody>
                   {filteredUsers.map(u => (
                     <tr key={u.id} style={{ borderBottom: `1px solid ${theme.cardBorder}`, cursor: 'pointer' }}
-                      onClick={() => { setSelectedUser(u); setNewLevel(String(u.level || 0)); setNewLimit(String(u.dailySignalLimit || 3)); setUserDetailTab('info'); setUserDeposits([]); setUserWithdrawals([]); setUserSignals([]); setTeamTree(null); }}>
+                      onClick={() => { setSelectedUser(u); setNewLevel(String(u.level || 0)); setNewLimit(String(u.dailySignalLimit || 3)); setUserDetailTab('info'); setUserDeposits([]); setUserWithdrawals([]); setUserSignals([]); setTeamTree(null); setTeamData(null); setTeamUser(null); }}>
                       <td style={{ padding: '10px 8px', fontFamily: 'monospace', fontSize: '12px' }}>{u.uid}</td>
                       <td style={{ padding: '10px 8px', fontWeight: '600' }}>{u.name}</td>
                       <td style={{ padding: '10px 8px', color: theme.subtext }}>{u.email}</td>
@@ -683,16 +685,131 @@ This cannot be undone!`)) return;
                     {selectedUser.closed ? 'Blocked' : 'Active'}
                   </span>
                 </div>
-                {selectedUser.levelInfo && (
-                  <div style={{ marginTop: '12px', padding: '10px 12px', borderRadius: '10px', backgroundColor: theme.card, border: `1px solid ${theme.faint}22` }}>
-                    <div style={{ fontSize: '11px', color: theme.subtext, marginBottom: '6px' }}>Team Stats</div>
-                    <div style={{ display: 'flex', gap: '14px', fontSize: '12px', flexWrap: 'wrap' }}>
-                      <span>Direct: <b style={{ color: theme.primary }}>{selectedUser.levelInfo.directCount}</b> <span style={{ color: theme.faint, fontSize: '10px' }}>({selectedUser.levelInfo.qualifiedDirectCount} qualified)</span></span>
-                      <span>Team: <b style={{ color: theme.primary }}>{selectedUser.levelInfo.teamCount}</b> <span style={{ color: theme.faint, fontSize: '10px' }}>({selectedUser.levelInfo.qualifiedTeamCount} qualified)</span></span>
-                      <span>Team Deposit: <b style={{ color: theme.up }}>${selectedUser.levelInfo.teamDeposit}</b></span>
+                {selectedUser.levelInfo && (() => {
+                  const li = selectedUser.levelInfo;
+                  const minBal = teamData?.minBalance || 200;
+                  const levelReqs = teamData?.levelRequirements || [];
+                  const dlCounts = li.directLevelCounts || {};
+                  const qdCount = li.qualifiedDirectCount || 0;
+                  const qdDeposit = li.qualifiedTeamDeposit || 0;
+                  const currentLv = selectedUser.level || 0;
+                  const nextReq = levelReqs.find(r => r.level === currentLv + 1);
+
+                  return (
+                    <div style={{ marginTop: '12px' }}>
+                      {/* Summary row */}
+                      <div style={{ padding: '10px 12px', borderRadius: '10px', backgroundColor: theme.bg, border: `1px solid ${theme.cardBorder}`, marginBottom: '8px' }}>
+                        <div style={{ fontSize: '11px', color: theme.subtext, fontWeight: '700', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Team Overview</div>
+                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', fontSize: '12px' }}>
+                          <span style={{ padding: '4px 10px', borderRadius: '6px', backgroundColor: theme.primarySoft }}>
+                            Direct: <b style={{ color: theme.primary }}>{li.directCount}</b>
+                          </span>
+                          <span style={{ padding: '4px 10px', borderRadius: '6px', backgroundColor: theme.upSoft }}>
+                            Qualified: <b style={{ color: theme.up }}>{qdCount}</b>
+                          </span>
+                          <span style={{ padding: '4px 10px', borderRadius: '6px', backgroundColor: theme.downSoft }}>
+                            Unqualified: <b style={{ color: theme.down }}>{li.directCount - qdCount}</b>
+                          </span>
+                          <span style={{ padding: '4px 10px', borderRadius: '6px', backgroundColor: theme.bg, border: `1px solid ${theme.cardBorder}` }}>
+                            Total Team: <b>{li.teamCount}</b>
+                          </span>
+                        </div>
+                        <div style={{ marginTop: '6px', fontSize: '11px', color: theme.faint }}>
+                          Min balance to qualify: <b style={{ color: theme.text }}>${minBal}</b> + KYC certified
+                        </div>
+                      </div>
+
+                      {/* Unqualified members warning */}
+                      {teamData?.unqualifiedDirectList?.length > 0 && (
+                        <div style={{ padding: '8px 12px', borderRadius: '8px', backgroundColor: theme.downSoft, border: `1px solid ${theme.down}33`, marginBottom: '8px' }}>
+                          <div style={{ fontSize: '11px', fontWeight: '700', color: theme.down, marginBottom: '4px' }}>
+                            ⚠ {teamData.unqualifiedDirectList.length} direct member(s) not counting toward levels
+                          </div>
+                          {teamData.unqualifiedDirectList.slice(0, 3).map(m => (
+                            <div key={m.uid} style={{ fontSize: '11px', color: theme.down, marginBottom: '2px' }}>
+                              UID {m.uid} · ${(m.balance || 0).toFixed(2)} bal · {m.reason}
+                            </div>
+                          ))}
+                          {teamData.unqualifiedDirectList.length > 3 && (
+                            <div style={{ fontSize: '11px', color: theme.down }}>+{teamData.unqualifiedDirectList.length - 3} more…</div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Level breakdown pills */}
+                      {levelReqs.length > 0 && (
+                        <div style={{ padding: '10px 12px', borderRadius: '10px', backgroundColor: theme.bg, border: `1px solid ${theme.cardBorder}`, marginBottom: '8px' }}>
+                          <div style={{ fontSize: '11px', color: theme.subtext, fontWeight: '700', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Level Breakdown</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                            {levelReqs.map(req => {
+                              const membersForLevel = teamData?.directByLevel?.[req.level] || [];
+                              const count = membersForLevel.length;
+                              const achieved = currentLv >= req.level;
+                              const isNext = currentLv === req.level - 1;
+                              return (
+                                <span key={req.level} style={{
+                                  padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '700',
+                                  border: achieved ? `1px solid ${theme.up}` : isNext ? `1px solid ${theme.primary}` : `1px solid ${theme.cardBorder}`,
+                                  backgroundColor: achieved ? theme.upSoft : isNext ? theme.primarySoft : theme.bg,
+                                  color: achieved ? theme.up : isNext ? theme.primary : theme.faint,
+                                  display: 'flex', alignItems: 'center', gap: '4px',
+                                }}>
+                                  {achieved && '✓ '}Lv{req.level}
+                                  <span style={{ backgroundColor: achieved ? theme.up : isNext ? theme.primary : theme.faint, color: 'white', borderRadius: '8px', padding: '0px 5px', fontSize: '10px' }}>{count}</span>
+                                </span>
+                              );
+                            })}
+                          </div>
+                          <div style={{ fontSize: '10px', color: theme.faint, marginTop: '6px' }}>Count = qualified directs meeting each level's requirement · Green = achieved · Blue = next target</div>
+                        </div>
+                      )}
+
+                      {/* Next level requirements */}
+                      {nextReq && (
+                        <div style={{ padding: '10px 12px', borderRadius: '10px', backgroundColor: theme.primarySoft, border: `1px solid ${theme.primary}33` }}>
+                          <div style={{ fontSize: '11px', fontWeight: '700', color: theme.primary, marginBottom: '6px' }}>Next: Level {nextReq.level} Requirements</div>
+                          {/* Qualified direct progress */}
+                          <div style={{ marginBottom: '6px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '2px' }}>
+                              <span style={{ color: theme.subtext }}>Qualified Direct</span>
+                              <span style={{ fontWeight: '700', color: qdCount >= nextReq.direct ? theme.up : theme.text }}>{qdCount} / {nextReq.direct}</span>
+                            </div>
+                            <div style={{ height: '4px', borderRadius: '2px', backgroundColor: `${theme.primary}22`, overflow: 'hidden' }}>
+                              <div style={{ height: '100%', borderRadius: '2px', backgroundColor: qdCount >= nextReq.direct ? theme.up : theme.primary, width: `${Math.min(100, (qdCount / nextReq.direct) * 100)}%` }} />
+                            </div>
+                          </div>
+                          {/* Team deposit progress */}
+                          {nextReq.teamDeposit > 0 && (
+                            <div style={{ marginBottom: '6px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '2px' }}>
+                                <span style={{ color: theme.subtext }}>Team Deposit</span>
+                                <span style={{ fontWeight: '700', color: qdDeposit >= nextReq.teamDeposit ? theme.up : theme.text }}>${qdDeposit.toLocaleString()} / ${nextReq.teamDeposit.toLocaleString()}</span>
+                              </div>
+                              <div style={{ height: '4px', borderRadius: '2px', backgroundColor: `${theme.primary}22`, overflow: 'hidden' }}>
+                                <div style={{ height: '100%', borderRadius: '2px', backgroundColor: qdDeposit >= nextReq.teamDeposit ? theme.up : theme.primary, width: `${Math.min(100, (qdDeposit / nextReq.teamDeposit) * 100)}%` }} />
+                              </div>
+                            </div>
+                          )}
+                          {/* Sub-level requirements */}
+                          {Object.entries(nextReq.directLevels || {}).map(([lvl, need]) => {
+                            const have = dlCounts[Number(lvl)] || 0;
+                            return (
+                              <div key={lvl} style={{ marginBottom: '6px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '2px' }}>
+                                  <span style={{ color: theme.subtext }}>Lv{lvl} Direct Members</span>
+                                  <span style={{ fontWeight: '700', color: have >= need ? theme.up : theme.text }}>{have} / {need}</span>
+                                </div>
+                                <div style={{ height: '4px', borderRadius: '2px', backgroundColor: `${theme.primary}22`, overflow: 'hidden' }}>
+                                  <div style={{ height: '100%', borderRadius: '2px', backgroundColor: have >= need ? theme.up : theme.primary, width: `${Math.min(100, (have / need) * 100)}%` }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
                 <div style={{ marginTop: '16px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                   <button onClick={() => loadTeam(selectedUser)} style={btnPrimary} disabled={loadingTree}>
                     {loadingTree ? 'Loading...' : 'View Team Tree'}
@@ -832,34 +949,51 @@ This cannot be undone!`)) return;
               const totalMembers = countAll(teamTree);
               const directCount = teamTree.length;
 
-              const TreeNode = ({ node, depth = 0 }) => (
-                <div style={{ marginLeft: depth * 24, marginBottom: '4px' }}>
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px',
-                    borderRadius: '8px', backgroundColor: depth === 0 ? `${theme.primary}11` : theme.bg,
-                    border: `1px solid ${theme.cardBorder}`,
-                  }}>
-                    {depth > 0 && <span style={{ color: theme.faint, fontSize: '12px' }}>└</span>}
-                    <span style={{ fontWeight: '600', fontSize: '13px' }}>{node.name}</span>
-                    <span style={{ fontSize: '11px', color: theme.subtext }}>{node.email}</span>
-                    <span style={{ fontSize: '11px', color: theme.faint, fontFamily: 'monospace' }}>UID {node.uid}</span>
-                    <span style={{
-                      padding: '1px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '700',
-                      backgroundColor: node.level > 0 ? `${theme.primary}22` : `${theme.faint}22`,
-                      color: node.level > 0 ? theme.primary : theme.faint,
-                    }}>Lv {node.level}</span>
-                    <span style={{
-                      padding: '1px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '700',
-                      backgroundColor: node.kycStatus === 'certified' ? theme.upSoft : theme.downSoft,
-                      color: node.kycStatus === 'certified' ? theme.up : theme.down,
-                    }}>{node.kycStatus === 'certified' ? 'KYC' : 'No KYC'}</span>
-                    <span style={{ fontSize: '11px', color: theme.up, fontWeight: '600', marginLeft: 'auto' }}>
-                      ${node.totalDeposited} dep · ${node.balance} bal
-                    </span>
+              const minBal = teamData?.minBalance || 200;
+              const TreeNode = ({ node, depth = 0 }) => {
+                const qualReason = !node.isQualified
+                  ? (node.kycStatus !== 'certified' ? 'No KYC' : `Bal $${node.balance} < $${minBal}`)
+                  : null;
+                return (
+                  <div style={{ marginLeft: depth * 20, marginBottom: '4px' }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px',
+                      borderRadius: '8px',
+                      backgroundColor: node.isQualified
+                        ? (depth === 0 ? theme.upSoft : `${theme.up}09`)
+                        : (depth === 0 ? theme.downSoft : `${theme.down}08`),
+                      border: `1px solid ${node.isQualified ? theme.up + '44' : theme.down + '33'}`,
+                      flexWrap: 'wrap',
+                    }}>
+                      {depth > 0 && <span style={{ color: theme.faint, fontSize: '11px' }}>└</span>}
+                      <span style={{ fontWeight: '600', fontSize: '13px' }}>{node.name}</span>
+                      <span style={{ fontSize: '11px', color: theme.subtext }}>{node.email}</span>
+                      <span style={{ fontSize: '11px', color: theme.faint, fontFamily: 'monospace' }}>UID {node.uid}</span>
+                      <span style={{
+                        padding: '1px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '700',
+                        backgroundColor: node.level > 0 ? `${theme.primary}22` : `${theme.faint}22`,
+                        color: node.level > 0 ? theme.primary : theme.faint,
+                      }}>Lv {node.level}</span>
+                      <span style={{
+                        padding: '1px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '700',
+                        backgroundColor: node.kycStatus === 'certified' ? theme.upSoft : theme.downSoft,
+                        color: node.kycStatus === 'certified' ? theme.up : theme.down,
+                      }}>{node.kycStatus === 'certified' ? 'KYC ✓' : 'No KYC'}</span>
+                      <span style={{
+                        padding: '1px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: '800',
+                        backgroundColor: node.isQualified ? theme.up : theme.down,
+                        color: 'white',
+                      }}>
+                        {node.isQualified ? '✓ Counts' : `✗ ${qualReason}`}
+                      </span>
+                      <span style={{ fontSize: '11px', color: theme.text, fontWeight: '600', marginLeft: 'auto' }}>
+                        ${node.totalDeposited} dep · <span style={{ color: node.balance >= minBal ? theme.up : theme.down }}>${node.balance} bal</span>
+                      </span>
+                    </div>
+                    {(node.children || []).map(c => <TreeNode key={c.id} node={c} depth={depth + 1} />)}
                   </div>
-                  {(node.children || []).map(c => <TreeNode key={c.id} node={c} depth={depth + 1} />)}
-                </div>
-              );
+                );
+              };
 
               return (
                 <div style={{ ...card, marginTop: '16px' }}>
@@ -867,7 +1001,12 @@ This cannot be undone!`)) return;
                     <div>
                       <div style={{ fontWeight: 'bold', fontSize: '14px' }}>Referral Team Tree — {teamUser.name}</div>
                       <div style={{ fontSize: '12px', color: theme.subtext, marginTop: '2px' }}>
-                        Direct: <b style={{ color: theme.primary }}>{directCount}</b> · Total Team: <b style={{ color: theme.primary }}>{totalMembers}</b> · Level: <b style={{ color: theme.primary }}>{teamUser.level}</b>
+                        Direct: <b style={{ color: theme.primary }}>{directCount}</b> · Total: <b style={{ color: theme.primary }}>{totalMembers}</b> · Level: <b style={{ color: theme.primary }}>{teamUser.level}</b>
+                      </div>
+                      <div style={{ fontSize: '12px', marginTop: '4px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <span style={{ color: theme.up, fontWeight: '700' }}>✓ {teamData?.qualifiedDirectCount || 0} counting</span>
+                        <span style={{ color: theme.down, fontWeight: '700' }}>✗ {teamData?.unqualifiedDirectCount || 0} not counting</span>
+                        <span style={{ color: theme.faint, fontSize: '11px' }}>· Green = counts toward level · Red = balance {'<'} ${teamData?.minBalance || 200} or no KYC</span>
                       </div>
                     </div>
                     <button onClick={() => { setTeamTree(null); setTeamUser(null); }} style={{ ...btnDanger, padding: '6px 14px', fontSize: '11px' }}>Close</button>
