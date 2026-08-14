@@ -35,6 +35,10 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [markets, setMarkets] = useState({});
   const [balance, setBalance] = useState(null);
+  const [signalBalance, setSignalBalance] = useState(null);
+  const [holdings, setHoldings] = useState({});
+  const [positions, setPositions] = useState([]);
+  const [futures, setFutures] = useState([]);
   const [hideBalance, setHideBalance] = useState(() => localStorage.getItem('kynex_hide_balance') === '1');
   const [search, setSearch] = useState('');
   useEffect(() => {
@@ -64,7 +68,13 @@ const Dashboard = () => {
       try {
         const res = await fetch(`${API_URL}/api/demo/account`, { headers: { Authorization: `Bearer ${getToken()}` } });
         const data = await res.json();
-        if (res.ok) setBalance(data.balance);
+        if (res.ok) {
+          setBalance(data.balance);
+          setSignalBalance(data.signalBalance || 0);
+          setHoldings(data.holdings || {});
+          setPositions(data.positions || []);
+          setFutures(data.futures || []);
+        }
       } catch { /* next poll */ }
     };
     const initial = setTimeout(loadBalance, 0);
@@ -76,6 +86,18 @@ const Dashboard = () => {
     ALL_COINS.map((c) => ({ ...c, live: markets[c.short] })),
     [markets],
   );
+
+  const spotValue = useMemo(() => Object.entries(holdings).reduce((sum, [pair, qty]) => {
+    const coin = ALL_COINS.find((c) => c.symbol === pair);
+    const price = coin ? markets[coin.short]?.price : undefined;
+    return sum + (price ? qty * price : 0);
+  }, 0), [holdings, markets]);
+
+  const openSignals = useMemo(() => positions.filter((p) => !p.settled), [positions]);
+  const openFutures = useMemo(() => futures.filter((p) => !p.closed), [futures]);
+  const signalsLocked = openSignals.reduce((s, p) => s + p.stake, 0);
+  const futuresLocked = openFutures.reduce((s, p) => s + p.margin, 0);
+  const totalBalance = (balance || 0) + (signalBalance || 0) + spotValue + signalsLocked + futuresLocked;
 
   const hasData = enriched.some((c) => c.live);
 
@@ -117,15 +139,23 @@ const Dashboard = () => {
       }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-            <p style={{ color: theme.subtext, fontSize: '13px', margin: 0 }}>Spot Balance</p>
+            <p style={{ color: theme.subtext, fontSize: '13px', margin: 0 }}>Total Balance</p>
             <button onClick={() => { const next = !hideBalance; setHideBalance(next); localStorage.setItem('kynex_hide_balance', next ? '1' : '0'); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', color: theme.subtext }}>
               {hideBalance ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
           <h2 style={{ margin: 0, fontSize: '26px', color: theme.text }}>
-            {hideBalance ? '••••••' : (balance === null ? '...' : balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}
+            {hideBalance ? '••••••' : (balance === null ? '...' : totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}
             <span style={{ fontSize: '14px', color: theme.subtext, marginLeft: '6px' }}>{hideBalance ? '' : 'USDT'}</span>
           </h2>
+          {!hideBalance && balance !== null && (
+            <div style={{ display: 'flex', gap: '12px', marginTop: '6px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '11px', color: theme.subtext }}>Spot <span style={{ color: theme.text, fontWeight: '600' }}>{balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
+              {signalBalance > 0 && <span style={{ fontSize: '11px', color: theme.subtext }}>Signal <span style={{ color: theme.text, fontWeight: '600' }}>{signalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>}
+              {spotValue > 0 && <span style={{ fontSize: '11px', color: theme.subtext }}>Holdings <span style={{ color: theme.text, fontWeight: '600' }}>{spotValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>}
+              {(signalsLocked + futuresLocked) > 0 && <span style={{ fontSize: '11px', color: theme.subtext }}>In trades <span style={{ color: theme.text, fontWeight: '600' }}>{(signalsLocked + futuresLocked).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>}
+            </div>
+          )}
         </div>
         <Link
           to="/assets"
