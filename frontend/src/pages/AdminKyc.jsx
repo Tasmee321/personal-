@@ -754,8 +754,6 @@ This cannot be undone!`)) return;
                   </div>
                 )}
               </div>
-            </div>
-
             </div>}
 
             {/* DEPOSIT HISTORY TAB */}
