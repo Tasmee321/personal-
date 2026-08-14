@@ -1976,12 +1976,20 @@ function pktTimeToDate(hhmm) {
   const PKT_OFFSET_MS = 5 * 60 * 60 * 1000;
   const nowUTC = new Date();
   const nowPKT = new Date(nowUTC.getTime() + PKT_OFFSET_MS);
-  // Build the target time in PKT as a UTC timestamp
   const target = new Date(Date.UTC(
     nowPKT.getUTCFullYear(), nowPKT.getUTCMonth(), nowPKT.getUTCDate(),
     h, m, 0, 0
   ) - PKT_OFFSET_MS);
   return target;
+}
+
+// Referral window: hardcoded 20:00-20:20 PKT daily
+const REFERRAL_WINDOW_START_PKT = "20:00";
+const REFERRAL_WINDOW_MINUTES = 20;
+function getReferralWindow() {
+  const start = pktTimeToDate(REFERRAL_WINDOW_START_PKT);
+  const end = new Date(start.getTime() + REFERRAL_WINDOW_MINUTES * 60 * 1000);
+  return { start, end };
 }
 
 // Set the daily referral signal session — admin picks time, duration, direction, and coin
@@ -2307,11 +2315,10 @@ app.get("/api/signal-status", authenticate, async (req, res) => {
   const account = getDemoAccount(accounts, req.user.sub);
   const bonusSignals = account.referralBonusSignals || 0;
   let referralWindowOpen = false;
-  if (cfg.referralSignalTime && bonusSignals > 0) {
+  if (bonusSignals > 0) {
     const now = new Date();
-    const windowStart = pktTimeToDate(cfg.referralSignalTime);
-    const windowEnd = new Date(windowStart.getTime() + (cfg.referralSignalWindow || 30) * 60 * 1000);
-    referralWindowOpen = now >= windowStart && now < windowEnd;
+    const { start, end } = getReferralWindow();
+    referralWindowOpen = now >= start && now < end;
   }
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
   const bonusUsedToday = (account.positions || []).filter(p => p.openedAt >= todayStart.getTime() && p.isReferralBonus).length;
@@ -2321,14 +2328,14 @@ app.get("/api/signal-status", authenticate, async (req, res) => {
     bonusSignals,
     bonusUsedToday,
     referralWindowOpen,
-    referralSignalTime: cfg.referralSignalTime || null,
-    referralSignalWindow: cfg.referralSignalWindow || 15,
-    referralDirection: cfg.referralDirection || null,
-    referralSymbol: cfg.referralSymbol || null,
-    referralEndTime: cfg.referralSignalTime ? (() => {
-      const start = pktTimeToDate(cfg.referralSignalTime);
-      return start.getTime() + (cfg.referralSignalWindow || 15) * 60 * 1000;
-    })() : null,
+    referralSignalTime: "20:00",
+    referralSignalWindow: 20,
+    referralDirection: cfg.referralDirection || "up",
+    referralSymbol: cfg.referralSymbol || "BTCUSDT",
+    referralEndTime: (() => {
+      const { end } = getReferralWindow();
+      return end.getTime();
+    })(),
   });
 });
 
@@ -2340,11 +2347,9 @@ app.post("/api/demo/referral-signal", authenticate, async (req, res) => {
       return res.status(403).json({ error: "Referral signal session not configured." });
     }
     const nowD = new Date();
-    const winStart = pktTimeToDate(cfg.referralSignalTime);
-    const winDur = (cfg.referralSignalWindow || 15) * 60 * 1000;
-    const winEnd = new Date(winStart.getTime() + winDur);
+    const { start: winStart, end: winEnd } = getReferralWindow();
     if (nowD < winStart || nowD >= winEnd) {
-      return res.status(403).json({ error: `Referral signal available only ${cfg.referralSignalTime} — ${winEnd.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Karachi' })}.` });
+      return res.status(403).json({ error: `Referral signal window is 8:00 PM — 8:20 PM (PKT) daily.` });
     }
 
     const accounts = await readDemoAccounts();
@@ -2373,7 +2378,7 @@ app.post("/api/demo/referral-signal", authenticate, async (req, res) => {
     const direction = cfg.referralDirection;
     const entryPrice = await getLivePrice(pairName);
     const now = Date.now();
-    const settleAt = winEnd.getTime();
+    const settleAt = winEnd.getTime(); // always 20:20 PKT
 
     account.signalBalance = Math.round((account.signalBalance - stake) * 100) / 100;
     account.referralBonusSignals = bonusSignals - 1;
@@ -2460,10 +2465,9 @@ app.post("/api/demo/predict", authenticate, async (req, res) => {
     let isReferralBonus = false;
     if (todaySignals >= userLimit && bonusSignals > 0 && bonusUsedToday < maxBonusPerDay) {
       const sCfg = await readSignalConfig();
-      if (sCfg.referralSignalTime) {
+      {
         const nowD = new Date();
-        const winStart = pktTimeToDate(sCfg.referralSignalTime);
-        const winEnd = new Date(winStart.getTime() + (sCfg.referralSignalWindow || 30) * 60 * 1000);
+        const { start: winStart, end: winEnd } = getReferralWindow();
         if (nowD >= winStart && nowD < winEnd) {
           isReferralBonus = true;
           account.referralBonusSignals = bonusSignals - 1;
