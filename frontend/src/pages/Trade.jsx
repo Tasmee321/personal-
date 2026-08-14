@@ -310,13 +310,18 @@ const Trade = () => {
         const c = { time: Math.floor(k.t / 1000), open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c) };
         const override = candleOverridesRef.current.find(o => o.symbol === selectedCoin.symbol);
         if (override) {
-          const nudge = c.open * (0.001 + Math.random() * 0.003);
+          // Realistic drift: small oscillation biased toward direction, not a hard lock
+          const biasFactor = 0.0003 + Math.random() * 0.0004;
+          const noise = (Math.random() - 0.45) * c.open * 0.0006;
+          const drift = override.direction === 'up' ? biasFactor * c.open : -biasFactor * c.open;
+          const adjustedClose = c.close + drift + noise;
+          c.close = +adjustedClose.toFixed(8);
           if (override.direction === 'up') {
-            c.close = c.open + nudge;
-            c.high = Math.max(c.high, c.close);
+            c.high = Math.max(c.high, c.close, c.open + c.open * 0.0002);
+            c.low = Math.min(c.low, c.open - c.open * 0.0001);
           } else {
-            c.close = c.open - nudge;
-            c.low = Math.min(c.low, c.close);
+            c.low = Math.min(c.low, c.close, c.open - c.open * 0.0002);
+            c.high = Math.max(c.high, c.open + c.open * 0.0001);
           }
         }
         seriesRef.current.update(c);
