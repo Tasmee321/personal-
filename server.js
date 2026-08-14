@@ -1565,11 +1565,12 @@ app.post("/api/demo/transfer", authenticate, async (req, res) => {
     let reward = 0;
     let referrerReward = 0;
     const deposited = account.totalDeposited || 0;
-    if (!account.firstRewardClaimed && deposited > 200) {
+    if (!account.firstRewardClaimed && deposited >= 200) {
       reward = Math.round(deposited * 0.04 * 100) / 100;
       account.balance = Math.round((account.balance + reward) * 100) / 100;
       account.firstRewardClaimed = true;
       addLedgerEntry(account, 'reward', 'spot', reward, `4% first-deposit reward (${deposited.toFixed(2)} USDT deposited)`, null);
+      await pushMessage(req.user.sub, 'Joining Reward Received', `Your joining reward of $${reward.toFixed(2)} USDT (4% of your $${deposited.toFixed(2)} deposit) has been sent to your Spot wallet.`);
 
       const users = await readUsers();
       const me = users.find(u => u.id === req.user.sub);
@@ -1580,6 +1581,7 @@ app.post("/api/demo/transfer", authenticate, async (req, res) => {
           const refAccount = getDemoAccount(accounts, referrerUser.id);
           refAccount.balance = Math.round((refAccount.balance + referrerReward) * 100) / 100;
           addLedgerEntry(refAccount, 'reward', 'spot', referrerReward, `6% referral reward — new user qualified (${deposited.toFixed(2)} USDT deposited)`, null);
+          await pushMessage(referrerUser.id, 'Referral Reward Received', `Your referral (UID: ${me.uid} — ${me.name}) made a deposit of $${deposited.toFixed(2)} USDT. You have received a 6% referral reward of $${referrerReward.toFixed(2)} USDT in your Spot wallet.`);
         }
       }
     }
