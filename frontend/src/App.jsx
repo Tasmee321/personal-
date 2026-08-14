@@ -21,6 +21,7 @@ import Settings from './pages/Settings';
 import Messages from './pages/Messages';
 import Verification from './pages/Verification';
 import AdminKyc from './pages/AdminKyc';
+import Certificates from './pages/Certificates';
 import DepositPage from './pages/DepositPage';
 import WithdrawPage from './pages/WithdrawPage';
 import TransactionPage from './pages/TransactionPage';
@@ -60,6 +61,7 @@ function App() {
           <Route path="/transactions" element={<ProtectedRoute><TransactionPage /></ProtectedRoute>} />
           <Route path="/transfer" element={<ProtectedRoute><TransferPage /></ProtectedRoute>} />
           <Route path="/admin/kyc" element={<AdminKyc />} />
+          <Route path="/certificates" element={<ProtectedRoute><Certificates /></ProtectedRoute>} />
 
           {/* About / Legal Pages */}
           <Route path="/legal" element={<LegalLayout />}>
