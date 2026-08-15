@@ -1586,6 +1586,41 @@ app.post("/api/admin/livechat/:uid/reply", async (req, res) => {
   res.json({ ok: true, message: msg });
 });
 
+// ---- Typing indicators (in-memory, no persistence needed) ----
+const typingState = {}; // { uid: { userTypingUntil, adminTypingUntil } }
+
+app.post("/api/livechat/typing", authenticate, async (req, res) => {
+  const uid = req.user.sub;
+  if (!typingState[uid]) typingState[uid] = {};
+  typingState[uid].userTypingUntil = Date.now() + 4000;
+  res.json({ ok: true });
+});
+
+app.get("/api/livechat/typing-status", authenticate, async (req, res) => {
+  const uid = req.user.sub;
+  const state = typingState[uid] || {};
+  const adminTyping = (state.adminTypingUntil || 0) > Date.now();
+  res.json({ ok: true, adminTyping });
+});
+
+app.post("/api/admin/livechat/:uid/typing", async (req, res) => {
+  const key = req.headers['x-admin-key'];
+  if (!key || key !== ADMIN_KEY) return res.status(403).json({ error: "Forbidden." });
+  const uid = req.params.uid;
+  if (!typingState[uid]) typingState[uid] = {};
+  typingState[uid].adminTypingUntil = Date.now() + 4000;
+  res.json({ ok: true });
+});
+
+app.get("/api/admin/livechat/:uid/typing-status", async (req, res) => {
+  const key = req.headers['x-admin-key'];
+  if (!key || key !== ADMIN_KEY) return res.status(403).json({ error: "Forbidden." });
+  const uid = req.params.uid;
+  const state = typingState[uid] || {};
+  const userTyping = (state.userTypingUntil || 0) > Date.now();
+  res.json({ ok: true, userTyping });
+});
+
 // ---- Demo/practice trading account — no real money, ever ----
 
 app.get("/api/demo/account", authenticate, async (req, res) => {
