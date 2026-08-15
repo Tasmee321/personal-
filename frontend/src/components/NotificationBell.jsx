@@ -24,9 +24,17 @@ const NotificationBell = () => {
   const { theme } = useTheme();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]);
+  const [chatUnread, setChatUnread] = useState(0);
   const ref = useRef(null);
 
-  const unreadCount = messages.filter((m) => !m.read).length;
+  // Listen to LiveChat unread count via custom event
+  useEffect(() => {
+    const handler = (e) => setChatUnread(e.detail?.count || 0);
+    window.addEventListener('kynex-chat-unread', handler);
+    return () => window.removeEventListener('kynex-chat-unread', handler);
+  }, []);
+
+  const unreadCount = messages.filter((m) => !m.read).length + chatUnread;
 
   const load = useCallback(async () => {
     try {
@@ -103,12 +111,35 @@ const NotificationBell = () => {
           </div>
 
           <div style={{ maxHeight: '360px', overflowY: 'auto' }}>
-            {recent.length === 0 && (
+            {chatUnread > 0 && (
+              <div style={{
+                padding: '12px 16px', backgroundColor: theme.primarySoft,
+                borderBottom: `1px solid ${theme.cardBorder}`,
+                display: 'flex', alignItems: 'center', gap: '10px',
+              }}>
+                <div style={{
+                  width: '8px', height: '8px', borderRadius: '50%',
+                  backgroundColor: theme.primary, flexShrink: 0,
+                }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '13px', color: theme.text }}>Live Chat</div>
+                  <div style={{ fontSize: '12px', color: theme.subtext }}>
+                    {chatUnread} unread message{chatUnread > 1 ? 's' : ''} — tap chat button to open
+                  </div>
+                </div>
+                <span style={{
+                  backgroundColor: theme.primary, color: 'white',
+                  padding: '1px 7px', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold',
+                }}>{chatUnread > 9 ? '9+' : chatUnread}</span>
+              </div>
+            )}
+            {recent.length === 0 && chatUnread === 0 && (
               <div style={{ padding: '30px 16px', textAlign: 'center' }}>
                 <MailOpen size={28} color={theme.faint} style={{ marginBottom: '8px' }} />
                 <p style={{ color: theme.faint, fontSize: '13px', margin: 0 }}>No notifications yet</p>
               </div>
             )}
+            {recent.length === 0 && chatUnread > 0 && <div />}
 
             {recent.map((m) => (
               <button
