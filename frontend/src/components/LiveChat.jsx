@@ -92,11 +92,37 @@ const LiveChat = () => {
     }
   }, [open, messages]);
 
+  // Mark user messages as read by admin — update local state for double tick
+  // The backend already marks admin->user msgs read in /history
+  // For user->admin double tick: poll and update read status from server
+  const fetchReadStatus = useCallback(async () => {
+    if (!open) return;
+    try {
+      const res = await fetch(`${API_URL}/api/livechat/history`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.ok) {
+        setMessages(data.messages || []);
+      }
+    } catch { /* network */ }
+  }, [open]);
+
+  useEffect(() => {
+    // Already polling via fetchHistory every 5s — that handles read status too
+  }, [fetchReadStatus]);
+
   const handleInputChange = (e) => {
     setInput(e.target.value);
     notifyTyping();
     clearTimeout(typingTimerRef.current);
   };
+
+  // Notify bell of unread chat count
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('kynex-chat-unread', { detail: { count: unread } }));
+  }, [unread]);
 
   const send = async () => {
     const text = input.trim();
@@ -385,19 +411,7 @@ const LiveChat = () => {
           ? <X size={22} color="white" />
           : <MessageCircle size={22} color="white" />
         }
-        {!open && unread > 0 && (
-          <div style={{
-            position: 'absolute', top: '-3px', right: '-3px',
-            minWidth: '20px', height: '20px', borderRadius: '10px',
-            backgroundColor: '#EF4444',
-            border: '2px solid white',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '10px', color: 'white', fontWeight: '800',
-            padding: '0 4px', boxSizing: 'border-box',
-          }}>
-            {unread > 9 ? '9+' : unread}
-          </div>
-        )}
+
       </div>
 
       <style>{`
