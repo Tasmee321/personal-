@@ -1,14 +1,14 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, LineChart, ArrowLeftRight, Radio, Wallet } from 'lucide-react';
+import { Home, LineChart, ArrowLeftRight, Zap, Wallet } from 'lucide-react';
 import { useTheme } from '../ThemeContext';
 
 const NAV_ITEMS = [
-  { path: '/dashboard', label: 'Home',    icon: Home,            color: '#60A5FA', soft: 'rgba(96,165,250,0.15)' },
-  { path: '/markets',   label: 'Markets', icon: LineChart,        color: '#A78BFA', soft: 'rgba(167,139,250,0.15)' },
-  { path: '/trade',     label: 'Trade',   icon: ArrowLeftRight,  color: null,      soft: null, center: true },
-  { path: '/signals',   label: 'Signals', icon: Radio,            color: '#34D399', soft: 'rgba(52,211,153,0.15)' },
-  { path: '/assets',    label: 'Assets',  icon: Wallet,           color: '#FBBF24', soft: 'rgba(251,191,36,0.15)' },
+  { path: '/dashboard', label: 'Home',    icon: Home,           color: '#60A5FA', soft: 'rgba(96,165,250,0.15)' },
+  { path: '/markets',   label: 'Markets', icon: LineChart,      color: '#A78BFA', soft: 'rgba(167,139,250,0.15)' },
+  { path: '/signals',   label: 'Signals', icon: Zap,            color: null,      soft: null, center: true },
+  { path: '/trade',     label: 'Trade',   icon: ArrowLeftRight, color: '#34D399', soft: 'rgba(52,211,153,0.15)' },
+  { path: '/assets',    label: 'Assets',  icon: Wallet,         color: '#FBBF24', soft: 'rgba(251,191,36,0.15)' },
 ];
 
 const BottomNav = () => {
@@ -36,16 +36,16 @@ const BottomNav = () => {
               <div style={{
                 width: '52px', height: '52px', borderRadius: '16px',
                 background: isActive
-                  ? 'linear-gradient(135deg, #3B82F6, #6366F1)'
-                  : 'linear-gradient(135deg, #60A5FA, #818CF8)',
+                  ? 'linear-gradient(135deg, #8B5CF6, #6366F1)'
+                  : 'linear-gradient(135deg, #A78BFA, #818CF8)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: '0 4px 18px rgba(99,102,241,0.45)',
+                boxShadow: '0 4px 18px rgba(139,92,246,0.5)',
                 marginTop: '-18px',
                 border: `2px solid ${theme.navBg}`,
               }}>
                 <Icon size={22} color="white" />
               </div>
-              <span style={{ fontSize: '10px', marginTop: '4px', fontWeight: 'bold', color: isActive ? '#818CF8' : theme.faint }}>
+              <span style={{ fontSize: '10px', marginTop: '4px', fontWeight: 'bold', color: isActive ? '#A78BFA' : theme.faint }}>
                 {item.label}
               </span>
             </Link>
