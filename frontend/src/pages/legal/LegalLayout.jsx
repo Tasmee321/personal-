@@ -58,10 +58,11 @@ const LegalLayout = () => {
 
         {/* Content */}
         <div className="legal-content" style={{
-          flex: 1, minWidth: 0, padding: '28px',
+          flex: 1, minWidth: 0, width: 0, padding: '28px',
           backgroundColor: theme.card, border: `1px solid ${theme.cardBorder}`,
           borderRadius: '16px', boxShadow: theme.shadow,
           backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)',
+          overflowX: 'hidden', boxSizing: 'border-box',
         }}>
           <Outlet />
         </div>
