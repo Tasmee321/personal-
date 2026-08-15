@@ -69,8 +69,11 @@ const AdminKyc = () => {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatReply, setChatReply] = useState('');
   const [chatSending, setChatSending] = useState(false);
+  const [userTyping, setUserTyping] = useState(false);
   const chatBottomRef = React.useRef(null);
   const chatPollRef = React.useRef(null);
+  const typingPollRef = React.useRef(null);
+  const lastAdminTypingSent = React.useRef(0);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
@@ -83,12 +86,14 @@ const AdminKyc = () => {
 
   const openChatThread = async (uid) => {
     setActiveChatUid(uid);
+    setUserTyping(false);
     const { ok, data } = await safeFetch(`${API_URL}/api/admin/livechat/${uid}`, { headers: { 'x-admin-key': adminKey } });
     if (ok && data.ok) {
       setChatMessages(data.messages || []);
       setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     }
     clearInterval(chatPollRef.current);
+    clearInterval(typingPollRef.current);
     chatPollRef.current = setInterval(async () => {
       const r = await safeFetch(`${API_URL}/api/admin/livechat/${uid}`, { headers: { 'x-admin-key': adminKey } });
       if (r.ok && r.data.ok) {
@@ -96,6 +101,21 @@ const AdminKyc = () => {
         setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
       }
     }, 4000);
+    typingPollRef.current = setInterval(async () => {
+      const r = await safeFetch(`${API_URL}/api/admin/livechat/${uid}/typing-status`, { headers: { 'x-admin-key': adminKey } });
+      if (r.ok && r.data.ok) setUserTyping(r.data.userTyping || false);
+    }, 2000);
+  };
+
+  const notifyAdminTyping = async () => {
+    const now = Date.now();
+    if (now - lastAdminTypingSent.current < 2000 || !activeChatUid) return;
+    lastAdminTypingSent.current = now;
+    try {
+      await fetch(`${API_URL}/api/admin/livechat/${activeChatUid}/typing`, {
+        method: 'POST', headers: { 'x-admin-key': adminKey },
+      });
+    } catch { /* network */ }
   };
 
   const sendChatReply = async () => {
@@ -119,9 +139,9 @@ const AdminKyc = () => {
     if (activeTab === 'livechat' && authed) {
       loadChatThreads();
       const interval = setInterval(() => loadChatThreads(), 6000);
-      return () => { clearInterval(interval); clearInterval(chatPollRef.current); };
+      return () => { clearInterval(interval); clearInterval(chatPollRef.current); clearInterval(typingPollRef.current); };
     }
-    return () => clearInterval(chatPollRef.current);
+    return () => { clearInterval(chatPollRef.current); clearInterval(typingPollRef.current); };
   }, [activeTab, authed, loadChatThreads]);
 
   const safeFetch = async (url, opts) => {
@@ -545,7 +565,8 @@ This cannot be undone!`)) return;
 
       <div style={{ display: 'flex', gap: '10px', padding: '16px 24px', overflowX: 'auto', borderBottom: `1px solid ${theme.cardBorder}` }}>
         {tabs.map(t => {
-          const count = t.key === 'kyc' ? pending.length : t.key === 'withdrawals' ? withdrawals.length : t.key === 'deposits' ? pendingDeposits.length : 0;
+          const totalChatUnread = chatThreads.reduce((s, th) => s + (th.unreadAdmin || 0), 0);
+          const count = t.key === 'kyc' ? pending.length : t.key === 'withdrawals' ? withdrawals.length : t.key === 'deposits' ? pendingDeposits.length : t.key === 'livechat' ? totalChatUnread : 0;
           return (
             <button key={t.key} onClick={() => { setActiveTab(t.key); setSelectedUser(null); }} style={{
               padding: '8px 18px', borderRadius: '20px', cursor: 'pointer', fontSize: '13px', fontWeight: '600',
@@ -1438,35 +1459,78 @@ This cannot be undone!`)) return;
                   </div>
 
                   {/* Messages */}
-                  <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', backgroundColor: theme.bg || theme.card }}>
                     {chatMessages.map(msg => (
-                      <div key={msg.id} style={{ display: 'flex', justifyContent: msg.from === 'admin' ? 'flex-end' : 'flex-start' }}>
+                      <div key={msg.id} style={{ display: 'flex', justifyContent: msg.from === 'admin' ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: '6px' }}>
+                        {msg.from === 'user' && (
+                          <div style={{
+                            width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0,
+                            background: `${theme.primary}22`, border: `1px solid ${theme.primary}40`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '11px', fontWeight: 700, color: theme.primary,
+                          }}>U</div>
+                        )}
                         <div style={{
                           maxWidth: '70%', padding: '9px 13px',
-                          borderRadius: msg.from === 'admin' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                          backgroundColor: msg.from === 'admin' ? theme.primary : (theme.inputBg || theme.cardBorder),
+                          borderRadius: msg.from === 'admin' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                          backgroundColor: msg.from === 'admin' ? theme.primary : (theme.inputBg || theme.card),
                           color: msg.from === 'admin' ? 'white' : theme.text,
                           fontSize: '13px', lineHeight: '1.5', wordBreak: 'break-word',
+                          boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
+                          border: msg.from === 'user' ? `1px solid ${theme.cardBorder}` : 'none',
                         }}>
                           <div>{msg.text}</div>
-                          <div style={{ fontSize: '10px', marginTop: '4px', color: msg.from === 'admin' ? 'rgba(255,255,255,0.65)' : theme.faint, textAlign: 'right' }}>
+                          <div style={{ fontSize: '10px', marginTop: '4px', color: msg.from === 'admin' ? 'rgba(255,255,255,0.65)' : theme.faint, textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '3px' }}>
                             {new Date(msg.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            {msg.from === 'admin' && <span style={{ marginLeft: '4px' }}>{msg.read ? '✓✓' : '✓'}</span>}
+                            {msg.from === 'admin' && (
+                              <span style={{ color: msg.read ? '#60A5FA' : 'rgba(255,255,255,0.6)', fontSize: '11px' }}>
+                                {msg.read ? '✓✓' : '✓'}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
                     ))}
+                    {/* User typing indicator */}
+                    {userTyping && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                        <div style={{
+                          width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0,
+                          background: `${theme.primary}22`, border: `1px solid ${theme.primary}40`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '11px', fontWeight: 700, color: theme.primary,
+                        }}>U</div>
+                        <div style={{
+                          padding: '10px 14px', borderRadius: '18px 18px 18px 4px',
+                          backgroundColor: theme.inputBg || theme.card,
+                          border: `1px solid ${theme.cardBorder}`,
+                          display: 'flex', gap: '4px', alignItems: 'center',
+                        }}>
+                          {[0, 1, 2].map(i => (
+                            <div key={i} style={{
+                              width: '6px', height: '6px', borderRadius: '50%',
+                              backgroundColor: theme.faint,
+                              animation: 'adminChatBounce 1.2s infinite',
+                              animationDelay: `${i * 0.2}s`,
+                            }} />
+                          ))}
+                        </div>
+                        <span style={{ fontSize: '11px', color: theme.faint }}>typing…</span>
+                      </div>
+                    )}
                     <div ref={chatBottomRef} />
                   </div>
 
                   {/* Reply input */}
-                  <div style={{ padding: '12px 16px', borderTop: `1px solid ${theme.cardBorder}`, display: 'flex', gap: '8px' }}>
+                  <div style={{ padding: '12px 16px', borderTop: `1px solid ${theme.cardBorder}`, display: 'flex', gap: '8px', backgroundColor: theme.card }}>
                     <input
                       value={chatReply}
-                      onChange={e => setChatReply(e.target.value)}
+                      onChange={e => { setChatReply(e.target.value); notifyAdminTyping(); }}
                       onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatReply(); } }}
                       placeholder="Reply to user..."
-                      style={{ flex: 1, padding: '10px 12px', borderRadius: '10px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg, color: theme.text, fontSize: '13px' }}
+                      style={{ flex: 1, padding: '10px 12px', borderRadius: '10px', border: `1.5px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg, color: theme.text, fontSize: '13px', outline: 'none' }}
+                      onFocus={e => e.target.style.borderColor = theme.primary}
+                      onBlur={e => e.target.style.borderColor = theme.cardBorder}
                     />
                     <button onClick={sendChatReply} disabled={!chatReply.trim() || chatSending} style={{ ...btnPrimary, opacity: !chatReply.trim() || chatSending ? 0.5 : 1 }}>
                       Send
@@ -1480,6 +1544,10 @@ This cannot be undone!`)) return;
 
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes adminChatBounce {
+          0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+          30% { transform: translateY(-5px); opacity: 1; }
+        }
         @media (max-width: 768px) {
           table { font-size: 11px !important; }
           td, th { padding: 6px 4px !important; }
