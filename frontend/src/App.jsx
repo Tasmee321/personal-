@@ -29,6 +29,7 @@ import TransactionPage from './pages/TransactionPage';
 import TransferPage from './pages/TransferPage';
 import { isAuthenticated } from './utils/auth';
 import { ThemeProvider } from './ThemeContext';
+import LiveChat from './components/LiveChat';
 
 function ProtectedRoute({ children }) {
   return isAuthenticated() ? children : <Navigate to="/auth" replace />;
@@ -75,6 +76,8 @@ function App() {
             <Route path="member-guide" element={<MemberGuide />} />
           </Route>
         </Routes>
+        {/* Global LiveChat — shows on all protected pages */}
+        {isAuthenticated() && <LiveChat />}
       </Router>
     </ThemeProvider>
   );
