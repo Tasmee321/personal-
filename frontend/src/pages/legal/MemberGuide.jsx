@@ -3,8 +3,8 @@ import LegalPageShell, { Section } from './LegalPageShell';
 import { useTheme } from '../../ThemeContext';
 
 const TableWrapper = ({ children }) => (
-  <div style={{ overflowX: 'auto', margin: '10px 0' }}>
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '420px' }}>
+  <div style={{ overflowX: 'auto', margin: '10px 0', WebkitOverflowScrolling: 'touch' }}>
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '320px' }}>
       {children}
     </table>
   </div>
@@ -41,9 +41,9 @@ const StatBadge = ({ label, value }) => {
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      padding: '16px 12px', borderRadius: '12px',
+      padding: '12px 8px', borderRadius: '12px',
       background: `${theme.primary}12`, border: `1px solid ${theme.primary}25`,
-      textAlign: 'center', minWidth: '100px',
+      textAlign: 'center', minWidth: '60px',
     }}>
       <div style={{ fontSize: '22px', fontWeight: 900, color: theme.brand, letterSpacing: '-0.5px' }}>{value}</div>
       <div style={{ fontSize: '11px', color: theme.faint, marginTop: '4px', fontWeight: 600 }}>{label}</div>
@@ -91,8 +91,8 @@ const MemberGuide = () => {
 
       {/* Hero Stats */}
       <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))',
-        gap: '12px', margin: '0 0 28px',
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(70px, 1fr))',
+        gap: '8px', margin: '0 0 24px',
       }}>
         <StatBadge value="$200" label="Min Deposit" />
         <StatBadge value="3x" label="Daily Signals" />
@@ -103,18 +103,19 @@ const MemberGuide = () => {
 
       {/* Chapter Nav */}
       <div style={{
-        display: 'flex', flexWrap: 'wrap', gap: '8px', margin: '0 0 28px',
+        display: 'flex', flexWrap: 'wrap', gap: '6px', margin: '0 0 24px',
       }}>
         {CHAPTERS.map(ch => (
           <button
             key={ch.id}
             onClick={() => setActiveChapter(ch.id)}
             style={{
-              padding: '6px 14px', borderRadius: '20px', border: `1px solid`,
+              padding: '5px 10px', borderRadius: '20px', border: `1px solid`,
               borderColor: activeChapter === ch.id ? theme.primary : theme.cardBorder,
               background: activeChapter === ch.id ? `${theme.primary}18` : 'transparent',
               color: activeChapter === ch.id ? theme.brand : theme.faint,
-              fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
+              fontSize: '11px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
+              whiteSpace: 'nowrap',
             }}
           >
             {ch.id}. {ch.title}
