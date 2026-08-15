@@ -12,6 +12,7 @@ import UserAgreement from './pages/legal/UserAgreement';
 import PrivacyPolicy from './pages/legal/PrivacyPolicy';
 import Disclaimer from './pages/legal/Disclaimer';
 import ContactUs from './pages/legal/ContactUs';
+import MemberGuide from './pages/legal/MemberGuide';
 import Download from './pages/Download';
 import Signals from './pages/Signals';
 import Invite from './pages/Invite';
@@ -71,6 +72,7 @@ function App() {
             <Route path="privacy" element={<PrivacyPolicy />} />
             <Route path="disclaimer" element={<Disclaimer />} />
             <Route path="contact" element={<ContactUs />} />
+            <Route path="member-guide" element={<MemberGuide />} />
           </Route>
         </Routes>
       </Router>
