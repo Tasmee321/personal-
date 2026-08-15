@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Search, ArrowLeftRight, Wallet, ArrowDownToLine, Users, Download, Headset, Globe, User, TrendingUp, TrendingDown, BarChart3, Info, Eye, EyeOff, Award } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
+import LiveChat from '../components/LiveChat';
 import { CoinIcon } from '../components/CoinIcons';
 import { getToken } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
@@ -14,7 +15,7 @@ const QUICK_ACTIONS = [
   { to: '/withdraw', label: 'Withdrawal', icon: ArrowDownToLine, badgeKey: 'teal' },
   { to: '/invite', label: 'Invite', icon: Users, badgeKey: 'purple' },
   { to: '/download', label: 'Download', icon: Download, badgeKey: 'amber' },
-  { to: '/legal/about', label: 'About', icon: Info, badgeKey: 'green' },
+  { to: '/legal/member-guide', label: 'Guide', icon: Info, badgeKey: 'green' },
   { to: '/certificates', label: 'Certificates', icon: Award, badgeKey: 'teal' },
 ];
 
@@ -123,7 +124,7 @@ const Dashboard = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <h2 style={{ color: theme.brand, margin: 0, letterSpacing: '0.5px' }}>KYNEX</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <Link to="/legal/contact" style={{ color: theme.subtext, display: 'flex' }} title="Support"><Headset size={19} /></Link>
+          <Link to="/legal/contact" style={{ color: theme.subtext, display: 'flex' }} title="Contact"><Headset size={19} /></Link>
           <Link to="/settings" style={{ color: theme.subtext, display: 'flex' }} title="Language"><Globe size={19} /></Link>
           <NotificationBell />
           <Link to="/profile" style={{ color: theme.subtext, display: 'flex' }} title="Profile"><User size={20} /></Link>
@@ -287,6 +288,7 @@ const Dashboard = () => {
         ))}
       </div>
 
+      <LiveChat />
       <BottomNav />
     </div>
   );
