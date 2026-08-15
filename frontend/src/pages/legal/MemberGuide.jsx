@@ -3,8 +3,8 @@ import LegalPageShell, { Section } from './LegalPageShell';
 import { useTheme } from '../../ThemeContext';
 
 const TableWrapper = ({ children }) => (
-  <div style={{ overflowX: 'auto', margin: '10px 0', WebkitOverflowScrolling: 'touch' }}>
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '320px' }}>
+  <div style={{ overflowX: 'auto', margin: '10px 0', WebkitOverflowScrolling: 'touch', width: '100%', boxSizing: 'border-box' }}>
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '280px', tableLayout: 'auto' }}>
       {children}
     </table>
   </div>
@@ -298,24 +298,26 @@ const MemberGuide = () => {
             </p>
           </Section>
           <Section title="Wallet Flow">
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap',
-              margin: '10px 0', fontSize: '13px',
-            }}>
-              {['DEPOSIT (TRC20/ERC20/BEP20)\nMin: $200 USDT', '→', 'SPOT WALLET\n6% referral reward credited here', '→', 'SIGNAL WALLET\n4% first-deposit bonus here', '→', 'WITHDRAW\nMin: $10 | 5% fee'].map((box, i) => (
-                box === '→' ? (
-                  <div key={i} style={{ color: theme.brand, fontWeight: 700, fontSize: '18px' }}>→</div>
-                ) : (
-                  <div key={i} style={{
-                    padding: '12px 14px', borderRadius: '10px', flex: '1', minWidth: '110px',
-                    background: `${theme.primary}12`, border: `1px solid ${theme.primary}25`,
-                    whiteSpace: 'pre-line', textAlign: 'center', fontSize: '12px', lineHeight: '1.6',
-                    fontWeight: 600, color: theme.text,
-                  }}>
-                    {box}
-                  </div>
-                )
-              ))}
+            <div style={{ overflowX: 'auto', width: '100%', margin: '10px 0' }}>
+              <div style={{
+                display: 'flex', alignItems: 'stretch', gap: '6px',
+                fontSize: '12px', minWidth: '420px',
+              }}>
+                {['DEPOSIT\n(TRC20/ERC20/BEP20)\nMin: $200 USDT', '→', 'SPOT WALLET\n6% referral reward\ncredited here', '→', 'SIGNAL WALLET\n4% first-deposit\nbonus here', '→', 'WITHDRAW\nMin: $10\n5% fee'].map((box, i) => (
+                  box === '→' ? (
+                    <div key={i} style={{ color: theme.brand, fontWeight: 700, fontSize: '16px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>→</div>
+                  ) : (
+                    <div key={i} style={{
+                      padding: '10px 12px', borderRadius: '10px', flex: '1',
+                      background: `${theme.primary}12`, border: `1px solid ${theme.primary}25`,
+                      whiteSpace: 'pre-line', textAlign: 'center', lineHeight: '1.6',
+                      fontWeight: 600, color: theme.text, boxSizing: 'border-box',
+                    }}>
+                      {box}
+                    </div>
+                  )
+                ))}
+              </div>
             </div>
           </Section>
           <Section title="First Deposit Bonus Table">
