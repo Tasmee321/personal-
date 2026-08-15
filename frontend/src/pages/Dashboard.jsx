@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, ArrowLeftRight, Wallet, ArrowDownToLine, Users, Download, Headset, Globe, User, TrendingUp, TrendingDown, BarChart3, Info, Eye, EyeOff, Award } from 'lucide-react';
+import { Search, Zap, Wallet, ArrowDownToLine, Users, Download, Headset, Globe, User, TrendingUp, TrendingDown, BarChart3, Info, Eye, EyeOff, Award } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
 import { CoinIcon } from '../components/CoinIcons';
 import { getToken } from '../utils/auth';
@@ -9,13 +9,63 @@ import NotificationBell from '../components/NotificationBell';
 import ALL_COINS, { buildWsStreamUrl } from '../config/coins';
 import { API_URL } from '../config';
 
+// Advanced SVG icons for quick actions — realistic, distinct, not generic
+const DepositSVG = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+    <rect x="3" y="11" width="18" height="10" rx="3" fill="currentColor" opacity="0.18"/>
+    <path d="M12 3v11M8 10l4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M5 21h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+  </svg>
+);
+const WithdrawSVG = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+    <rect x="3" y="3" width="18" height="10" rx="3" fill="currentColor" opacity="0.18"/>
+    <path d="M12 21V10M8 14l4-4 4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M5 3h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+  </svg>
+);
+const InviteSVG = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+    <circle cx="9" cy="8" r="3.5" fill="currentColor" opacity="0.25"/>
+    <circle cx="17" cy="8" r="2.5" fill="currentColor" opacity="0.18"/>
+    <path d="M2 19c0-3.314 3.134-6 7-6s7 2.686 7 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+    <path d="M17 12c2.21 0 4 1.567 4 3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+    <path d="M20 7v4M18 9h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+  </svg>
+);
+const DownloadSVG = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+    <rect x="4" y="14" width="16" height="7" rx="2.5" fill="currentColor" opacity="0.18"/>
+    <path d="M12 3v10M8 9l4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M7 21h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+    <circle cx="19" cy="5" r="3" fill="currentColor" opacity="0.7"/>
+    <path d="M19 4v2M18 5h2" stroke="white" strokeWidth="1.4" strokeLinecap="round"/>
+  </svg>
+);
+const GuideSVG = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+    <rect x="4" y="2" width="13" height="17" rx="2.5" fill="currentColor" opacity="0.18"/>
+    <rect x="7" y="20" width="13" height="2" rx="1" fill="currentColor" opacity="0.12"/>
+    <path d="M7 7h7M7 10.5h5M7 14h4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+    <path d="M17 5v14l3-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+const CertSVG = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+    <rect x="2" y="4" width="17" height="13" rx="2.5" fill="currentColor" opacity="0.18"/>
+    <path d="M5 8h11M5 11h8M5 14h5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+    <circle cx="18.5" cy="18.5" r="4" fill="currentColor" opacity="0.85"/>
+    <path d="M16.5 18.5l1.5 1.5 2.5-2.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
 const QUICK_ACTIONS = [
-  { to: '/deposit', label: 'Deposit', icon: Wallet, badgeKey: 'blue' },
-  { to: '/withdraw', label: 'Withdrawal', icon: ArrowDownToLine, badgeKey: 'teal' },
-  { to: '/invite', label: 'Invite', icon: Users, badgeKey: 'purple' },
-  { to: '/download', label: 'Download', icon: Download, badgeKey: 'amber' },
-  { to: '/legal/member-guide', label: 'Guide', icon: Info, badgeKey: 'green' },
-  { to: '/certificates', label: 'Certificates', icon: Award, badgeKey: 'teal' },
+  { to: '/deposit', label: 'Deposit', SvgIcon: DepositSVG, badgeKey: 'blue' },
+  { to: '/withdraw', label: 'Withdrawal', SvgIcon: WithdrawSVG, badgeKey: 'teal' },
+  { to: '/invite', label: 'Invite', SvgIcon: InviteSVG, badgeKey: 'purple' },
+  { to: '/download', label: 'Download', SvgIcon: DownloadSVG, badgeKey: 'amber' },
+  { to: '/legal/member-guide', label: 'Guide', SvgIcon: GuideSVG, badgeKey: 'green' },
+  { to: '/certificates', label: 'Certificates', SvgIcon: CertSVG, badgeKey: 'teal' },
 ];
 
 function fmtPrice(n) {
@@ -195,24 +245,52 @@ const Dashboard = () => {
           )}
         </div>
         <Link
-          to="/assets"
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: theme.primary, color: 'white', border: 'none', padding: '11px 18px', borderRadius: '24px', fontWeight: 'bold', fontSize: '13px', textDecoration: 'none', boxShadow: '0 6px 16px rgba(36,104,242,0.35)' }}
+          to="/signals"
+          style={{
+            display: 'flex', alignItems: 'center', gap: '7px',
+            background: 'linear-gradient(135deg, #8B5CF6 0%, #6366F1 50%, #3B82F6 100%)',
+            color: 'white', border: 'none', padding: '11px 18px',
+            borderRadius: '24px', fontWeight: 'bold', fontSize: '13px',
+            textDecoration: 'none',
+            boxShadow: '0 6px 20px rgba(99,102,241,0.45), 0 0 0 1px rgba(139,92,246,0.3)',
+            position: 'relative', overflow: 'hidden',
+          }}
         >
-          <ArrowLeftRight size={14} /> Transfer
+          <span style={{
+            position: 'absolute', inset: 0,
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 60%)',
+            borderRadius: '24px',
+          }} />
+          <Zap size={14} style={{ filter: 'drop-shadow(0 0 4px rgba(255,255,255,0.6))', position: 'relative' }} />
+          <span style={{ position: 'relative' }}>Signals</span>
         </Link>
       </div>
 
       {/* Quick actions */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '22px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '22px', gap: '4px' }}>
         {QUICK_ACTIONS.map((action) => {
-          const Icon = action.icon;
+          const { SvgIcon } = action;
           const badge = iconBadges[action.badgeKey];
           return (
-            <Link key={action.label} to={action.to} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: theme.text, textDecoration: 'none', flex: 1 }}>
-              <div style={{ width: '48px', height: '48px', borderRadius: '16px', backgroundColor: badge.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: theme.shadow }}>
-                <Icon size={20} color={badge.fg} />
+            <Link key={action.label} to={action.to} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '7px', color: theme.text, textDecoration: 'none', flex: 1 }}>
+              <div style={{
+                width: '52px', height: '52px', borderRadius: '18px',
+                background: `linear-gradient(145deg, ${badge.bg} 0%, ${badge.bg.replace('0.12','0.22').replace('0.15','0.28')} 100%)`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: `0 4px 14px ${badge.fg}30, 0 1px 3px rgba(0,0,0,0.12)`,
+                border: `1.5px solid ${badge.fg}25`,
+                position: 'relative', overflow: 'hidden',
+                color: badge.fg,
+              }}>
+                <span style={{
+                  position: 'absolute', top: 0, left: 0, right: 0, height: '55%',
+                  background: 'linear-gradient(180deg, rgba(255,255,255,0.12) 0%, transparent 100%)',
+                  borderRadius: '18px 18px 0 0',
+                  pointerEvents: 'none',
+                }} />
+                <SvgIcon />
               </div>
-              <span style={{ fontSize: '11px', color: theme.subtext, fontWeight: '600' }}>{action.label}</span>
+              <span style={{ fontSize: '10px', color: theme.subtext, fontWeight: '600', textAlign: 'center', letterSpacing: '0.2px' }}>{action.label}</span>
             </Link>
           );
         })}
