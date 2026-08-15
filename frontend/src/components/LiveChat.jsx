@@ -119,11 +119,6 @@ const LiveChat = () => {
     clearTimeout(typingTimerRef.current);
   };
 
-  // Notify bell of unread chat count
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent('kynex-chat-unread', { detail: { count: unread } }));
-  }, [unread]);
-
   const send = async () => {
     const text = input.trim();
     if (!text || sending) return;
@@ -411,7 +406,19 @@ const LiveChat = () => {
           ? <X size={22} color="white" />
           : <MessageCircle size={22} color="white" />
         }
-
+        {!open && unread > 0 && (
+          <div style={{
+            position: 'absolute', top: '-3px', right: '-3px',
+            minWidth: '20px', height: '20px', borderRadius: '10px',
+            backgroundColor: '#EF4444',
+            border: '2px solid white',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '10px', color: 'white', fontWeight: '800',
+            padding: '0 4px', boxSizing: 'border-box',
+          }}>
+            {unread > 9 ? '9+' : unread}
+          </div>
+        )}
       </div>
 
       <style>{`
