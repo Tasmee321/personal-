@@ -2946,17 +2946,22 @@ app.post("/api/admin/livechat/broadcast", async (req, res) => {
   const { text } = req.body || {};
   if (!text || !String(text).trim()) return res.status(400).json({ error: "Message cannot be empty." });
 
-  const users = await dbRead('users') || [];
-  const depositedUids = users
-    .filter(u => u.deposits && u.deposits.length > 0)
-    .map(u => u.id);
+  // deposits are in demoAccounts ledger, not on user object
+  const accounts = await dbRead('demo_accounts') || {};
+  const depositedUids = Object.entries(accounts)
+    .filter(([uid, acc]) => (acc.ledger || []).some(e => e.type === 'deposit' || e.type === 'manual_credit'))
+    .map(([uid]) => uid);
 
-  if (depositedUids.length === 0) return res.json({ ok: true, sent: 0 });
+  // if no deposited users, send to ALL registered users instead
+  const users = await dbRead('users') || [];
+  const targetUids = depositedUids.length > 0 ? depositedUids : users.map(u => u.id);
+
+  if (targetUids.length === 0) return res.json({ ok: true, sent: 0 });
 
   const chats = await readLiveChats();
   const now = Date.now();
   let sent = 0;
-  for (const uid of depositedUids) {
+  for (const uid of targetUids) {
     if (!chats[uid]) chats[uid] = { messages: [], unreadAdmin: 0 };
     const msg = {
       id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
