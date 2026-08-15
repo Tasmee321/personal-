@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ShieldCheck, Users, Settings as SettingsIcon, Mail, Headphones, LogOut, BadgeCheck, ShieldAlert, Clock, Copy, Check, ChevronRight, Wallet } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Users, Settings as SettingsIcon, Mail, Headphones, LogOut, BadgeCheck, ShieldAlert, Clock, Copy, Check, ChevronRight, Wallet, Pencil, X } from 'lucide-react';
 import { getToken, logout } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
 import { API_URL } from '../config';
@@ -30,6 +30,10 @@ const Profile = () => {
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [nameSaving, setNameSaving] = useState(false);
+  const [nameError, setNameError] = useState('');
 
   useEffect(() => {
     const load = async () => {
@@ -49,6 +53,36 @@ const Profile = () => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
+  };
+
+  const startEditName = () => {
+    setNameInput(profile?.name || '');
+    setNameError('');
+    setEditingName(true);
+  };
+
+  const saveName = async () => {
+    if (!nameInput.trim() || nameInput.trim().length < 2) {
+      setNameError('Name must be at least 2 characters.');
+      return;
+    }
+    setNameSaving(true);
+    setNameError('');
+    try {
+      const res = await fetch(`${API_URL}/api/account/profile`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ name: nameInput.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update name.');
+      setProfile(prev => ({ ...prev, name: data.name }));
+      setEditingName(false);
+    } catch (err) {
+      setNameError(err.message);
+    } finally {
+      setNameSaving(false);
+    }
   };
 
   const handleLogout = () => {
@@ -98,15 +132,44 @@ const Profile = () => {
                 {profile.name.charAt(0).toUpperCase()}
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '6px' }}>
-                <span style={{ fontSize: '20px', fontWeight: 'bold' }}>{profile.name}</span>
-                <span style={{
-                  fontSize: '11px', fontWeight: 'bold', color: theme.brand,
-                  background: theme.brandSoft, padding: '3px 10px', borderRadius: '10px',
-                }}>
-                  LV{profile.level}
-                </span>
-              </div>
+              {editingName ? (
+                <div style={{ marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+                    <input
+                      autoFocus
+                      value={nameInput}
+                      onChange={e => setNameInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditingName(false); }}
+                      maxLength={50}
+                      style={{
+                        padding: '8px 12px', borderRadius: '10px', border: `1px solid ${theme.primary}`,
+                        backgroundColor: theme.inputBg || theme.bg, color: theme.text, fontSize: '16px',
+                        fontWeight: 'bold', textAlign: 'center', outline: 'none', width: '160px',
+                      }}
+                    />
+                    <button onClick={saveName} disabled={nameSaving} style={{ background: theme.primaryGradient, border: 'none', borderRadius: '8px', padding: '8px 12px', color: 'white', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', opacity: nameSaving ? 0.7 : 1 }}>
+                      {nameSaving ? '...' : 'Save'}
+                    </button>
+                    <button onClick={() => setEditingName(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex' }}>
+                      <X size={18} color={theme.faint} />
+                    </button>
+                  </div>
+                  {nameError && <div style={{ color: theme.down, fontSize: '11px', marginTop: '4px' }}>{nameError}</div>}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '20px', fontWeight: 'bold' }}>{profile.name}</span>
+                  <span style={{
+                    fontSize: '11px', fontWeight: 'bold', color: theme.brand,
+                    background: theme.brandSoft, padding: '3px 10px', borderRadius: '10px',
+                  }}>
+                    LV{profile.level}
+                  </span>
+                  <button onClick={startEditName} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}>
+                    <Pencil size={14} color={theme.faint} />
+                  </button>
+                </div>
+              )}
 
               <div style={{ color: theme.subtext, fontSize: '13px', marginBottom: '12px' }}>{profile.email}</div>
 
