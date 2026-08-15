@@ -25,7 +25,15 @@ function glassCard(theme) {
 
 const Settings = () => {
   const { theme, mode, setMode } = useTheme();
-  const [language, setLanguage] = useState(() => localStorage.getItem('kynex_language') || 'en');
+  const [language, setLanguage] = useState(() => {
+    const saved = localStorage.getItem('kynex_language');
+    if (saved) return saved;
+    const browserLang = (navigator.language || navigator.userLanguage || 'en').split('-')[0].toLowerCase();
+    const match = LANGUAGES.find(l => l.code === browserLang);
+    const detected = match ? match.code : 'en';
+    localStorage.setItem('kynex_language', detected);
+    return detected;
+  });
   const [langOpen, setLangOpen] = useState(false);
 
   const chooseLanguage = (code) => {
