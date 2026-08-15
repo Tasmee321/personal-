@@ -39,12 +39,25 @@ const LiveChat = () => {
         if (!open) {
           const unreadCount = (data.messages || []).filter(m => m.from === 'admin' && !m.read).length;
           setUnread(unreadCount);
-        } else {
-          setUnread(0);
         }
       }
     } catch { /* network */ }
   }, [open]);
+
+  // Called only when user opens chat — marks admin msgs as read on server
+  const markMessagesRead = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/livechat/history?markRead=1`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.ok) {
+        setMessages(data.messages || []);
+        setUnread(0);
+      }
+    } catch { /* network */ }
+  }, []);
 
   const fetchTyping = useCallback(async () => {
     try {
@@ -87,31 +100,10 @@ const LiveChat = () => {
 
   useEffect(() => {
     if (open) {
-      setUnread(0);
+      markMessagesRead();
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     }
-  }, [open, messages]);
-
-  // Mark user messages as read by admin — update local state for double tick
-  // The backend already marks admin->user msgs read in /history
-  // For user->admin double tick: poll and update read status from server
-  const fetchReadStatus = useCallback(async () => {
-    if (!open) return;
-    try {
-      const res = await fetch(`${API_URL}/api/livechat/history`, {
-        headers: { Authorization: `Bearer ${getToken()}` },
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.ok) {
-        setMessages(data.messages || []);
-      }
-    } catch { /* network */ }
   }, [open]);
-
-  useEffect(() => {
-    // Already polling via fetchHistory every 5s — that handles read status too
-  }, [fetchReadStatus]);
 
   const handleInputChange = (e) => {
     setInput(e.target.value);
