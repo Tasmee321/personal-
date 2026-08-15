@@ -74,6 +74,9 @@ const AdminKyc = () => {
   const chatPollRef = React.useRef(null);
   const typingPollRef = React.useRef(null);
   const lastAdminTypingSent = React.useRef(0);
+  const [broadcastText, setBroadcastText] = useState('');
+  const [broadcastSending, setBroadcastSending] = useState(false);
+  const [broadcastResult, setBroadcastResult] = useState('');
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
@@ -135,6 +138,34 @@ const AdminKyc = () => {
     setChatSending(false);
   };
 
+  const sendBroadcast = async () => {
+    const text = broadcastText.trim();
+    if (!text || broadcastSending) return;
+    setBroadcastSending(true);
+    setBroadcastResult('');
+    try {
+      const res = await fetch(`${API_URL}/api/admin/livechat/broadcast`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': adminKey },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setBroadcastText('');
+        setBroadcastResult(`✓ Sent to ${data.sent} deposited user${data.sent !== 1 ? 's' : ''}`);
+        setTimeout(() => setBroadcastResult(''), 4000);
+        loadChatThreads();
+      } else {
+        setBroadcastResult('✗ Failed to send');
+        setTimeout(() => setBroadcastResult(''), 3000);
+      }
+    } catch {
+      setBroadcastResult('✗ Network error');
+      setTimeout(() => setBroadcastResult(''), 3000);
+    }
+    setBroadcastSending(false);
+  };
+
   React.useEffect(() => {
     if (activeTab === 'livechat' && authed) {
       loadChatThreads();
@@ -181,11 +212,25 @@ const AdminKyc = () => {
     if (dp.ok) setPendingDeposits(dp.data.pending || []);
     setAuthed(true);
     sessionStorage.setItem(KEY_STORAGE, key);
+    // Load chat threads for badge count
+    const chatR = await safeFetch(`${API_URL}/api/admin/livechat`, { headers: h });
+    if (chatR.ok && chatR.data.ok) setChatThreads(chatR.data.threads || []);
   }, []);
 
   useEffect(() => {
     if (adminKey) loadAll(adminKey);
   }, []);
+
+  // Auto-refresh every 30 seconds when authed — no manual refresh needed
+  useEffect(() => {
+    if (!authed) return;
+    const interval = setInterval(() => {
+      loadAll(adminKey);
+      // Also refresh chat threads count for the tab badge
+      loadChatThreads(adminKey);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [authed, adminKey, loadAll, loadChatThreads]);
 
   const decide = async (userId, approve) => {
     setBusyId(userId);
@@ -1387,7 +1432,49 @@ This cannot be undone!`)) return;
         {activeTab === 'livechat' && (
           <div style={{ display: 'flex', gap: '16px', height: '600px' }}>
             {/* Thread list */}
-            <div style={{ ...card, width: '280px', flexShrink: 0, overflowY: 'auto', padding: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', width: '280px', flexShrink: 0, gap: '10px' }}>
+              {/* Broadcast box */}
+              <div style={{ ...card, padding: '12px', flexShrink: 0 }}>
+                <div style={{ fontWeight: 'bold', fontSize: '13px', marginBottom: '8px', color: theme.text }}>
+                  📢 Broadcast to Deposited Users
+                </div>
+                <textarea
+                  value={broadcastText}
+                  onChange={e => setBroadcastText(e.target.value)}
+                  placeholder="Type a message for all deposited users..."
+                  rows={3}
+                  style={{
+                    width: '100%', resize: 'none', padding: '8px 10px',
+                    borderRadius: '8px', border: `1.5px solid ${theme.cardBorder}`,
+                    backgroundColor: theme.inputBg || theme.bg, color: theme.text,
+                    fontSize: '12px', outline: 'none', fontFamily: 'inherit',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px' }}>
+                  {broadcastResult && (
+                    <span style={{ fontSize: '11px', color: broadcastResult.startsWith('✓') ? '#10B981' : '#EF4444' }}>
+                      {broadcastResult}
+                    </span>
+                  )}
+                  {!broadcastResult && <span />}
+                  <button
+                    onClick={sendBroadcast}
+                    disabled={!broadcastText.trim() || broadcastSending}
+                    style={{
+                      padding: '6px 14px', borderRadius: '8px', border: 'none',
+                      backgroundColor: broadcastText.trim() && !broadcastSending ? theme.primary : theme.cardBorder,
+                      color: 'white', fontSize: '12px', fontWeight: '600',
+                      cursor: broadcastText.trim() && !broadcastSending ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    {broadcastSending ? 'Sending…' : 'Send All'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Threads */}
+              <div style={{ ...card, flex: 1, overflowY: 'auto', padding: '12px' }}>
               <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '12px', color: theme.text }}>
                 Chat Threads ({chatThreads.length})
               </div>
@@ -1428,6 +1515,7 @@ This cannot be undone!`)) return;
                   )}
                 </div>
               ))}
+            </div>
             </div>
 
             {/* Chat window */}
