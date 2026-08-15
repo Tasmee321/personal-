@@ -42,6 +42,7 @@ const Dashboard = () => {
   const [futures, setFutures] = useState([]);
   const [hideBalance, setHideBalance] = useState(() => localStorage.getItem('kynex_hide_balance') === '1');
   const [search, setSearch] = useState('');
+  const [showOnboarding, setShowOnboarding] = useState(false);
   useEffect(() => {
     const ws = new WebSocket(buildWsStreamUrl());
 
@@ -75,6 +76,9 @@ const Dashboard = () => {
           setHoldings(data.holdings || {});
           setPositions(data.positions || []);
           setFutures(data.futures || []);
+          if (!data.rewardSummary?.totalDeposited && !localStorage.getItem('kynex_onboarded')) {
+            setShowOnboarding(true);
+          }
         }
       } catch { /* next poll */ }
     };
@@ -115,6 +119,38 @@ const Dashboard = () => {
     if (!q) return enriched;
     return enriched.filter((c) => c.short.includes(q) || c.name.toUpperCase().includes(q));
   }, [search, enriched]);
+
+  const skeletonBg = theme.cardBorder;
+  const Shimmer = ({ w, h, r = 10, mb = 0 }) => (
+    <div style={{ width: w, height: h, borderRadius: r, backgroundColor: skeletonBg, marginBottom: mb, animation: 'kynexShimmer 1.4s ease-in-out infinite', flexShrink: 0 }} />
+  );
+
+  if (balance === null) {
+    return (
+      <div style={{ padding: '20px', paddingBottom: '90px', color: theme.text, backgroundColor: theme.bg, minHeight: '100vh' }}>
+        <style>{`@keyframes kynexShimmer { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <Shimmer w="80px" h="24px" r={8} />
+          <div style={{ display: 'flex', gap: '12px' }}><Shimmer w="22px" h="22px" r={6} /><Shimmer w="22px" h="22px" r={6} /><Shimmer w="22px" h="22px" r={6} /></div>
+        </div>
+        <div style={{ borderRadius: '18px', backgroundColor: skeletonBg, height: '110px', marginBottom: '18px', animation: 'kynexShimmer 1.4s ease-in-out infinite' }} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '10px', marginBottom: '18px' }}>
+          {[1,2,3,4].map(i => <div key={i} style={{ borderRadius: '14px', backgroundColor: skeletonBg, height: '70px', animation: 'kynexShimmer 1.4s ease-in-out infinite' }} />)}
+        </div>
+        {[1,2,3,4,5].map(i => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+            <Shimmer w="36px" h="36px" r={50} />
+            <div style={{ flex: 1 }}>
+              <Shimmer w="80px" h="13px" r={6} mb={6} />
+              <Shimmer w="120px" h="11px" r={5} />
+            </div>
+            <Shimmer w="60px" h="13px" r={6} />
+          </div>
+        ))}
+        <BottomNav />
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: '20px', paddingBottom: '90px', color: theme.text, backgroundColor: theme.bg, minHeight: '100vh' }}>
@@ -287,6 +323,38 @@ const Dashboard = () => {
         ))}
       </div>
 <BottomNav />
+
+      {showOnboarding && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }}>
+          <div style={{ backgroundColor: theme.card, borderRadius: '24px 24px 0 0', padding: '28px 24px 40px', width: '100%', maxWidth: '480px', border: `1px solid ${theme.cardBorder}`, backdropFilter: theme.cardGlass, animation: 'kynexSlideUp 0.4s cubic-bezier(0.34,1.56,0.64,1)' }}>
+            <style>{`@keyframes kynexSlideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`}</style>
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+              <div style={{ fontSize: '36px', marginBottom: '8px' }}>👋</div>
+              <div style={{ fontSize: '20px', fontWeight: 'bold', color: theme.text, marginBottom: '6px' }}>Welcome to KYNEX</div>
+              <div style={{ fontSize: '13px', color: theme.subtext }}>Start trading in 3 simple steps</div>
+            </div>
+            {[
+              { icon: '💰', title: 'Deposit Funds', desc: 'Add USDT via TRC20, ERC20 or BEP20', to: '/deposit' },
+              { icon: '📊', title: 'Start Trading', desc: 'Trade signals, spot, or futures', to: '/signals' },
+              { icon: '🏆', title: 'Invite & Earn', desc: 'Refer friends and earn referral rewards', to: '/invite' },
+            ].map((step) => (
+              <div key={step.icon} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '12px', borderRadius: '14px', backgroundColor: theme.primarySoft, marginBottom: '10px' }}>
+                <div style={{ fontSize: '22px', flexShrink: 0 }}>{step.icon}</div>
+                <div>
+                  <div style={{ fontWeight: '700', fontSize: '14px', color: theme.text }}>{step.title}</div>
+                  <div style={{ fontSize: '12px', color: theme.subtext, marginTop: '2px' }}>{step.desc}</div>
+                </div>
+              </div>
+            ))}
+            <button onClick={() => { localStorage.setItem('kynex_onboarded', '1'); setShowOnboarding(false); navigate('/deposit'); }} style={{ width: '100%', padding: '15px', borderRadius: '14px', border: 'none', background: theme.primaryGradient, color: 'white', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer', marginTop: '16px', boxShadow: '0 4px 18px rgba(99,102,241,0.4)' }}>
+              Make First Deposit
+            </button>
+            <button onClick={() => { localStorage.setItem('kynex_onboarded', '1'); setShowOnboarding(false); }} style={{ width: '100%', padding: '12px', borderRadius: '14px', border: 'none', background: 'none', color: theme.faint, fontWeight: '600', fontSize: '13px', cursor: 'pointer', marginTop: '8px' }}>
+              Explore first
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
