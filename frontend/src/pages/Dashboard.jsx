@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, Zap, Wallet, ArrowDownToLine, Users, Download, Headset, Globe, User, TrendingUp, TrendingDown, BarChart3, Info, Eye, EyeOff, Award } from 'lucide-react';
+import { Search, ArrowLeftRight, Headset, Globe, User, TrendingUp, TrendingDown, BarChart3, Eye, EyeOff } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
 import { CoinIcon } from '../components/CoinIcons';
 import { getToken } from '../utils/auth';
@@ -10,62 +10,51 @@ import ALL_COINS, { buildWsStreamUrl } from '../config/coins';
 import { API_URL } from '../config';
 
 // Advanced SVG icons for quick actions — realistic, distinct, not generic
+// Clean stroke-only icons — consistent weight, no visual clutter
 const DepositSVG = () => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-    <rect x="3" y="11" width="18" height="10" rx="3" fill="currentColor" opacity="0.18"/>
-    <path d="M12 3v11M8 10l4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-    <path d="M5 21h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3v13"/><path d="M8 12l4 4 4-4"/>
+    <path d="M3 19h18"/>
   </svg>
 );
 const WithdrawSVG = () => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-    <rect x="3" y="3" width="18" height="10" rx="3" fill="currentColor" opacity="0.18"/>
-    <path d="M12 21V10M8 14l4-4 4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-    <path d="M5 3h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 21V8"/><path d="M8 12l4-4 4 4"/>
+    <path d="M3 5h18"/>
   </svg>
 );
 const InviteSVG = () => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-    <circle cx="9" cy="8" r="3.5" fill="currentColor" opacity="0.25"/>
-    <circle cx="17" cy="8" r="2.5" fill="currentColor" opacity="0.18"/>
-    <path d="M2 19c0-3.314 3.134-6 7-6s7 2.686 7 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-    <path d="M17 12c2.21 0 4 1.567 4 3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-    <path d="M20 7v4M18 9h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
+    <path d="M19 8v6M16 11h6"/>
   </svg>
 );
 const DownloadSVG = () => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-    <rect x="4" y="14" width="16" height="7" rx="2.5" fill="currentColor" opacity="0.18"/>
-    <path d="M12 3v10M8 9l4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-    <path d="M7 21h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-    <circle cx="19" cy="5" r="3" fill="currentColor" opacity="0.7"/>
-    <path d="M19 4v2M18 5h2" stroke="white" strokeWidth="1.4" strokeLinecap="round"/>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    <path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>
   </svg>
 );
 const GuideSVG = () => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-    <rect x="4" y="2" width="13" height="17" rx="2.5" fill="currentColor" opacity="0.18"/>
-    <rect x="7" y="20" width="13" height="2" rx="1" fill="currentColor" opacity="0.12"/>
-    <path d="M7 7h7M7 10.5h5M7 14h4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
-    <path d="M17 5v14l3-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
   </svg>
 );
 const CertSVG = () => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-    <rect x="2" y="4" width="17" height="13" rx="2.5" fill="currentColor" opacity="0.18"/>
-    <path d="M5 8h11M5 11h8M5 14h5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-    <circle cx="18.5" cy="18.5" r="4" fill="currentColor" opacity="0.85"/>
-    <path d="M16.5 18.5l1.5 1.5 2.5-2.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="8" r="6"/><path d="M9 22l3-4 3 4"/>
+    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+    <circle cx="12" cy="13" r="0.5" fill="currentColor"/>
   </svg>
 );
 
 const QUICK_ACTIONS = [
-  { to: '/deposit', label: 'Deposit', SvgIcon: DepositSVG, badgeKey: 'blue' },
-  { to: '/withdraw', label: 'Withdrawal', SvgIcon: WithdrawSVG, badgeKey: 'teal' },
-  { to: '/invite', label: 'Invite', SvgIcon: InviteSVG, badgeKey: 'purple' },
-  { to: '/download', label: 'Download', SvgIcon: DownloadSVG, badgeKey: 'amber' },
-  { to: '/legal/member-guide', label: 'Guide', SvgIcon: GuideSVG, badgeKey: 'green' },
-  { to: '/certificates', label: 'Certificates', SvgIcon: CertSVG, badgeKey: 'teal' },
+  { to: '/deposit',           label: 'Deposit',      SvgIcon: DepositSVG,  badgeKey: 'blue'   },
+  { to: '/withdraw',          label: 'Withdrawal',   SvgIcon: WithdrawSVG, badgeKey: 'teal'   },
+  { to: '/invite',            label: 'Invite',       SvgIcon: InviteSVG,   badgeKey: 'purple' },
+  { to: '/download',          label: 'Download',     SvgIcon: DownloadSVG, badgeKey: 'amber'  },
+  { to: '/legal/member-guide',label: 'Guide',        SvgIcon: GuideSVG,    badgeKey: 'green'  },
+  { to: '/certificates',      label: 'Certificates', SvgIcon: CertSVG,     badgeKey: 'teal'   },
 ];
 
 function fmtPrice(n) {
@@ -207,7 +196,28 @@ const Dashboard = () => {
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <h2 style={{ color: theme.brand, margin: 0, letterSpacing: '0.5px' }}>KYNEX</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{
+            width: '32px', height: '32px', borderRadius: '10px',
+            background: theme.brandGradient || 'linear-gradient(135deg, #FBBF24, #F59E0B)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: `0 4px 12px ${theme.brand}45`,
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M4 4l7 8-7 8h3l5.5-6.5L16 16h4L13 8l7-4h-4l-5 5.5L6 4H4z" fill="white" />
+            </svg>
+          </div>
+          <h2 style={{
+            margin: 0,
+            fontSize: '20px',
+            fontWeight: '800',
+            letterSpacing: '2px',
+            background: theme.brandGradient || 'linear-gradient(135deg, #FBBF24, #F59E0B)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+          }}>KYNEX</h2>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <Link to="/legal/contact" style={{ color: theme.subtext, display: 'flex' }} title="Contact"><Headset size={19} /></Link>
           <Link to="/settings" style={{ color: theme.subtext, display: 'flex' }} title="Language"><Globe size={19} /></Link>
@@ -245,52 +255,46 @@ const Dashboard = () => {
           )}
         </div>
         <Link
-          to="/signals"
+          to="/assets"
           style={{
             display: 'flex', alignItems: 'center', gap: '7px',
-            background: 'linear-gradient(135deg, #8B5CF6 0%, #6366F1 50%, #3B82F6 100%)',
-            color: 'white', border: 'none', padding: '11px 18px',
-            borderRadius: '24px', fontWeight: 'bold', fontSize: '13px',
-            textDecoration: 'none',
-            boxShadow: '0 6px 20px rgba(99,102,241,0.45), 0 0 0 1px rgba(139,92,246,0.3)',
+            background: 'rgba(255,255,255,0.18)',
+            color: 'white', border: '1.5px solid rgba(255,255,255,0.35)',
+            padding: '11px 18px', borderRadius: '24px',
+            fontWeight: 'bold', fontSize: '13px', textDecoration: 'none',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+            backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
             position: 'relative', overflow: 'hidden',
           }}
         >
           <span style={{
             position: 'absolute', inset: 0,
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 60%)',
-            borderRadius: '24px',
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 70%)',
+            borderRadius: '24px', pointerEvents: 'none',
           }} />
-          <Zap size={14} style={{ filter: 'drop-shadow(0 0 4px rgba(255,255,255,0.6))', position: 'relative' }} />
-          <span style={{ position: 'relative' }}>Signals</span>
+          <ArrowLeftRight size={14} style={{ position: 'relative' }} />
+          <span style={{ position: 'relative' }}>Transfer</span>
         </Link>
       </div>
 
       {/* Quick actions */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '22px', gap: '4px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '22px' }}>
         {QUICK_ACTIONS.map((action) => {
           const { SvgIcon } = action;
           const badge = iconBadges[action.badgeKey];
           return (
-            <Link key={action.label} to={action.to} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '7px', color: theme.text, textDecoration: 'none', flex: 1 }}>
+            <Link key={action.label} to={action.to} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: theme.text, textDecoration: 'none', flex: 1 }}>
               <div style={{
-                width: '52px', height: '52px', borderRadius: '18px',
-                background: `linear-gradient(145deg, ${badge.bg} 0%, ${badge.bg.replace('0.12','0.22').replace('0.15','0.28')} 100%)`,
+                width: '46px', height: '46px', borderRadius: '14px',
+                backgroundColor: badge.bg,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: `0 4px 14px ${badge.fg}30, 0 1px 3px rgba(0,0,0,0.12)`,
-                border: `1.5px solid ${badge.fg}25`,
-                position: 'relative', overflow: 'hidden',
+                boxShadow: `0 2px 8px ${badge.fg}28`,
+                border: `1px solid ${badge.fg}20`,
                 color: badge.fg,
               }}>
-                <span style={{
-                  position: 'absolute', top: 0, left: 0, right: 0, height: '55%',
-                  background: 'linear-gradient(180deg, rgba(255,255,255,0.12) 0%, transparent 100%)',
-                  borderRadius: '18px 18px 0 0',
-                  pointerEvents: 'none',
-                }} />
                 <SvgIcon />
               </div>
-              <span style={{ fontSize: '10px', color: theme.subtext, fontWeight: '600', textAlign: 'center', letterSpacing: '0.2px' }}>{action.label}</span>
+              <span style={{ fontSize: '10px', color: theme.subtext, fontWeight: '600', textAlign: 'center' }}>{action.label}</span>
             </Link>
           );
         })}
