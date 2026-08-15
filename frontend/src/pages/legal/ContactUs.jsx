@@ -12,10 +12,52 @@ const ContactUs = () => (
       </p>
     </Section>
 
+    <Section title="Official Community Channels">
+      <p>Join our official community channels for announcements, signals, and real-time support:</p>
+      <ul style={{ margin: '10px 0 0 0', paddingLeft: '20px' }}>
+        <li>
+          <b>Telegram (Official Channel):</b>{' '}
+          <a
+            href="https://t.me/kynex_trade_official"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'inherit', textDecoration: 'underline' }}
+          >
+            t.me/kynex_trade_official
+          </a>
+          {' '}— Announcements, daily signals, and platform updates
+        </li>
+        <li>
+          <b>Session (Private & Encrypted):</b> For confidential support with maximum privacy, contact our admin on Session.
+          <div style={{ margin: '10px 0 6px', padding: '14px 16px', borderRadius: '10px', background: 'rgba(128,128,128,0.08)', border: '1px solid rgba(128,128,128,0.18)' }}>
+            <div style={{ fontSize: '13px', marginBottom: '6px' }}><b>Admin:</b> Michael</div>
+            <div style={{ fontSize: '12px', marginBottom: '8px', color: 'inherit', opacity: 0.7 }}>Session Account ID:</div>
+            <div style={{
+              fontFamily: 'monospace', fontSize: '11px', wordBreak: 'break-all',
+              padding: '8px 10px', borderRadius: '6px', background: 'rgba(128,128,128,0.12)',
+              letterSpacing: '0.5px', lineHeight: '1.6',
+            }}>
+              05f49b2de9b8455d25d359846ed4cdf2c5ccafd990c991cbaa2847734feba5d375
+            </div>
+            <div style={{ marginTop: '10px', fontSize: '12px', opacity: 0.75 }}>
+              <b>How to reach us on Session:</b>
+              <ol style={{ margin: '6px 0 0 0', paddingLeft: '18px', lineHeight: '1.8' }}>
+                <li>Download Session app: <a href="https://getsession.org/download" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>getsession.org/download</a></li>
+                <li>Open Session and tap <b>+ New Message</b></li>
+                <li>Select <b>Enter Account ID</b></li>
+                <li>Paste the Account ID above and send your message</li>
+              </ol>
+            </div>
+          </div>
+        </li>
+      </ul>
+    </Section>
+
     <Section title="General Support">
       <p>For account inquiries, trading assistance, deposit/withdrawal support, and general questions:</p>
       <ul style={{ margin: '10px 0 0 0', paddingLeft: '20px' }}>
         <li><b>Email:</b> <a href="mailto:supportkynex@gmail.com" style={{ color: 'inherit', textDecoration: 'underline' }}>supportkynex@gmail.com</a></li>
+        <li><b>Telegram:</b> <a href="https://t.me/kynex_trade_official" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>t.me/kynex_trade_official</a></li>
         <li><b>Live Chat:</b> Available 24/7 via the in-app chat widget</li>
         <li><b>Response Time:</b> General inquiries within 4 hours; urgent account issues within 1 hour</li>
         <li><b>Support Ticket Portal:</b> <span style={{ textDecoration: 'underline' }}>help.kynex.io</span></li>
