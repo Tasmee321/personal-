@@ -440,6 +440,7 @@ const Signals = () => {
 
   return (
     <div style={{ padding: '16px', paddingBottom: '90px', color: theme.text, backgroundColor: theme.bg, minHeight: '100vh' }}>
+      <style>{`@keyframes kynexSlideIn { from { opacity: 0; transform: translateY(-12px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }`}</style>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
         <h3 style={{ margin: 0 }}>Signals</h3>
@@ -613,11 +614,12 @@ const Signals = () => {
       {activeTab === 'current' && (
         <div>
           {currentPositions.length === 0 && <p style={{ color: theme.faint, fontSize: '13px' }}>No open positions.</p>}
-          {currentPositions.map((p) => {
+          {currentPositions.map((p, idx) => {
             const secondsLeft = Math.max(0, Math.ceil((p.settleAt - now) / 1000));
             const coin = COINS.find((c) => c.pair === p.pair);
+            const isNew = idx === 0 && (Date.now() - p.openedAt) < 3000;
             return (
-              <div key={p.id} style={{ ...glassCard(theme), padding: '14px', marginBottom: '10px' }}>
+              <div key={p.id} style={{ ...glassCard(theme), padding: '14px', marginBottom: '10px', animation: isNew ? 'kynexSlideIn 0.35s cubic-bezier(0.34,1.56,0.64,1)' : 'none' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                   <span style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <CoinIcon symbol={coin?.short || p.pair.split('/')[0]} size={20} />
@@ -650,6 +652,36 @@ const Signals = () => {
 
       {activeTab === 'history' && (
         <div>
+          {historyPositions.length > 0 && (() => {
+            const settled = historyPositions.filter(p => !p.cancelled && !p.timedOut);
+            const wins = settled.filter(p => p.won).length;
+            const losses = settled.filter(p => !p.won).length;
+            const totalProfit = settled.reduce((s, p) => s + (p.profit || 0), 0);
+            const winRate = settled.length > 0 ? Math.round((wins / settled.length) * 100) : 0;
+            return (
+              <div style={{ ...glassCard(theme), padding: '14px 16px', marginBottom: '14px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: theme.subtext, marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Performance Summary</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8px', textAlign: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: '18px', fontWeight: 'bold', color: theme.up }}>{wins}</div>
+                    <div style={{ fontSize: '10px', color: theme.faint }}>Wins</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '18px', fontWeight: 'bold', color: theme.down }}>{losses}</div>
+                    <div style={{ fontSize: '10px', color: theme.faint }}>Losses</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '18px', fontWeight: 'bold', color: winRate >= 50 ? theme.up : theme.down }}>{winRate}%</div>
+                    <div style={{ fontSize: '10px', color: theme.faint }}>Win Rate</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: totalProfit >= 0 ? theme.up : theme.down }}>{totalProfit >= 0 ? '+' : ''}{fmtUsd(totalProfit)}</div>
+                    <div style={{ fontSize: '10px', color: theme.faint }}>Total P&L</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           {historyPositions.length === 0 && <p style={{ color: theme.faint, fontSize: '13px' }}>No settled trades yet.</p>}
           {historyPositions.map((p) => {
             const coin = COINS.find((c) => c.pair === p.pair);
