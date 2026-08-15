@@ -540,6 +540,10 @@ async function pushMessage(userId, title, body) {
   await writeAllMessages(all);
 }
 
+// ---- Live Chat helpers ----
+async function readLiveChats() { return await dbRead('live_chats') || {}; }
+async function writeLiveChats(data) { await dbWrite('live_chats', data); }
+
 async function readBlockedEmails() { return await dbRead('blocked_emails'); }
 async function writeBlockedEmails(list) { await dbWrite('blocked_emails', list); }
 async function isEmailBlocked(email) { return (await readBlockedEmails()).includes(email.toLowerCase()); }
@@ -1506,6 +1510,80 @@ app.post("/api/messages/read-all", authenticate, async (req, res) => {
   (all[req.user.sub] || []).forEach((m) => { m.read = true; });
   await writeAllMessages(all);
   res.json({ ok: true });
+});
+
+// ---- Live Chat ----
+// User sends a message
+app.post("/api/livechat/send", authenticate, async (req, res) => {
+  const { text } = req.body || {};
+  if (!text || !String(text).trim()) return res.status(400).json({ error: "Message cannot be empty." });
+  const chats = await readLiveChats();
+  const uid = req.user.sub;
+  if (!chats[uid]) chats[uid] = { messages: [], unreadAdmin: 0 };
+  const msg = { id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`, from: 'user', text: String(text).trim(), at: Date.now(), read: false };
+  chats[uid].messages.push(msg);
+  chats[uid].unreadAdmin = (chats[uid].unreadAdmin || 0) + 1;
+  await writeLiveChats(chats);
+  res.json({ ok: true, message: msg });
+});
+
+// User fetches their own chat history + marks admin messages as read
+app.get("/api/livechat/history", authenticate, async (req, res) => {
+  const chats = await readLiveChats();
+  const uid = req.user.sub;
+  if (!chats[uid]) chats[uid] = { messages: [], unreadAdmin: 0 };
+  // mark admin→user messages as read
+  chats[uid].messages.forEach(m => { if (m.from === 'admin') m.read = true; });
+  await writeLiveChats(chats);
+  res.json({ ok: true, messages: chats[uid].messages });
+});
+
+// Admin: list all active chat threads (needs admin key)
+app.get("/api/admin/livechat", async (req, res) => {
+  const key = req.headers['x-admin-key'];
+  if (!key || key !== ADMIN_KEY) return res.status(403).json({ error: "Forbidden." });
+  const chats = await readLiveChats();
+  const users = await dbRead('users') || [];
+  const threads = Object.entries(chats).map(([uid, chat]) => {
+    const user = users.find(u => u.id === uid);
+    return {
+      uid,
+      email: user?.email || uid,
+      name: user?.name || '',
+      unreadAdmin: chat.unreadAdmin || 0,
+      lastMessage: chat.messages[chat.messages.length - 1] || null,
+      messageCount: chat.messages.length,
+    };
+  }).sort((a, b) => (b.lastMessage?.at || 0) - (a.lastMessage?.at || 0));
+  res.json({ ok: true, threads });
+});
+
+// Admin: get full chat for a specific user
+app.get("/api/admin/livechat/:uid", async (req, res) => {
+  const key = req.headers['x-admin-key'];
+  if (!key || key !== ADMIN_KEY) return res.status(403).json({ error: "Forbidden." });
+  const chats = await readLiveChats();
+  const chat = chats[req.params.uid] || { messages: [], unreadAdmin: 0 };
+  // reset unread counter when admin opens the thread
+  if (chats[req.params.uid]) { chats[req.params.uid].unreadAdmin = 0; await writeLiveChats(chats); }
+  res.json({ ok: true, messages: chat.messages });
+});
+
+// Admin: reply to a user
+app.post("/api/admin/livechat/:uid/reply", async (req, res) => {
+  const key = req.headers['x-admin-key'];
+  if (!key || key !== ADMIN_KEY) return res.status(403).json({ error: "Forbidden." });
+  const { text } = req.body || {};
+  if (!text || !String(text).trim()) return res.status(400).json({ error: "Message cannot be empty." });
+  const chats = await readLiveChats();
+  const uid = req.params.uid;
+  if (!chats[uid]) chats[uid] = { messages: [], unreadAdmin: 0 };
+  const msg = { id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`, from: 'admin', text: String(text).trim(), at: Date.now(), read: false };
+  chats[uid].messages.push(msg);
+  await writeLiveChats(chats);
+  // push a notification to the user's inbox
+  await pushMessage(uid, "Support Reply", text.length > 80 ? text.slice(0, 80) + "…" : text);
+  res.json({ ok: true, message: msg });
 });
 
 // ---- Demo/practice trading account — no real money, ever ----
