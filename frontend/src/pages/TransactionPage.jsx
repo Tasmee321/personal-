@@ -11,7 +11,7 @@ function glassCard(theme) {
   return { backgroundColor: theme.card, borderRadius: '16px', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadow, backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)' };
 }
 
-const FILTERS = ['All', 'Spot', 'Signal', 'Futures', 'Transfer'];
+const FILTERS = ['All', 'Deposit', 'Withdraw', 'Spot', 'Signal', 'Futures', 'Transfer'];
 
 const TransactionPage = () => {
   const { theme, iconBadges } = useTheme();
@@ -19,25 +19,46 @@ const TransactionPage = () => {
   const [positions, setPositions] = useState([]);
   const [futures, setFutures] = useState([]);
   const [ledger, setLedger] = useState([]);
+  const [deposits, setDeposits] = useState([]);
+  const [withdrawals, setWithdrawals] = useState([]);
   const [filter, setFilter] = useState('All');
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/api/demo/account`, { headers: authHeaders() });
-        const data = await res.json();
-        if (res.ok) {
-          setTrades(data.trades || []);
-          setPositions(data.positions || []);
-          setFutures(data.futures || []);
-          setLedger(data.ledger || []);
+        const [accRes, depRes, withRes] = await Promise.all([
+          fetch(`${API_URL}/api/demo/account`, { headers: authHeaders() }),
+          fetch(`${API_URL}/api/demo/deposit/history`, { headers: authHeaders() }),
+          fetch(`${API_URL}/api/demo/withdrawals`, { headers: authHeaders() }),
+        ]);
+        const accData = await accRes.json();
+        if (accRes.ok) {
+          setTrades(accData.trades || []);
+          setPositions(accData.positions || []);
+          setFutures(accData.futures || []);
+          setLedger(accData.ledger || []);
         }
+        const depData = await depRes.json();
+        if (depRes.ok) setDeposits(depData.deposits || []);
+        const withData = await withRes.json();
+        if (withRes.ok) setWithdrawals(withData.requests || []);
       } catch {}
     })();
   }, []);
 
   const closedSignals = useMemo(() => positions.filter(p => p.settled), [positions]);
   const closedFutures = useMemo(() => futures.filter(p => p.closed), [futures]);
+
+  const depositStatusColor = (status) => {
+    if (status === 'confirmed') return theme.up;
+    if (status === 'pending') return theme.brand;
+    return theme.faint;
+  };
+  const withdrawStatusColor = (status) => {
+    if (status === 'completed') return theme.up;
+    if (status === 'rejected') return theme.down;
+    return theme.brand;
+  };
 
   const activity = useMemo(() => {
     const items = [];
@@ -55,8 +76,10 @@ const TransactionPage = () => {
       items.push({ id: p.id, at: p.settledAt || p.openedAt, category: 'Signal', label: isCancelled ? `Signal ${p.pair} CANCELLED` : `Signal ${p.pair} ${p.won ? 'WIN' : 'LOSS'}`, amount: isCancelled ? 0 : p.profit });
     });
     closedFutures.forEach(p => items.push({ id: p.id, at: p.closedAt, category: 'Futures', label: `Futures ${p.pair} ${p.direction.toUpperCase()} closed`, amount: p.pnl }));
+    deposits.forEach(d => items.push({ id: d.id || `dep-${d.at}`, at: d.at, category: 'Deposit', label: `Deposit ${fmt(d.amount)} USDT${d.network ? ` via ${d.network.toUpperCase()}` : ''}`, amount: d.amount, status: d.type === 'deposit' ? 'confirmed' : 'confirmed', statusColor: theme.up }));
+    withdrawals.forEach(w => items.push({ id: w.id, at: w.createdAt || w.at, category: 'Withdraw', label: `Withdraw ${fmt(w.netPayout || w.amount)} USDT via ${(w.network || '').toUpperCase()}`, amount: -(w.netPayout || w.amount), status: w.status, statusColor: withdrawStatusColor(w.status) }));
     return items.sort((a, b) => b.at - a.at);
-  }, [trades, closedSignals, closedFutures]);
+  }, [trades, closedSignals, closedFutures, deposits, withdrawals]);
 
   const filtered = filter === 'All' ? activity : activity.filter(a => a.category === filter);
 
@@ -90,10 +113,15 @@ const TransactionPage = () => {
             <div>
               <div style={{ fontSize: '13px', fontWeight: '600' }}>{item.label}</div>
               <div style={{ fontSize: '10px', color: theme.faint, marginTop: '3px' }}>{new Date(item.at).toLocaleString()}</div>
-              <span style={{ fontSize: '10px', fontWeight: '700', color: theme.primary, backgroundColor: theme.primarySoft, padding: '2px 8px', borderRadius: '6px', marginTop: '4px', display: 'inline-block' }}>{item.category}</span>
+              <div style={{ display: 'flex', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '10px', fontWeight: '700', color: theme.primary, backgroundColor: theme.primarySoft, padding: '2px 8px', borderRadius: '6px', display: 'inline-block' }}>{item.category}</span>
+                {item.status && (
+                  <span style={{ fontSize: '10px', fontWeight: '700', color: item.statusColor, backgroundColor: item.statusColor + '1A', padding: '2px 8px', borderRadius: '6px', display: 'inline-block', textTransform: 'capitalize' }}>{item.status}</span>
+                )}
+              </div>
             </div>
             <span style={{ fontWeight: '700', fontSize: '14px', color: item.amount >= 0 ? theme.up : theme.down, flexShrink: 0 }}>
-              {item.amount >= 0 ? '+' : ''}{fmt(item.amount)}
+              {item.amount >= 0 ? '+' : ''}{fmt(Math.abs(item.amount))}
             </span>
           </div>
         ))}
