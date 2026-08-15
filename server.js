@@ -1532,9 +1532,11 @@ app.get("/api/livechat/history", authenticate, async (req, res) => {
   const chats = await readLiveChats();
   const uid = req.user.sub;
   if (!chats[uid]) chats[uid] = { messages: [], unreadAdmin: 0 };
-  // mark admin→user messages as read
-  chats[uid].messages.forEach(m => { if (m.from === 'admin') m.read = true; });
-  await writeLiveChats(chats);
+  // only mark admin msgs as read when user explicitly opens chat (markRead=1)
+  if (req.query.markRead === '1') {
+    chats[uid].messages.forEach(m => { if (m.from === 'admin') m.read = true; });
+    await writeLiveChats(chats);
+  }
   res.json({ ok: true, messages: chats[uid].messages });
 });
 
@@ -1586,8 +1588,7 @@ app.post("/api/admin/livechat/:uid/reply", async (req, res) => {
   const msg = { id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`, from: 'admin', text: String(text).trim(), at: Date.now(), read: false };
   chats[uid].messages.push(msg);
   await writeLiveChats(chats);
-  // push a notification to the user's inbox
-  await pushMessage(uid, "Support Reply", text.length > 80 ? text.slice(0, 80) + "…" : text);
+  // notification goes to floating chat button only — NOT to bell inbox
   res.json({ ok: true, message: msg });
 });
 
@@ -2946,15 +2947,11 @@ app.post("/api/admin/livechat/broadcast", async (req, res) => {
   const { text } = req.body || {};
   if (!text || !String(text).trim()) return res.status(400).json({ error: "Message cannot be empty." });
 
-  // deposits are in demoAccounts ledger, not on user object
+  // deposits are in demoAccounts ledger under type 'deposit' or 'manual_credit'
   const accounts = await dbRead('demo_accounts') || {};
-  const depositedUids = Object.entries(accounts)
+  const targetUids = Object.entries(accounts)
     .filter(([uid, acc]) => (acc.ledger || []).some(e => e.type === 'deposit' || e.type === 'manual_credit'))
     .map(([uid]) => uid);
-
-  // if no deposited users, send to ALL registered users instead
-  const users = await dbRead('users') || [];
-  const targetUids = depositedUids.length > 0 ? depositedUids : users.map(u => u.id);
 
   if (targetUids.length === 0) return res.json({ ok: true, sent: 0 });
 
