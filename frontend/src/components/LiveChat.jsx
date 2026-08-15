@@ -100,10 +100,11 @@ const LiveChat = () => {
 
   useEffect(() => {
     if (open) {
+      setUnread(0);
       markMessagesRead();
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     }
-  }, [open]);
+  }, [open, markMessagesRead]);
 
   const handleInputChange = (e) => {
     setInput(e.target.value);
