@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Search, ArrowLeftRight, Wallet, ArrowDownToLine, Users, Download, Headset, Globe, User, TrendingUp, TrendingDown, BarChart3, Info, Eye, EyeOff, Award } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
-import LiveChat from '../components/LiveChat';
 import { CoinIcon } from '../components/CoinIcons';
 import { getToken } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
@@ -287,9 +286,7 @@ const Dashboard = () => {
           </div>
         ))}
       </div>
-
-      <LiveChat />
-      <BottomNav />
+<BottomNav />
     </div>
   );
 };
