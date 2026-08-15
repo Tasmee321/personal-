@@ -1571,8 +1571,8 @@ This cannot be undone!`)) return;
                           <div style={{ fontSize: '10px', marginTop: '4px', color: msg.from === 'admin' ? 'rgba(255,255,255,0.65)' : theme.faint, textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '3px' }}>
                             {new Date(msg.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             {msg.from === 'admin' && (
-                              <span style={{ color: msg.read ? '#60A5FA' : 'rgba(255,255,255,0.6)', fontSize: '11px' }}>
-                                {msg.read ? '✓✓' : '✓'}
+                              <span style={{ color: msg.readByUser ? '#60A5FA' : 'rgba(255,255,255,0.6)', fontSize: '11px' }}>
+                                {msg.readByUser ? '✓✓' : '✓'}
                               </span>
                             )}
                           </div>
