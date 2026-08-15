@@ -274,48 +274,90 @@ const Trade = () => {
   useEffect(() => {
     if (!chartContainerRef.current) return undefined;
     let cancelled = false;
-    let ws;
+    let ws = null;
+    let animFrameId = null;
+    let pendingUpdate = null; // buffer latest tick, drain on rAF
 
-    const chart = createChart(chartContainerRef.current, {
-      layout: { background: { color: 'transparent' }, textColor: theme.subtext },
-      grid: { vertLines: { color: theme.cardBorder }, horzLines: { color: theme.cardBorder } },
-      width: chartContainerRef.current.clientWidth,
-      height: 260,
-      timeScale: { timeVisible: true, secondsVisible: false },
+    const container = chartContainerRef.current;
+    const chart = createChart(container, {
+      layout: {
+        background: { color: 'transparent' },
+        textColor: theme.subtext,
+        fontFamily: "'Inter', 'SF Pro Display', sans-serif",
+      },
+      grid: {
+        vertLines: { color: theme.cardBorder, style: 1 },
+        horzLines: { color: theme.cardBorder, style: 1 },
+      },
+      width: container.clientWidth,
+      height: 280,
+      timeScale: {
+        timeVisible: true,
+        secondsVisible: true, // show seconds so live movement is visible
+        borderColor: theme.cardBorder,
+        rightOffset: 5,
+        barSpacing: 8,
+      },
+      rightPriceScale: {
+        borderColor: theme.cardBorder,
+        scaleMargins: { top: 0.08, bottom: 0.08 },
+      },
+      crosshair: {
+        mode: 1,
+        vertLine: { color: theme.primary, labelBackgroundColor: theme.primary },
+        horzLine: { color: theme.primary, labelBackgroundColor: theme.primary },
+      },
+      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true },
+      handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
     });
+
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: theme.up, downColor: theme.down, borderVisible: false,
-      wickUpColor: theme.up, wickDownColor: theme.down,
+      upColor: theme.up,
+      downColor: theme.down,
+      borderVisible: false,
+      wickUpColor: theme.up,
+      wickDownColor: theme.down,
     });
     chartRef.current = chart;
     seriesRef.current = series;
 
-    const handleResize = () => {
-      if (chartContainerRef.current) chart.applyOptions({ width: chartContainerRef.current.clientWidth });
-    };
-    window.addEventListener('resize', handleResize);
+    // Resize observer — more reliable than window resize for mobile
+    const ro = new ResizeObserver(() => {
+      if (container && chartRef.current) {
+        chartRef.current.applyOptions({ width: container.clientWidth });
+      }
+    });
+    ro.observe(container);
 
-    const load = async () => {
-      try {
-        const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=${selectedCoin.symbol}&interval=${timeframe}&limit=120`);
-        const raw = await res.json();
-        if (cancelled || !seriesRef.current) return;
-        seriesRef.current.setData(raw.map(toCandle));
-        chartRef.current?.timeScale().fitContent();
-      } catch { /* stays on previous candles */ }
+    // rAF-based drain: apply pending WS tick at 60fps, never block
+    const drainLoop = () => {
+      if (pendingUpdate && seriesRef.current) {
+        seriesRef.current.update(pendingUpdate);
+        pendingUpdate = null;
+      }
+      animFrameId = requestAnimationFrame(drainLoop);
+    };
+    animFrameId = requestAnimationFrame(drainLoop);
+
+    const connectWs = () => {
+      if (ws) { try { ws.close(); } catch (_) {} }
       ws = new WebSocket(`wss://stream.binance.com:9443/ws/${selectedCoin.symbol.toLowerCase()}@kline_${timeframe}`);
       ws.onmessage = (event) => {
+        if (cancelled || !seriesRef.current) return;
         const { k } = JSON.parse(event.data);
-        if (!seriesRef.current) return;
-        const c = { time: Math.floor(k.t / 1000), open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c) };
+        const c = {
+          time: Math.floor(k.t / 1000),
+          open: parseFloat(k.o),
+          high: parseFloat(k.h),
+          low: parseFloat(k.l),
+          close: parseFloat(k.c),
+        };
         const override = candleOverridesRef.current.find(o => o.symbol === selectedCoin.symbol);
         if (override) {
-          // Realistic drift: small oscillation biased toward direction, not a hard lock
           const biasFactor = 0.0003 + Math.random() * 0.0004;
           const noise = (Math.random() - 0.45) * c.open * 0.0006;
           const drift = override.direction === 'up' ? biasFactor * c.open : -biasFactor * c.open;
-          const adjustedClose = c.close + drift + noise;
-          c.close = +adjustedClose.toFixed(8);
+          c.close = +(c.close + drift + noise).toFixed(8);
           if (override.direction === 'up') {
             c.high = Math.max(c.high, c.close, c.open + c.open * 0.0002);
             c.low = Math.min(c.low, c.open - c.open * 0.0001);
@@ -324,16 +366,40 @@ const Trade = () => {
             c.high = Math.max(c.high, c.open + c.open * 0.0001);
           }
         }
-        seriesRef.current.update(c);
+        pendingUpdate = c; // buffer — rAF drains it
       };
+      ws.onerror = () => {
+        // auto-reconnect after 2s on error
+        if (!cancelled) setTimeout(connectWs, 2000);
+      };
+      ws.onclose = () => {
+        if (!cancelled) setTimeout(connectWs, 2000);
+      };
+    };
+
+    // Kick off: fetch history and WS in parallel
+    const load = async () => {
+      // Start WS immediately — don't wait for REST
+      connectWs();
+      try {
+        const res = await fetch(
+          `https://api.binance.com/api/v3/klines?symbol=${selectedCoin.symbol}&interval=${timeframe}&limit=200`,
+          { cache: 'no-store' }
+        );
+        const raw = await res.json();
+        if (cancelled || !seriesRef.current || !Array.isArray(raw)) return;
+        seriesRef.current.setData(raw.map(toCandle));
+        chartRef.current?.timeScale().fitContent();
+      } catch { /* WS keeps it live even if REST fails */ }
     };
     load();
 
     return () => {
       cancelled = true;
-      window.removeEventListener('resize', handleResize);
-      if (ws) ws.close();
-      chart.remove();
+      ro.disconnect();
+      if (animFrameId) cancelAnimationFrame(animFrameId);
+      if (ws) { try { ws.close(); } catch (_) {} }
+      try { chart.remove(); } catch (_) {}
       chartRef.current = null;
       seriesRef.current = null;
     };
