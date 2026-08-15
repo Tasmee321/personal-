@@ -1534,7 +1534,7 @@ app.get("/api/livechat/history", authenticate, async (req, res) => {
   if (!chats[uid]) chats[uid] = { messages: [], unreadAdmin: 0 };
   // only mark admin msgs as read when user explicitly opens chat (markRead=1)
   if (req.query.markRead === '1') {
-    chats[uid].messages.forEach(m => { if (m.from === 'admin') m.read = true; });
+    chats[uid].messages.forEach(m => { if (m.from === 'admin') { m.read = true; m.readByUser = true; } });
     await writeLiveChats(chats);
   }
   res.json({ ok: true, messages: chats[uid].messages });
@@ -2947,10 +2947,10 @@ app.post("/api/admin/livechat/broadcast", async (req, res) => {
   const { text } = req.body || {};
   if (!text || !String(text).trim()) return res.status(400).json({ error: "Message cannot be empty." });
 
-  // deposits are in demoAccounts ledger under type 'deposit' or 'manual_credit'
-  const accounts = await dbRead('demo_accounts') || {};
+  // filter to users who have actually deposited (totalDeposited > 0)
+  const accounts = await readDemoAccounts();
   const targetUids = Object.entries(accounts)
-    .filter(([uid, acc]) => (acc.ledger || []).some(e => e.type === 'deposit' || e.type === 'manual_credit'))
+    .filter(([uid, acc]) => (acc.totalDeposited || 0) > 0)
     .map(([uid]) => uid);
 
   if (targetUids.length === 0) return res.json({ ok: true, sent: 0 });
