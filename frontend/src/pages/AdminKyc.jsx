@@ -63,7 +63,66 @@ const AdminKyc = () => {
   const [pendingDeposits, setPendingDeposits] = useState([]);
   const [savingWallets, setSavingWallets] = useState(false);
 
+  // Live Chat
+  const [chatThreads, setChatThreads] = useState([]);
+  const [activeChatUid, setActiveChatUid] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatReply, setChatReply] = useState('');
+  const [chatSending, setChatSending] = useState(false);
+  const chatBottomRef = React.useRef(null);
+  const chatPollRef = React.useRef(null);
+
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+
+  const loadChatThreads = React.useCallback(async (key) => {
+    const k = key || adminKey;
+    if (!k) return;
+    const { ok, data } = await safeFetch(`${API_URL}/api/admin/livechat`, { headers: { 'x-admin-key': k } });
+    if (ok && data.ok) setChatThreads(data.threads || []);
+  }, [adminKey]);
+
+  const openChatThread = async (uid) => {
+    setActiveChatUid(uid);
+    const { ok, data } = await safeFetch(`${API_URL}/api/admin/livechat/${uid}`, { headers: { 'x-admin-key': adminKey } });
+    if (ok && data.ok) {
+      setChatMessages(data.messages || []);
+      setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    }
+    clearInterval(chatPollRef.current);
+    chatPollRef.current = setInterval(async () => {
+      const r = await safeFetch(`${API_URL}/api/admin/livechat/${uid}`, { headers: { 'x-admin-key': adminKey } });
+      if (r.ok && r.data.ok) {
+        setChatMessages(r.data.messages || []);
+        setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
+      }
+    }, 4000);
+  };
+
+  const sendChatReply = async () => {
+    const text = chatReply.trim();
+    if (!text || chatSending || !activeChatUid) return;
+    setChatSending(true);
+    setChatReply('');
+    const { ok, data } = await safeFetch(`${API_URL}/api/admin/livechat/${activeChatUid}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': adminKey },
+      body: JSON.stringify({ text }),
+    });
+    if (ok && data.ok) {
+      setChatMessages(prev => [...prev, data.message]);
+      setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
+    }
+    setChatSending(false);
+  };
+
+  React.useEffect(() => {
+    if (activeTab === 'livechat' && authed) {
+      loadChatThreads();
+      const interval = setInterval(() => loadChatThreads(), 6000);
+      return () => { clearInterval(interval); clearInterval(chatPollRef.current); };
+    }
+    return () => clearInterval(chatPollRef.current);
+  }, [activeTab, authed, loadChatThreads]);
 
   const safeFetch = async (url, opts) => {
     try {
@@ -412,6 +471,7 @@ This cannot be undone!`)) return;
     { key: 'deposits', label: 'Deposits' },
     { key: 'withdrawals', label: 'Withdrawals' },
     { key: 'signals', label: 'Signals' },
+    { key: 'livechat', label: 'Live Chat' },
   ];
 
   const card = {
@@ -1301,6 +1361,122 @@ This cannot be undone!`)) return;
           </>
         )}
       </div>
+
+        {/* ── Live Chat Tab ── */}
+        {activeTab === 'livechat' && (
+          <div style={{ display: 'flex', gap: '16px', height: '600px' }}>
+            {/* Thread list */}
+            <div style={{ ...card, width: '280px', flexShrink: 0, overflowY: 'auto', padding: '12px' }}>
+              <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '12px', color: theme.text }}>
+                Chat Threads ({chatThreads.length})
+              </div>
+              {chatThreads.length === 0 && (
+                <div style={{ color: theme.faint, fontSize: '13px', textAlign: 'center', marginTop: '40px' }}>
+                  No active chats yet.
+                </div>
+              )}
+              {chatThreads.map(t => (
+                <div
+                  key={t.uid}
+                  onClick={() => openChatThread(t.uid)}
+                  style={{
+                    padding: '10px', borderRadius: '10px', marginBottom: '6px', cursor: 'pointer',
+                    backgroundColor: activeChatUid === t.uid ? `${theme.primary}18` : 'transparent',
+                    border: `1px solid ${activeChatUid === t.uid ? theme.primary : theme.cardBorder}`,
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: '600', fontSize: '13px', color: theme.text }}>{t.name || t.email}</div>
+                    {t.unreadAdmin > 0 && (
+                      <div style={{
+                        backgroundColor: '#EF4444', color: 'white',
+                        borderRadius: '10px', fontSize: '10px', fontWeight: 'bold',
+                        padding: '2px 6px', minWidth: '18px', textAlign: 'center',
+                      }}>{t.unreadAdmin}</div>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '11px', color: theme.faint, marginTop: '2px' }}>{t.email}</div>
+                  {t.lastMessage && (
+                    <div style={{
+                      fontSize: '12px', color: theme.subtext, marginTop: '4px',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }}>
+                      {t.lastMessage.from === 'admin' ? '↩ ' : ''}{t.lastMessage.text}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Chat window */}
+            <div style={{ ...card, flex: 1, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+              {!activeChatUid ? (
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.faint, fontSize: '14px' }}>
+                  Select a thread to start chatting
+                </div>
+              ) : (
+                <>
+                  {/* Chat header */}
+                  <div style={{
+                    padding: '14px 16px', borderBottom: `1px solid ${theme.cardBorder}`,
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                  }}>
+                    <div style={{ flex: 1 }}>
+                      {(() => {
+                        const t = chatThreads.find(x => x.uid === activeChatUid);
+                        return (
+                          <>
+                            <div style={{ fontWeight: '700', fontSize: '14px', color: theme.text }}>{t?.name || t?.email || activeChatUid}</div>
+                            <div style={{ fontSize: '11px', color: theme.faint }}>{t?.email} · UID: {activeChatUid.slice(0, 8)}</div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                    <button onClick={() => { setActiveChatUid(null); setChatMessages([]); clearInterval(chatPollRef.current); }}
+                      style={{ background: 'none', border: 'none', color: theme.faint, cursor: 'pointer', fontSize: '18px' }}>✕</button>
+                  </div>
+
+                  {/* Messages */}
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {chatMessages.map(msg => (
+                      <div key={msg.id} style={{ display: 'flex', justifyContent: msg.from === 'admin' ? 'flex-end' : 'flex-start' }}>
+                        <div style={{
+                          maxWidth: '70%', padding: '9px 13px',
+                          borderRadius: msg.from === 'admin' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                          backgroundColor: msg.from === 'admin' ? theme.primary : (theme.inputBg || theme.cardBorder),
+                          color: msg.from === 'admin' ? 'white' : theme.text,
+                          fontSize: '13px', lineHeight: '1.5', wordBreak: 'break-word',
+                        }}>
+                          <div>{msg.text}</div>
+                          <div style={{ fontSize: '10px', marginTop: '4px', color: msg.from === 'admin' ? 'rgba(255,255,255,0.65)' : theme.faint, textAlign: 'right' }}>
+                            {new Date(msg.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {msg.from === 'admin' && <span style={{ marginLeft: '4px' }}>{msg.read ? '✓✓' : '✓'}</span>}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    <div ref={chatBottomRef} />
+                  </div>
+
+                  {/* Reply input */}
+                  <div style={{ padding: '12px 16px', borderTop: `1px solid ${theme.cardBorder}`, display: 'flex', gap: '8px' }}>
+                    <input
+                      value={chatReply}
+                      onChange={e => setChatReply(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatReply(); } }}
+                      placeholder="Reply to user..."
+                      style={{ flex: 1, padding: '10px 12px', borderRadius: '10px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg, color: theme.text, fontSize: '13px' }}
+                    />
+                    <button onClick={sendChatReply} disabled={!chatReply.trim() || chatSending} style={{ ...btnPrimary, opacity: !chatReply.trim() || chatSending ? 0.5 : 1 }}>
+                      Send
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
 
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
