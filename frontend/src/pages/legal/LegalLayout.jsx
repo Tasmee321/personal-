@@ -70,22 +70,40 @@ const LegalLayout = () => {
 
       <style>{`
         @media (max-width: 720px) {
-          .legal-wrapper { flex-direction: column !important; }
+          .legal-wrapper {
+            flex-direction: column !important;
+            padding: 16px 12px 80px !important;
+            gap: 16px !important;
+          }
           .legal-sidebar {
             width: 100% !important;
             display: flex !important;
             overflow-x: auto !important;
             border-radius: 12px !important;
+            flex-shrink: 0 !important;
           }
           .legal-sidebar a {
             white-space: nowrap;
             border-left: none !important;
             border-bottom: 3px solid transparent;
             text-align: center;
-            padding: 12px 16px !important;
-            font-size: 13px !important;
+            padding: 12px 14px !important;
+            font-size: 12px !important;
           }
-          .legal-content { padding: 20px !important; }
+          .legal-content {
+            padding: 16px !important;
+            width: 100% !important;
+            min-width: 0 !important;
+            box-sizing: border-box !important;
+            overflow-x: hidden !important;
+            min-height: 60vh !important;
+          }
+          .legal-content p,
+          .legal-content ul,
+          .legal-content li {
+            word-break: break-word !important;
+            overflow-wrap: break-word !important;
+          }
         }
       `}</style>
 
