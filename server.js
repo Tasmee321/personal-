@@ -1159,6 +1159,19 @@ app.get("/api/account/profile", authenticate, async (req, res) => {
   });
 });
 
+app.put("/api/account/profile", authenticate, async (req, res) => {
+  const { name } = req.body || {};
+  if (!name || typeof name !== "string" || name.trim().length < 2 || name.trim().length > 50) {
+    return res.status(400).json({ error: "Name must be 2–50 characters." });
+  }
+  const users = await readUsers();
+  const me = users.find((u) => u.id === req.user.sub);
+  if (!me) return res.status(404).json({ error: "Account not found." });
+  me.name = name.trim();
+  await writeUsers(users);
+  res.json({ ok: true, name: me.name });
+});
+
 app.get("/api/account/security", authenticate, async (req, res) => {
   const me = (await readUsers()).find((u) => u.id === req.user.sub);
   if (!me) return res.status(404).json({ error: "Account not found." });
@@ -2039,23 +2052,35 @@ app.get("/api/admin/withdrawals/pending", requireAdmin, async (req, res) => {
 app.post("/api/admin/withdrawals/:requestId/process", requireAdmin, async (req, res) => {
   const { approve, txid } = req.body || {};
   const accounts = await readDemoAccounts();
+  const users = await readUsers();
   let found = false;
   for (const [userId, account] of Object.entries(accounts)) {
     if (!account.withdrawalRequests) continue;
     const wr = account.withdrawalRequests.find(w => w.id === req.params.requestId);
     if (wr && wr.status === 'pending') {
+      const user = users.find(u => u.id === userId);
       if (approve) {
         wr.status = 'completed';
         wr.txid = txid || null;
         wr.reviewedAt = Date.now();
         addLedgerEntry(account, 'withdrawal_done', 'external', -wr.netPayout, `Withdrawal sent via ${wr.network.toUpperCase()}`, wr.id);
         await pushMessage(userId, "Withdrawal completed", `${wr.netPayout.toFixed(2)} USDT sent to your ${wr.network.toUpperCase()} wallet.`);
+        if (user) {
+          sendNotificationEmail(user.email, user.name, "Withdrawal Completed", "Withdrawal Completed",
+            `<p>Your withdrawal has been processed successfully.</p><p><b>Amount Sent:</b> ${wr.netPayout.toFixed(2)} USDT<br/><b>Network:</b> ${wr.network.toUpperCase()}<br/><b>Wallet:</b> ${wr.walletAddress || '—'}${txid ? `<br/><b>Transaction ID:</b> ${txid}` : ''}<br/><b>Date:</b> ${new Date().toLocaleString()}</p><p>Funds should arrive in your wallet shortly.</p>`
+          );
+        }
       } else {
         wr.status = 'rejected';
         wr.reviewedAt = Date.now();
         account.balance = Math.round((account.balance + wr.amount) * 100) / 100;
         addLedgerEntry(account, 'withdrawal_refund', 'spot', wr.amount, `Withdrawal rejected — ${wr.amount.toFixed(2)} USDT refunded`, wr.id);
         await pushMessage(userId, "Withdrawal rejected", `Your withdrawal of ${wr.amount.toFixed(2)} USDT was rejected. Funds returned to Spot.`);
+        if (user) {
+          sendNotificationEmail(user.email, user.name, "Withdrawal Rejected", "Withdrawal Rejected",
+            `<p>Your withdrawal request has been rejected and the funds have been returned to your Spot wallet.</p><p><b>Amount Refunded:</b> ${wr.amount.toFixed(2)} USDT<br/><b>Network:</b> ${wr.network.toUpperCase()}<br/><b>Date:</b> ${new Date().toLocaleString()}</p><p>If you have questions, please contact support.</p>`
+          );
+        }
       }
       found = true;
       break;
