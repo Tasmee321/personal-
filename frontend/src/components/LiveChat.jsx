@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageCircle, X, Send, Minimize2 } from 'lucide-react';
+import { MessageCircle, X, Send, ChevronDown } from 'lucide-react';
 import { useTheme } from '../ThemeContext';
 import { getToken } from '../utils/auth';
 import { API_URL } from '../config';
+
+const DRAG_KEY = 'kynex_chat_btn_pos';
 
 const LiveChat = () => {
   const { theme } = useTheme();
@@ -11,8 +13,19 @@ const LiveChat = () => {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [unread, setUnread] = useState(0);
+  const [adminTyping, setAdminTyping] = useState(false);
   const bottomRef = useRef(null);
   const pollRef = useRef(null);
+  const typingPollRef = useRef(null);
+  const typingTimerRef = useRef(null);
+  const lastTypingSentRef = useRef(0);
+
+  // Draggable button state
+  const savedPos = (() => { try { return JSON.parse(localStorage.getItem(DRAG_KEY)); } catch { return null; } })();
+  const [btnPos, setBtnPos] = useState(savedPos || { bottom: 88, right: 16 });
+  const dragRef = useRef(null);
+  const dragging = useRef(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
 
   const fetchHistory = useCallback(async () => {
     try {
@@ -30,8 +43,31 @@ const LiveChat = () => {
           setUnread(0);
         }
       }
-    } catch { /* network error */ }
+    } catch { /* network */ }
   }, [open]);
+
+  const fetchTyping = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/livechat/typing-status`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setAdminTyping(data.adminTyping || false);
+    } catch { /* network */ }
+  }, []);
+
+  const notifyTyping = useCallback(async () => {
+    const now = Date.now();
+    if (now - lastTypingSentRef.current < 2000) return;
+    lastTypingSentRef.current = now;
+    try {
+      await fetch(`${API_URL}/api/livechat/typing`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+    } catch { /* network */ }
+  }, []);
 
   useEffect(() => {
     fetchHistory();
@@ -41,10 +77,26 @@ const LiveChat = () => {
 
   useEffect(() => {
     if (open) {
+      typingPollRef.current = setInterval(fetchTyping, 2000);
+    } else {
+      clearInterval(typingPollRef.current);
+      setAdminTyping(false);
+    }
+    return () => clearInterval(typingPollRef.current);
+  }, [open, fetchTyping]);
+
+  useEffect(() => {
+    if (open) {
       setUnread(0);
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     }
   }, [open, messages]);
+
+  const handleInputChange = (e) => {
+    setInput(e.target.value);
+    notifyTyping();
+    clearTimeout(typingTimerRef.current);
+  };
 
   const send = async () => {
     const text = input.trim();
@@ -62,7 +114,7 @@ const LiveChat = () => {
         setMessages(prev => [...prev, data.message]);
         setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
       }
-    } catch { /* network error */ }
+    } catch { /* network */ }
     setSending(false);
   };
 
@@ -70,23 +122,72 @@ const LiveChat = () => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
-  const fmtTime = (ts) => {
-    const d = new Date(ts);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const fmtTime = (ts) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  // Drag logic
+  const onMouseDown = (e) => {
+    if (open) return;
+    dragging.current = true;
+    dragOffset.current = {
+      x: e.clientX - (window.innerWidth - btnPos.right - 56),
+      y: e.clientY - (window.innerHeight - btnPos.bottom - 56),
+    };
+    e.preventDefault();
   };
+  const onTouchStart = (e) => {
+    if (open) return;
+    dragging.current = true;
+    const t = e.touches[0];
+    dragOffset.current = {
+      x: t.clientX - (window.innerWidth - btnPos.right - 56),
+      y: t.clientY - (window.innerHeight - btnPos.bottom - 56),
+    };
+  };
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!dragging.current) return;
+      const cx = e.touches ? e.touches[0].clientX : e.clientX;
+      const cy = e.touches ? e.touches[0].clientY : e.clientY;
+      const newRight = Math.max(8, Math.min(window.innerWidth - 64, window.innerWidth - (cx - dragOffset.current.x) - 56));
+      const newBottom = Math.max(8, Math.min(window.innerHeight - 64, window.innerHeight - (cy - dragOffset.current.y) - 56));
+      setBtnPos({ right: newRight, bottom: newBottom });
+    };
+    const onUp = () => {
+      if (dragging.current) {
+        dragging.current = false;
+        setBtnPos(pos => { localStorage.setItem(DRAG_KEY, JSON.stringify(pos)); return pos; });
+      }
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('touchend', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+    };
+  }, []);
+
+  const chatBottom = btnPos.bottom + 64;
+  const chatRight = btnPos.right;
 
   return (
     <>
       {/* Chat Window */}
       {open && (
         <div style={{
-          position: 'fixed', bottom: '80px', right: '16px', zIndex: 1000,
+          position: 'fixed',
+          bottom: `${chatBottom}px`,
+          right: `${Math.max(8, Math.min(chatRight, window.innerWidth - 360))}px`,
+          zIndex: 1000,
           width: 'min(340px, calc(100vw - 32px))',
-          height: '460px',
+          height: '480px',
           backgroundColor: theme.card,
           border: `1px solid ${theme.cardBorder}`,
-          borderRadius: '18px',
-          boxShadow: '0 8px 40px rgba(0,0,0,0.28)',
+          borderRadius: '20px',
+          boxShadow: '0 12px 48px rgba(0,0,0,0.32)',
           display: 'flex', flexDirection: 'column',
           overflow: 'hidden',
         }}>
@@ -95,25 +196,30 @@ const LiveChat = () => {
             padding: '14px 16px',
             background: `linear-gradient(135deg, ${theme.primary} 0%, ${theme.brand || theme.primary} 100%)`,
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            flexShrink: 0,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div style={{
-                width: '36px', height: '36px', borderRadius: '50%',
+                width: '38px', height: '38px', borderRadius: '50%',
                 background: 'rgba(255,255,255,0.2)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
               }}>
                 <MessageCircle size={18} color="white" />
               </div>
               <div>
                 <div style={{ color: 'white', fontWeight: '700', fontSize: '14px' }}>KYNEX Support</div>
-                <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: '11px' }}>Live Chat</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <div style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: '#4ADE80' }} />
+                  <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: '11px' }}>Online</div>
+                </div>
               </div>
             </div>
             <button
               onClick={() => setOpen(false)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', padding: '4px' }}
+              style={{ background: 'rgba(255,255,255,0.15)', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', padding: '6px', borderRadius: '8px' }}
             >
-              <Minimize2 size={18} />
+              <ChevronDown size={18} />
             </button>
           </div>
 
@@ -121,6 +227,7 @@ const LiveChat = () => {
           <div style={{
             flex: 1, overflowY: 'auto', padding: '16px 12px',
             display: 'flex', flexDirection: 'column', gap: '10px',
+            backgroundColor: theme.bg || theme.card,
           }}>
             {messages.length === 0 && (
               <div style={{
@@ -128,7 +235,7 @@ const LiveChat = () => {
                 marginTop: '60px', lineHeight: '1.6',
               }}>
                 <MessageCircle size={32} color={theme.faint} style={{ marginBottom: '10px' }} />
-                <div>Welcome to KYNEX Support</div>
+                <div style={{ fontWeight: 600, color: theme.subtext }}>Welcome to KYNEX Support</div>
                 <div style={{ fontSize: '12px', marginTop: '4px' }}>Send a message to get started.</div>
               </div>
             )}
@@ -137,24 +244,35 @@ const LiveChat = () => {
                 display: 'flex',
                 justifyContent: msg.from === 'user' ? 'flex-end' : 'flex-start',
               }}>
+                {msg.from === 'admin' && (
+                  <div style={{
+                    width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0,
+                    background: `linear-gradient(135deg, ${theme.primary}, ${theme.brand || theme.primary})`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    marginRight: '7px', marginTop: '2px',
+                    fontSize: '11px', fontWeight: 700, color: 'white',
+                  }}>K</div>
+                )}
                 <div style={{
-                  maxWidth: '78%',
+                  maxWidth: '75%',
                   padding: '9px 13px',
-                  borderRadius: msg.from === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                  backgroundColor: msg.from === 'user' ? theme.primary : (theme.inputBg || theme.cardBorder),
-                  color: msg.from === 'user' ? 'white' : theme.text,
+                  borderRadius: msg.from === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                  backgroundColor: msg.from === 'user' ? theme.primary : (theme.inputBg || '#F3F4F6'),
+                  color: msg.from === 'user' ? 'white' : (theme.card === '#FFFFFF' || theme.card === '#fff' ? '#1F2937' : theme.text),
                   fontSize: '13px', lineHeight: '1.5',
                   wordBreak: 'break-word',
+                  boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
                 }}>
                   <div>{msg.text}</div>
                   <div style={{
                     fontSize: '10px', marginTop: '4px',
-                    color: msg.from === 'user' ? 'rgba(255,255,255,0.65)' : theme.faint,
+                    color: msg.from === 'user' ? 'rgba(255,255,255,0.7)' : (theme.faint || '#9CA3AF'),
                     textAlign: 'right',
+                    display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '3px',
                   }}>
                     {fmtTime(msg.at)}
                     {msg.from === 'user' && (
-                      <span style={{ marginLeft: '4px' }}>
+                      <span style={{ fontSize: '11px', color: msg.read ? '#60A5FA' : 'rgba(255,255,255,0.6)', marginLeft: '2px' }}>
                         {msg.read ? '✓✓' : '✓'}
                       </span>
                     )}
@@ -162,6 +280,32 @@ const LiveChat = () => {
                 </div>
               </div>
             ))}
+            {/* Typing indicator */}
+            {adminTyping && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                <div style={{
+                  width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0,
+                  background: `linear-gradient(135deg, ${theme.primary}, ${theme.brand || theme.primary})`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '11px', fontWeight: 700, color: 'white',
+                }}>K</div>
+                <div style={{
+                  padding: '10px 14px', borderRadius: '18px 18px 18px 4px',
+                  backgroundColor: theme.inputBg || '#F3F4F6',
+                  display: 'flex', gap: '4px', alignItems: 'center',
+                  boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+                }}>
+                  {[0, 1, 2].map(i => (
+                    <div key={i} style={{
+                      width: '6px', height: '6px', borderRadius: '50%',
+                      backgroundColor: theme.faint || '#9CA3AF',
+                      animation: 'chatBounce 1.2s infinite',
+                      animationDelay: `${i * 0.2}s`,
+                    }} />
+                  ))}
+                </div>
+              </div>
+            )}
             <div ref={bottomRef} />
           </div>
 
@@ -170,31 +314,39 @@ const LiveChat = () => {
             padding: '10px 12px',
             borderTop: `1px solid ${theme.cardBorder}`,
             display: 'flex', gap: '8px', alignItems: 'flex-end',
+            backgroundColor: theme.card,
+            flexShrink: 0,
           }}>
             <textarea
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={handleInputChange}
               onKeyDown={handleKey}
               placeholder="Type a message..."
               rows={1}
               style={{
                 flex: 1, resize: 'none', padding: '10px 12px',
-                borderRadius: '12px', border: `1px solid ${theme.cardBorder}`,
+                borderRadius: '14px', border: `1.5px solid ${theme.cardBorder}`,
                 backgroundColor: theme.inputBg || theme.bg,
                 color: theme.text, fontSize: '13px',
                 outline: 'none', fontFamily: 'inherit',
                 maxHeight: '80px', overflowY: 'auto',
+                transition: 'border-color 0.15s',
               }}
+              onFocus={e => e.target.style.borderColor = theme.primary}
+              onBlur={e => e.target.style.borderColor = theme.cardBorder}
             />
             <button
               onClick={send}
               disabled={!input.trim() || sending}
               style={{
-                width: '40px', height: '40px', borderRadius: '12px',
+                width: '42px', height: '42px', borderRadius: '14px',
                 border: 'none', cursor: input.trim() && !sending ? 'pointer' : 'not-allowed',
-                backgroundColor: input.trim() && !sending ? theme.primary : theme.cardBorder,
+                background: input.trim() && !sending
+                  ? `linear-gradient(135deg, ${theme.primary}, ${theme.brand || theme.primary})`
+                  : theme.cardBorder,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0, transition: 'background 0.15s',
+                flexShrink: 0, transition: 'all 0.15s',
+                boxShadow: input.trim() && !sending ? `0 4px 12px ${theme.primary}55` : 'none',
               }}
             >
               <Send size={16} color="white" />
@@ -203,32 +355,57 @@ const LiveChat = () => {
         </div>
       )}
 
-      {/* FAB Button */}
-      <button
-        onClick={() => setOpen(o => !o)}
+      {/* FAB Button — draggable */}
+      <div
+        ref={dragRef}
+        onMouseDown={onMouseDown}
+        onTouchStart={onTouchStart}
+        onClick={() => { if (!dragging.current) setOpen(o => !o); }}
         style={{
-          position: 'fixed', bottom: '85px', right: '16px', zIndex: 999,
-          width: '52px', height: '52px', borderRadius: '50%',
-          backgroundColor: theme.primary,
-          border: 'none', cursor: 'pointer',
-          display: open ? 'none' : 'flex',
-          alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 4px 20px rgba(36,104,242,0.45)',
+          position: 'fixed',
+          bottom: `${btnPos.bottom}px`,
+          right: `${btnPos.right}px`,
+          zIndex: 999,
+          width: '56px', height: '56px',
+          borderRadius: '50%',
+          background: open
+            ? `linear-gradient(135deg, ${theme.primary}, ${theme.brand || theme.primary})`
+            : `linear-gradient(135deg, ${theme.primary}, ${theme.brand || theme.primary})`,
+          border: 'none', cursor: 'grab',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: `0 6px 24px ${theme.primary}60, 0 2px 8px rgba(0,0,0,0.2)`,
+          transition: 'transform 0.15s, box-shadow 0.15s',
+          userSelect: 'none',
+          touchAction: 'none',
         }}
+        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.08)'; }}
+        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
       >
-        <MessageCircle size={22} color="white" />
-        {unread > 0 && (
+        {open
+          ? <X size={22} color="white" />
+          : <MessageCircle size={22} color="white" />
+        }
+        {!open && unread > 0 && (
           <div style={{
-            position: 'absolute', top: '-2px', right: '-2px',
-            width: '18px', height: '18px', borderRadius: '50%',
+            position: 'absolute', top: '-3px', right: '-3px',
+            minWidth: '20px', height: '20px', borderRadius: '10px',
             backgroundColor: '#EF4444',
+            border: '2px solid white',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '10px', color: 'white', fontWeight: '700',
+            fontSize: '10px', color: 'white', fontWeight: '800',
+            padding: '0 4px', boxSizing: 'border-box',
           }}>
             {unread > 9 ? '9+' : unread}
           </div>
         )}
-      </button>
+      </div>
+
+      <style>{`
+        @keyframes chatBounce {
+          0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+          30% { transform: translateY(-5px); opacity: 1; }
+        }
+      `}</style>
     </>
   );
 };
