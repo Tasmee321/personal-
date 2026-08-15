@@ -1563,9 +1563,14 @@ app.get("/api/admin/livechat/:uid", async (req, res) => {
   const key = req.headers['x-admin-key'];
   if (!key || key !== ADMIN_KEY) return res.status(403).json({ error: "Forbidden." });
   const chats = await readLiveChats();
-  const chat = chats[req.params.uid] || { messages: [], unreadAdmin: 0 };
-  // reset unread counter when admin opens the thread
-  if (chats[req.params.uid]) { chats[req.params.uid].unreadAdmin = 0; await writeLiveChats(chats); }
+  const uid = req.params.uid;
+  const chat = chats[uid] || { messages: [], unreadAdmin: 0 };
+  // reset unread counter + mark all user->admin messages as read (enables double tick on user side)
+  if (chats[uid]) {
+    chats[uid].unreadAdmin = 0;
+    chats[uid].messages = chats[uid].messages.map(m => m.from === 'user' ? { ...m, read: true } : m);
+    await writeLiveChats(chats);
+  }
   res.json({ ok: true, messages: chat.messages });
 });
 
@@ -2934,7 +2939,59 @@ app.post("/api/demo/futures/close", authenticate, async (req, res) => {
   }
 });
 
+// ---- Broadcast: send to all deposited users live chats ----
+app.post("/api/admin/livechat/broadcast", async (req, res) => {
+  const key = req.headers['x-admin-key'];
+  if (!key || key !== ADMIN_KEY) return res.status(403).json({ error: "Forbidden." });
+  const { text } = req.body || {};
+  if (!text || !String(text).trim()) return res.status(400).json({ error: "Message cannot be empty." });
+
+  const users = await dbRead('users') || [];
+  const depositedUids = users
+    .filter(u => u.deposits && u.deposits.length > 0)
+    .map(u => u.id);
+
+  if (depositedUids.length === 0) return res.json({ ok: true, sent: 0 });
+
+  const chats = await readLiveChats();
+  const now = Date.now();
+  let sent = 0;
+  for (const uid of depositedUids) {
+    if (!chats[uid]) chats[uid] = { messages: [], unreadAdmin: 0 };
+    const msg = {
+      id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
+      from: 'admin',
+      text: String(text).trim(),
+      at: now,
+      read: false,
+      broadcast: true,
+    };
+    chats[uid].messages.push(msg);
+    sent++;
+  }
+  await writeLiveChats(chats);
+  res.json({ ok: true, sent });
+});
+
 app.get("/api/health", (req, res) => res.json({ ok: true }));
+
+// ---- Daily 3am PKT chat clear (3am PKT = 22:00 UTC) ----
+function scheduleDailyChatClear() {
+  const now = new Date();
+  const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 22, 0, 0, 0));
+  if (next.getTime() <= now.getTime()) next.setUTCDate(next.getUTCDate() + 1);
+  const msUntilNext = next.getTime() - now.getTime();
+  console.log(`[ChatClear] Next clear in ${Math.round(msUntilNext / 60000)} min (3am PKT)`);
+  setTimeout(async () => {
+    try {
+      await writeLiveChats({});
+      console.log(`[ChatClear] All live chats cleared at ${new Date().toISOString()}`);
+    } catch (e) {
+      console.error('[ChatClear] Failed:', e);
+    }
+    scheduleDailyChatClear();
+  }, msUntilNext);
+}
 
 initDb().then(() => {
   app.listen(PORT, '0.0.0.0', () => {
@@ -2942,6 +2999,7 @@ initDb().then(() => {
     setInterval(() => {
       fetch(`https://kynex-backend-9w8t.onrender.com/api/health`).catch(() => {});
     }, 14 * 60 * 1000);
+    scheduleDailyChatClear();
   });
 }).catch(err => {
   console.error("Database init failed:", err);
