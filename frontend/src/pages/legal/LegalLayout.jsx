@@ -3,12 +3,12 @@ import { NavLink, Outlet, Link } from 'react-router-dom';
 import { useTheme } from '../../ThemeContext';
 
 const navItems = [
+  { path: 'contact', label: 'Contact Us' },
+  { path: 'member-guide', label: 'Member Guide' },
   { path: 'about', label: 'About Us' },
   { path: 'user-agreement', label: 'User Agreement' },
   { path: 'privacy', label: 'Privacy Policy' },
   { path: 'disclaimer', label: 'Risk Disclosure' },
-  { path: 'contact', label: 'Contact Us' },
-  { path: 'member-guide', label: 'Member Guide' },
 ];
 
 const LegalLayout = () => {
