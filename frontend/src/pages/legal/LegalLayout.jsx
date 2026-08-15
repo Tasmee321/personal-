@@ -8,6 +8,7 @@ const navItems = [
   { path: 'privacy', label: 'Privacy Policy' },
   { path: 'disclaimer', label: 'Risk Disclosure' },
   { path: 'contact', label: 'Contact Us' },
+  { path: 'member-guide', label: 'Member Guide' },
 ];
 
 const LegalLayout = () => {
