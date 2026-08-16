@@ -764,6 +764,8 @@ This cannot be undone!`)) return;
             <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', flexWrap: 'wrap' }}>
               {[
                 { key: 'info', label: 'Info & Actions' },
+                { key: 'kyc_detail', label: 'KYC Detail' },
+                { key: 'security', label: 'Security & Logins' },
                 { key: 'deposits', label: 'Deposit History' },
                 { key: 'withdrawals', label: 'Withdrawal History' },
                 { key: 'signals', label: 'Signal History' },
@@ -998,6 +1000,98 @@ This cannot be undone!`)) return;
                 )}
               </div>
             </div>}
+
+            {/* KYC DETAIL TAB */}
+            {userDetailTab === 'kyc_detail' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={card}>
+                  <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '14px' }}>KYC Information</div>
+                  {!selectedUser.kyc || selectedUser.kyc.status === 'not_started' ? (
+                    <div style={{ color: theme.faint, textAlign: 'center', padding: '30px' }}>No KYC submitted yet</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {[
+                        { label: 'Status', value: selectedUser.kyc.status?.toUpperCase() },
+                        { label: 'First Name', value: selectedUser.kyc.firstName },
+                        { label: 'Last Name', value: selectedUser.kyc.lastName },
+                        { label: 'Date of Birth', value: selectedUser.kyc.dob },
+                        { label: 'Country', value: selectedUser.kyc.country },
+                        { label: 'Document Type', value: selectedUser.kyc.docType },
+                        { label: 'Document ID Number', value: selectedUser.kyc.idNumber },
+                        { label: 'Submitted At', value: fmtDate(selectedUser.kyc.submittedAt) },
+                        { label: 'Decided At', value: fmtDate(selectedUser.kyc.decidedAt) },
+                      ].map(({ label, value }) => (
+                        <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', borderRadius: '8px', backgroundColor: theme.bg }}>
+                          <span style={{ fontSize: '12px', color: theme.subtext }}>{label}</span>
+                          <span style={{ fontSize: '12px', fontWeight: '600', color: theme.text }}>{value || '—'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div style={card}>
+                  <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '14px' }}>KYC Documents</div>
+                  {!selectedUser.kyc?.documents?.length ? (
+                    <div style={{ color: theme.faint, textAlign: 'center', padding: '30px' }}>No documents uploaded</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {selectedUser.kyc.documents.map((url, i) => {
+                        const labels = ['ID Front', 'ID Back', 'Selfie'];
+                        return (
+                          <div key={i}>
+                            <div style={{ fontSize: '11px', color: theme.subtext, marginBottom: '6px', fontWeight: '600' }}>{labels[i] || `Document ${i + 1}`}</div>
+                            <a href={url} target="_blank" rel="noopener noreferrer">
+                              <img src={url} alt={labels[i] || `doc-${i}`} style={{ width: '100%', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, objectFit: 'cover', maxHeight: '180px' }} />
+                            </a>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* SECURITY & LOGINS TAB */}
+            {userDetailTab === 'security' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={card}>
+                  <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '14px' }}>Security Overview</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {[
+                      { label: 'Fund Password', value: selectedUser.fundPasswordSet ? '✅ Set' : '❌ Not Set' },
+                      { label: 'Two-Factor Auth', value: selectedUser.twoFactorEnabled ? '✅ Enabled' : '❌ Disabled' },
+                      { label: 'Password Last Changed', value: fmtDate(selectedUser.passwordChangedAt) },
+                      { label: 'Last Login', value: fmtDate(selectedUser.lastLoginAt) },
+                      { label: 'Last Login IP', value: selectedUser.lastLoginIp || '—' },
+                      { label: 'Account Created', value: fmtDate(selectedUser.createdAt) },
+                    ].map(({ label, value }) => (
+                      <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', borderRadius: '8px', backgroundColor: theme.bg }}>
+                        <span style={{ fontSize: '12px', color: theme.subtext }}>{label}</span>
+                        <span style={{ fontSize: '12px', fontWeight: '600', color: theme.text }}>{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={card}>
+                  <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '14px' }}>Login History (Last 20)</div>
+                  {!selectedUser.loginHistory?.length ? (
+                    <div style={{ color: theme.faint, textAlign: 'center', padding: '30px' }}>No login history yet — updates on next login</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' }}>
+                      {selectedUser.loginHistory.map((entry, i) => (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', borderRadius: '8px', backgroundColor: theme.bg }}>
+                          <span style={{ fontSize: '11px', color: theme.subtext }}>{fmtDate(entry.at)}</span>
+                          <span style={{ fontSize: '11px', fontWeight: '600', color: theme.text, fontFamily: 'monospace' }}>{entry.ip}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* DEPOSIT HISTORY TAB */}
             {userDetailTab === 'deposits' && (
