@@ -355,6 +355,48 @@ const Security = () => {
                 {msg}
               </div>
             )}
+
+            {/* ── Success popup overlay ── */}
+            {msg && (
+              <div style={{
+                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)',
+              }} onClick={() => setMsg('')}>
+                <div style={{
+                  background: 'linear-gradient(135deg, #0f1f0f 0%, #1a3a1a 100%)',
+                  border: '1.5px solid rgba(16,185,129,0.5)',
+                  borderRadius: '24px',
+                  padding: '36px 32px',
+                  maxWidth: '300px', width: '90%',
+                  textAlign: 'center',
+                  boxShadow: '0 20px 60px rgba(16,185,129,0.25), 0 8px 24px rgba(0,0,0,0.6)',
+                  animation: 'popIn 0.3s cubic-bezier(0.34,1.56,0.64,1)',
+                }} onClick={e => e.stopPropagation()}>
+                  <style>{`@keyframes popIn { from { transform: scale(0.7); opacity: 0 } to { transform: scale(1); opacity: 1 } }`}</style>
+                  <div style={{
+                    width: '64px', height: '64px', borderRadius: '50%', margin: '0 auto 20px',
+                    background: 'linear-gradient(135deg, #10B981, #059669)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: '0 8px 24px rgba(16,185,129,0.5)',
+                    fontSize: '28px',
+                  }}>✓</div>
+                  <div style={{ fontWeight: '800', fontSize: '18px', color: '#fff', marginBottom: '10px' }}>
+                    {msg.includes('Fund password') ? '🔐 Fund Password' :
+                     msg.includes('Google') ? '📱 Google Authenticator' :
+                     msg.includes('Email') ? '✉️ Email Updated' :
+                     msg.includes('Password changed') ? '🔑 Password Changed' : '✅ Done'}
+                  </div>
+                  <div style={{ fontSize: '13px', color: '#9CA3AF', lineHeight: '1.6', marginBottom: '24px' }}>{msg}</div>
+                  <button onClick={() => setMsg('')} style={{
+                    padding: '12px 32px', borderRadius: '12px', border: 'none',
+                    background: 'linear-gradient(135deg, #10B981, #059669)',
+                    color: '#fff', fontWeight: '700', fontSize: '14px', cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(16,185,129,0.4)',
+                  }}>Got it</button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
