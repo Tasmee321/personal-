@@ -301,8 +301,19 @@ const Security = () => {
               <Divider theme={theme} />
 
               {/* Fund Password */}
-              <Row icon="fund" label="Fund Password" value={security.fundPasswordSet ? 'Set' : 'Not Set'} onClick={() => toggle('fund')} theme={theme} />
-              {open === 'fund' && <FundPasswordPanel theme={theme} onDone={load} setMsg={setMsg} />}
+              <Row
+                icon="fund"
+                label="Fund Password"
+                value={security.fundPasswordSet ? 'Set' : 'Not Set'}
+                onClick={security.fundPasswordSet ? () => toggle('fund-change') : () => toggle('fund')}
+                theme={theme}
+              />
+              {open === 'fund' && !security.fundPasswordSet && (
+                <FundPasswordPanel theme={theme} onDone={load} setMsg={setMsg} />
+              )}
+              {open === 'fund-change' && security.fundPasswordSet && (
+                <ChangeFundPasswordPanel theme={theme} onDone={load} setMsg={setMsg} />
+              )}
 
               <Divider theme={theme} />
 
@@ -612,6 +623,81 @@ function FundPasswordPanel({ theme, onDone, setMsg }) {
       <button onClick={submit} disabled={busy} style={primaryBtnStyle(theme)}>
         Set Fund Password
       </button>
+    </Panel>
+  );
+}
+
+function ChangeFundPasswordPanel({ theme, onDone, setMsg }) {
+  const [step, setStep] = useState('request'); // 'request' | 'verify'
+  const [otp, setOtp] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const requestOtp = async () => {
+    setError(''); setBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/api/account/fund-password/request-change-otp`, { method: 'POST', headers: authHeaders() });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setStep('verify');
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
+  };
+
+  const submitChange = async () => {
+    setError(''); setBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/api/account/fund-password/change`, {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({ otp, newPin }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setMsg('Fund password changed successfully.');
+      onDone();
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <Panel theme={theme}>
+      {error && <p style={{ color: theme.down, fontSize: '12px', marginTop: 0, fontWeight: 600 }}>{error}</p>}
+
+      {step === 'request' && (
+        <>
+          <p style={{ fontSize: '12px', color: theme.subtext, marginTop: 0, lineHeight: 1.5 }}>
+            To change your fund password, we'll send a verification code to your registered email.
+          </p>
+          <button onClick={requestOtp} disabled={busy} style={primaryBtnStyle(theme)}>
+            {busy ? 'Sending…' : 'Send Verification Code'}
+          </button>
+        </>
+      )}
+
+      {step === 'verify' && (
+        <>
+          <p style={{ fontSize: '12px', color: theme.subtext, marginTop: 0, lineHeight: 1.5 }}>
+            Enter the 6-digit code sent to your email, then set your new fund password.
+          </p>
+          <input
+            type="text" inputMode="numeric" placeholder="Email OTP code" value={otp}
+            onChange={(e) => setOtp(e.target.value)} maxLength={6}
+            style={{ ...inputStyle(theme), marginBottom: '12px', letterSpacing: '4px', textAlign: 'center', fontSize: '18px', fontWeight: 700 }}
+          />
+          <input
+            type="password" inputMode="numeric" placeholder="New 4-6 digit PIN" value={newPin}
+            onChange={(e) => setNewPin(e.target.value)} maxLength={6}
+            style={{ ...inputStyle(theme), marginBottom: '14px', letterSpacing: '6px', textAlign: 'center', fontSize: '20px', fontWeight: 700 }}
+          />
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button onClick={submitChange} disabled={busy} style={primaryBtnStyle(theme)}>
+              {busy ? 'Saving…' : 'Confirm Change'}
+            </button>
+            <button onClick={requestOtp} disabled={busy} style={{ ...primaryBtnStyle(theme), background: theme.cardBorder, color: theme.subtext, boxShadow: 'none' }}>
+              Resend
+            </button>
+          </div>
+        </>
+      )}
     </Panel>
   );
 }
