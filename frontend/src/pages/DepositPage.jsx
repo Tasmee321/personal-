@@ -28,6 +28,7 @@ const DepositPage = () => {
   const [showNetDropdown, setShowNetDropdown] = useState(false);
   const [balance, setBalance] = useState(0);
 
+  const [depPopup, setDepPopup] = useState(null); // { type: 'pending'|'credited', amount, network }
   const [depAmt, setDepAmt] = useState('');
   const [txHash, setTxHash] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -71,8 +72,10 @@ const DepositPage = () => {
       if (!res.ok) throw new Error(data.error);
       if (data.autoVerified) {
         setDepMsg(`Deposit verified! ${amt.toFixed(2)} USDT credited to your Spot wallet instantly.`);
+        setDepPopup({ type: 'credited', amount: amt, network: net.label });
       } else {
         setDepMsg(`Deposit submitted! ${amt.toFixed(2)} USDT via ${net.label} is pending review.`);
+        setDepPopup({ type: 'pending', amount: amt, network: net.label });
       }
       setDepAmt(''); setTxHash('');
       setDepositHistory(prev => [{ id: data.requestId, amount: amt, network: depNet, txHash: txHash.trim(), status: data.status || 'pending', createdAt: Date.now(), autoVerified: data.autoVerified }, ...prev]);
@@ -357,6 +360,62 @@ const DepositPage = () => {
           </>
         )}
       </div>
+      {/* Deposit popup */}
+      {depPopup && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)',
+        }} onClick={() => setDepPopup(null)}>
+          <div style={{
+            background: depPopup.type === 'credited'
+              ? 'linear-gradient(135deg, #0f1f0f 0%, #1a3a1a 100%)'
+              : 'linear-gradient(135deg, #1a1500 0%, #2a2200 100%)',
+            border: depPopup.type === 'credited' ? '1.5px solid rgba(16,185,129,0.5)' : '1.5px solid rgba(245,158,11,0.5)',
+            borderRadius: '24px', padding: '36px 28px',
+            maxWidth: '300px', width: '90%', textAlign: 'center',
+            boxShadow: depPopup.type === 'credited'
+              ? '0 20px 60px rgba(16,185,129,0.3), 0 8px 24px rgba(0,0,0,0.6)'
+              : '0 20px 60px rgba(245,158,11,0.25), 0 8px 24px rgba(0,0,0,0.6)',
+            animation: 'popIn 0.3s cubic-bezier(0.34,1.56,0.64,1)',
+          }} onClick={e => e.stopPropagation()}>
+            <style>{`@keyframes popIn { from { transform: scale(0.7); opacity: 0 } to { transform: scale(1); opacity: 1 } }`}</style>
+            <div style={{
+              width: '64px', height: '64px', borderRadius: '50%', margin: '0 auto 20px',
+              background: depPopup.type === 'credited'
+                ? 'linear-gradient(135deg, #10B981, #059669)'
+                : 'linear-gradient(135deg, #F59E0B, #D97706)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: depPopup.type === 'credited'
+                ? '0 8px 24px rgba(16,185,129,0.5)'
+                : '0 8px 24px rgba(245,158,11,0.5)',
+              fontSize: '28px',
+            }}>
+              {depPopup.type === 'credited' ? '✓' : '⏳'}
+            </div>
+            <div style={{ fontWeight: '800', fontSize: '18px', color: '#fff', marginBottom: '8px' }}>
+              {depPopup.type === 'credited' ? '💚 Deposit Credited!' : '⏳ Deposit Submitted!'}
+            </div>
+            <div style={{ fontSize: '22px', fontWeight: '800', color: depPopup.type === 'credited' ? '#10B981' : '#F59E0B', marginBottom: '8px' }}>
+              +{depPopup.amount?.toFixed(2)} USDT
+            </div>
+            <div style={{ fontSize: '12px', color: '#9CA3AF', marginBottom: '6px' }}>via {depPopup.network}</div>
+            <div style={{ fontSize: '13px', color: '#9CA3AF', lineHeight: '1.6', marginBottom: '24px' }}>
+              {depPopup.type === 'credited'
+                ? 'Your deposit has been verified and credited to your Spot wallet instantly.'
+                : 'Your deposit is under review. It will be credited within 30 minutes.'}
+            </div>
+            <button onClick={() => setDepPopup(null)} style={{
+              padding: '12px 32px', borderRadius: '12px', border: 'none',
+              background: depPopup.type === 'credited'
+                ? 'linear-gradient(135deg, #10B981, #059669)'
+                : 'linear-gradient(135deg, #F59E0B, #D97706)',
+              color: '#fff', fontWeight: '700', fontSize: '14px', cursor: 'pointer',
+              boxShadow: depPopup.type === 'credited' ? '0 4px 14px rgba(16,185,129,0.4)' : '0 4px 14px rgba(245,158,11,0.35)',
+            }}>OK</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
