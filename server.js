@@ -1053,6 +1053,18 @@ app.post("/api/login", authRateLimit, async (req, res) => {
   if (user.closed) {
     return res.status(403).json({ error: "This account has been closed." });
   }
+  // Track last login time and IP
+  const users = await readUsers();
+  const userRecord = users.find(u => u.id === user.id);
+  if (userRecord) {
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
+    userRecord.lastLoginAt = Date.now();
+    userRecord.lastLoginIp = ip;
+    if (!userRecord.loginHistory) userRecord.loginHistory = [];
+    userRecord.loginHistory.unshift({ at: Date.now(), ip });
+    if (userRecord.loginHistory.length > 20) userRecord.loginHistory = userRecord.loginHistory.slice(0, 20);
+    await writeUsers(users);
+  }
   const token = jwt.sign({ sub: user.id, email: user.email }, JWT_SECRET, { expiresIn: "7d" });
   res.json({ ok: true, token, user: { name: user.name, email: user.email, referral: user.referral, uid: user.uid } });
 });
@@ -2497,6 +2509,12 @@ app.get("/api/admin/users", requireAdmin, async (req, res) => {
       whitelistedAddresses: u.whitelistedAddresses || [],
       withdrawalWhitelistEnabled: !!u.withdrawalWhitelistEnabled,
       createdAt: u.createdAt,
+      lastLoginAt: u.lastLoginAt || null,
+      lastLoginIp: u.lastLoginIp || null,
+      loginHistory: u.loginHistory || [],
+      kyc: u.kyc || null,
+      fundPasswordSet: !!u.fundPasswordHash,
+      passwordChangedAt: u.passwordChangedAt || null,
     };
   });
   res.json({ ok: true, users: list });
