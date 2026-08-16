@@ -95,22 +95,24 @@ function MemberRow({ item, i, theme }) {
 
 /* ── Requirement Card ── */
 function ReqCard({ req, levelInfo, qualifiedTeamCount, currentLevel, theme }) {
-  const achieved = currentLevel >= req.level;
-  const isNext = currentLevel === req.level - 1;
-
   const qdCount = levelInfo?.qualifiedDirectCount || 0;
   const qdDeposit = levelInfo?.qualifiedTeamDeposit || 0;
   const qtCount = qualifiedTeamCount || 0;
   const dlCounts = levelInfo?.directLevelCounts || {};
 
   const directOk = qdCount >= req.direct;
-  const depositOk = qtCount >= req.teamDeposit;
+  const depositOk = req.teamDeposit === 0 || qtCount >= req.teamDeposit;
 
   const subLevelRows = Object.entries(req.directLevels || {}).map(([lvl, need]) => {
     const have = dlCounts[Number(lvl)] || 0;
     const ok = have >= need;
     return { lvl, need, have, ok };
   });
+
+  // ALL conditions must be met for "achieved" badge — not just server-tracked currentLevel
+  const allConditionsMet = directOk && depositOk && subLevelRows.every(r => r.ok);
+  const achieved = currentLevel >= req.level && allConditionsMet;
+  const isNext = !achieved && currentLevel === req.level - 1;
 
   return (
     <div style={{
