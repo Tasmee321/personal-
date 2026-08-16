@@ -278,55 +278,23 @@ const Dashboard = () => {
       </div>
 
       {/* Quick actions */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '22px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '22px' }}>
         {QUICK_ACTIONS.map((action) => {
           const { SvgIcon } = action;
           const badge = iconBadges[action.badgeKey];
-          const GRADIENTS = {
-            blue:   'linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)',
-            teal:   'linear-gradient(135deg, #14B8A6 0%, #0F766E 100%)',
-            purple: 'linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%)',
-            amber:  'linear-gradient(135deg, #F59E0B 0%, #B45309 100%)',
-            green:  'linear-gradient(135deg, #10B981 0%, #047857 100%)',
-          };
-          const GLOWS = {
-            blue:   'rgba(59,130,246,0.45)',
-            teal:   'rgba(20,184,166,0.45)',
-            purple: 'rgba(139,92,246,0.45)',
-            amber:  'rgba(245,158,11,0.45)',
-            green:  'rgba(16,185,129,0.45)',
-          };
-          const grad = GRADIENTS[action.badgeKey] || GRADIENTS.blue;
-          const glow = GLOWS[action.badgeKey] || GLOWS.blue;
           return (
-            <Link key={action.label} to={action.to} style={{ textDecoration: 'none' }}>
+            <Link key={action.label} to={action.to} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: theme.text, textDecoration: 'none', flex: 1 }}>
               <div style={{
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                gap: '8px', padding: '14px 8px',
-                borderRadius: '18px',
-                background: grad,
-                boxShadow: `0 6px 20px ${glow}, 0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.18)`,
-                border: '1px solid rgba(255,255,255,0.15)',
-                backdropFilter: 'blur(8px)',
-                WebkitBackdropFilter: 'blur(8px)',
-                cursor: 'pointer',
-                transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-                minHeight: '76px',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 10px 28px ${glow}, 0 4px 12px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.22)`; }}
-              onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = `0 6px 20px ${glow}, 0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.18)`; }}
-              >
-                <div style={{
-                  width: '36px', height: '36px', borderRadius: '12px',
-                  backgroundColor: 'rgba(255,255,255,0.2)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: '#fff',
-                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.3)',
-                }}>
-                  <SvgIcon />
-                </div>
-                <span style={{ fontSize: '11px', color: '#fff', fontWeight: '700', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.3)', letterSpacing: '0.2px' }}>{action.label}</span>
+                width: '46px', height: '46px', borderRadius: '14px',
+                backgroundColor: badge.bg,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: `0 2px 8px ${badge.fg}28`,
+                border: `1px solid ${badge.fg}20`,
+                color: badge.fg,
+              }}>
+                <SvgIcon />
               </div>
+              <span style={{ fontSize: '10px', color: theme.subtext, fontWeight: '600', textAlign: 'center' }}>{action.label}</span>
             </Link>
           );
         })}
