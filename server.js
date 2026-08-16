@@ -57,6 +57,61 @@ const LEVEL_REQUIREMENTS = [
   { level: 9,  direct: 60,  teamDeposit: 5000,   directLevels: { 1: 10, 2: 8, 3: 6 } },
   { level: 10, direct: 75,  teamDeposit: 10000,  directLevels: { 1: 12, 2: 10, 3: 8 } },
 ];
+
+// Spot wallet reward (USDT) sent automatically when a user first achieves each level
+const LEVEL_REWARDS = {
+  1: 10,
+  2: 25,
+  3: 60,
+  4: 120,
+  5: 250,
+  6: 500,
+  7: 1000,
+  8: 2000,
+  9: 4000,
+  10: 8000,
+};
+
+// Call after any action that might change someone's level (deposit confirmed, new referral).
+// Recalculates the level for userId AND all ancestors. Sends reward + notification for each
+// new level reached. Mutates users + accounts in-place; caller must write them after.
+async function checkAndRewardLevelUp(userId, users, accounts) {
+  // Build ancestor chain: userId itself + all referrers up the tree
+  const targets = new Set([userId]);
+  let cur = users.find(u => u.id === userId);
+  while (cur && cur.referredBy) {
+    const parent = users.find(u => u.uid === cur.referredBy);
+    if (!parent) break;
+    targets.add(parent.id);
+    cur = parent;
+  }
+
+  for (const tid of targets) {
+    const tUser = users.find(u => u.id === tid);
+    if (!tUser) continue;
+    const lvlInfo = calculateLevel(tUser.uid, users, accounts);
+    const newLevel = lvlInfo.level;
+    const prevLevel = tUser.level || 0;
+    if (newLevel > prevLevel) {
+      tUser.level = newLevel;
+      // Send reward for each newly unlocked level
+      for (let l = prevLevel + 1; l <= newLevel; l++) {
+        const rewardAmt = LEVEL_REWARDS[l] || 0;
+        if (rewardAmt > 0) {
+          const acct = accounts[tid];
+          if (acct) {
+            acct.balance = Math.round((acct.balance + rewardAmt) * 100) / 100;
+            addLedgerEntry(acct, 'level_reward', 'spot', rewardAmt, `Level ${l} achievement reward`, `level-reward-${tid}-${l}`);
+          }
+          await pushMessage(tid, `🎉 Level ${l} Achieved!`, `Congratulations! You've reached Level ${l} and received a ${rewardAmt.toFixed(2)} USDT reward to your Spot wallet.`);
+        } else {
+          await pushMessage(tid, `🎉 Level ${l} Achieved!`, `Congratulations! You've reached Level ${l}.`);
+        }
+      }
+    }
+  }
+}
+
 const TEAM_MEMBER_MIN_BALANCE = 200;
 
 // ---- Blockchain auto-verification ----
@@ -1985,6 +2040,9 @@ app.post("/api/demo/deposit/request", authenticate, rateLimit(60 * 1000, 5), asy
     account.totalDeposited = Math.round(((account.totalDeposited || 0) + amt) * 100) / 100;
     addLedgerEntry(account, 'deposit', 'spot', amt, `Deposit ${amt.toFixed(2)} USDT via ${network.toUpperCase()} (auto-verified)`, requestId);
     account.depositRequests.unshift(depositEntry);
+    const usersForLevel = await readUsers();
+    await checkAndRewardLevelUp(req.user.sub, usersForLevel, accounts);
+    await writeUsers(usersForLevel);
     await writeDemoAccounts(accounts);
 
     await pushMessage(req.user.sub, "Deposit confirmed", `${amt.toFixed(2)} USDT deposited to your Spot wallet via ${network.toUpperCase()}. Auto-verified on blockchain.`);
@@ -2045,6 +2103,8 @@ app.post("/api/admin/deposits/:requestId/process", requireAdmin, async (req, res
         account.balance = Math.round((account.balance + dr.amount) * 100) / 100;
         account.totalDeposited = Math.round(((account.totalDeposited || 0) + dr.amount) * 100) / 100;
         addLedgerEntry(account, 'deposit', 'spot', dr.amount, `Deposit ${dr.amount.toFixed(2)} USDT via ${dr.network.toUpperCase()}`, dr.id);
+        await checkAndRewardLevelUp(userId, users, accounts);
+        await writeUsers(users);
         await pushMessage(userId, "Deposit confirmed", `${dr.amount.toFixed(2)} USDT deposited to your Spot wallet via ${dr.network.toUpperCase()}.`);
         const user = users.find(u => u.id === userId);
         if (user) {
