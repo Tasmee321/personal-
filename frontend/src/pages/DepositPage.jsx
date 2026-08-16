@@ -271,7 +271,7 @@ const DepositPage = () => {
 
         {view === 'history' && (
           <>
-            <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '16px' }}>Deposit History</div>
+            <div style={{ fontSize: '14px', fontWeight: '700', marginBottom: '16px', color: theme.text }}>Deposit History</div>
             {depositHistory.length === 0 && (
               <div style={{ ...glassCard(theme), padding: '50px 20px', textAlign: 'center' }}>
                 <div style={{ fontSize: '32px', marginBottom: '10px', opacity: 0.4 }}>📥</div>
@@ -279,29 +279,81 @@ const DepositPage = () => {
                 <div style={{ color: theme.faint, fontSize: '11px', marginTop: '4px' }}>Your deposits will appear here once submitted</div>
               </div>
             )}
-            {depositHistory.map(entry => (
-              <div key={entry.id} style={{ ...glassCard(theme), padding: '14px 16px', marginBottom: '10px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '4px' }}>
-                      {entry.amount?.toFixed(2)} USDT via {entry.network?.toUpperCase()}
+            {depositHistory.map(entry => {
+              const isDone = entry.status === 'done';
+              const isPending = entry.status === 'pending';
+              const isRejected = entry.status === 'rejected';
+              const netInfo = NETWORKS.find(n => n.key === entry.network) || {};
+              return (
+                <div key={entry.id} style={{
+                  borderRadius: '16px',
+                  marginBottom: '12px',
+                  overflow: 'hidden',
+                  border: isDone ? '1px solid rgba(16,185,129,0.35)' : isPending ? '1px solid rgba(245,158,11,0.3)' : '1px solid rgba(239,68,68,0.3)',
+                  boxShadow: isDone
+                    ? '0 4px 24px rgba(16,185,129,0.18), inset 0 1px 0 rgba(16,185,129,0.2)'
+                    : isPending
+                    ? '0 4px 16px rgba(245,158,11,0.1)'
+                    : '0 4px 16px rgba(239,68,68,0.1)',
+                  background: isDone
+                    ? 'linear-gradient(135deg, rgba(16,185,129,0.13) 0%, rgba(5,150,105,0.07) 100%)'
+                    : isPending
+                    ? 'linear-gradient(135deg, rgba(245,158,11,0.08) 0%, rgba(180,120,0,0.04) 100%)'
+                    : 'linear-gradient(135deg, rgba(239,68,68,0.08) 0%, rgba(180,0,0,0.04) 100%)',
+                }}>
+                  {/* Top strip */}
+                  <div style={{
+                    padding: '12px 16px 10px',
+                    borderBottom: isDone ? '1px solid rgba(16,185,129,0.15)' : isPending ? '1px solid rgba(245,158,11,0.12)' : '1px solid rgba(239,68,68,0.12)',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '18px' }}>📥</span>
+                      <div>
+                        <div style={{ fontWeight: '700', fontSize: '15px', color: isDone ? '#10B981' : theme.text }}>
+                          +{fmt(entry.amount)} USDT
+                        </div>
+                        <div style={{ fontSize: '11px', color: theme.subtext, marginTop: '1px' }}>
+                          via {netInfo.label || entry.network?.toUpperCase()} · {netInfo.chain || ''}
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ fontSize: '11px', color: theme.faint, marginBottom: '4px' }}>{new Date(entry.createdAt).toLocaleString()}</div>
+                    <div style={{
+                      padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '700',
+                      background: isDone
+                        ? 'linear-gradient(135deg, #10B981, #059669)'
+                        : isPending
+                        ? 'linear-gradient(135deg, #F59E0B, #D97706)'
+                        : 'linear-gradient(135deg, #EF4444, #DC2626)',
+                      color: '#fff',
+                      boxShadow: isDone ? '0 2px 8px rgba(16,185,129,0.4)' : isPending ? '0 2px 8px rgba(245,158,11,0.3)' : '0 2px 8px rgba(239,68,68,0.3)',
+                    }}>
+                      {isDone ? 'Confirmed' : isPending ? 'Pending' : 'Rejected'}
+                    </div>
+                  </div>
+                  {/* Detail rows */}
+                  <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                      <span style={{ color: theme.subtext }}>Date</span>
+                      <span style={{ color: theme.text, fontWeight: '600' }}>{new Date(entry.createdAt).toLocaleString('en-GB', { timeZone: 'Asia/Karachi', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                      <span style={{ color: theme.subtext }}>Network</span>
+                      <span style={{ color: theme.text, fontWeight: '600' }}>{netInfo.chain || entry.network?.toUpperCase()}</span>
+                    </div>
                     {entry.txHash && (
-                      <div style={{ fontSize: '10px', color: theme.subtext, fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                        TX: {entry.txHash}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', gap: '8px' }}>
+                        <span style={{ color: theme.subtext, flexShrink: 0 }}>TXID</span>
+                        <span style={{ color: theme.primary, fontWeight: '600', fontFamily: 'monospace', fontSize: '11px', wordBreak: 'break-all', textAlign: 'right' }}>{entry.txHash}</span>
                       </div>
                     )}
-                  </div>
-                  <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '12px' }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '14px', color: entry.status === 'done' ? theme.up : theme.text, fontVariantNumeric: 'tabular-nums', marginBottom: '4px' }}>
-                      +{fmt(entry.amount)}
-                    </div>
-                    {statusBadge(entry.status)}
+                    {entry.autoVerified && (
+                      <div style={{ marginTop: '2px', fontSize: '11px', color: '#10B981', fontWeight: '600' }}>⚡ Auto-verified</div>
+                    )}
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </>
         )}
       </div>
