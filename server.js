@@ -810,6 +810,7 @@ async function sendOtpEmail(toEmail, name, otp, purpose) {
     "2fa-setup": "2FA Security Setup",
     "2fa-disable": "2FA Disable",
     "fund-password": "Fund Password",
+    "fund-password-change": "Fund Password Change",
   };
   const purposeText = purposeLabels[purpose] || "Verification";
   const purposeDescriptions = {
@@ -821,6 +822,7 @@ async function sendOtpEmail(toEmail, name, otp, purpose) {
     "2fa-setup": "You are setting up Two-Factor Authentication (2FA) on your KYNEX account.",
     "2fa-disable": "You are disabling Two-Factor Authentication (2FA) on your KYNEX account.",
     "fund-password": "You are setting up your Fund Password for KYNEX withdrawals.",
+    "fund-password-change": "You requested to change your Fund Password on KYNEX. Enter this code to confirm.",
   };
   const purposeDesc = purposeDescriptions[purpose] || "This code is for verifying your identity on KYNEX.";
   await sendEmail({
@@ -1359,10 +1361,48 @@ app.post("/api/account/fund-password/set", authenticate, async (req, res) => {
   const users = await readUsers();
   const me = users.find((u) => u.id === req.user.sub);
   if (!me) return res.status(404).json({ error: "Account not found." });
+  if (me.fundPasswordHash) {
+    return res.status(400).json({ error: "Fund password is already set. Use the change flow." });
+  }
 
   me.fundPasswordHash = await bcrypt.hash(pin, 10);
   await writeUsers(users);
-  await pushMessage(me.id, "Fund password set", "You can now withdraw from your demo balance.");
+  await pushMessage(me.id, "Fund password set", "Your fund password has been set. You can now withdraw.");
+  res.json({ ok: true });
+});
+
+// Request OTP to change fund password (only when already set)
+app.post("/api/account/fund-password/request-change-otp", authenticate, async (req, res) => {
+  const users = await readUsers();
+  const me = users.find((u) => u.id === req.user.sub);
+  if (!me) return res.status(404).json({ error: "Account not found." });
+  if (!me.fundPasswordHash) return res.status(400).json({ error: "Fund password not set yet." });
+
+  try {
+    await requestSecurityOtp(me, "fund-password-change");
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to send OTP email." });
+  }
+});
+
+// Verify OTP then change fund password
+app.post("/api/account/fund-password/change", authenticate, async (req, res) => {
+  const { otp, newPin } = req.body || {};
+  if (!FUND_PASSWORD_PATTERN.test(newPin || "")) {
+    return res.status(400).json({ error: "Fund password must be 4 to 6 digits." });
+  }
+  const users = await readUsers();
+  const me = users.find((u) => u.id === req.user.sub);
+  if (!me) return res.status(404).json({ error: "Account not found." });
+  if (!me.fundPasswordHash) return res.status(400).json({ error: "Fund password not set yet." });
+
+  const result = consumeSecurityOtp(me.id, "fund-password-change", String(otp || ""));
+  if (!result.ok) return res.status(400).json({ error: result.error });
+
+  me.fundPasswordHash = await bcrypt.hash(newPin, 10);
+  await writeUsers(users);
+  await pushMessage(me.id, "Fund password changed", "Your fund password has been updated successfully.");
   res.json({ ok: true });
 });
 
