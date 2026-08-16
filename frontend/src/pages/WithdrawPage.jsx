@@ -118,26 +118,95 @@ const WithdrawPage = () => {
 
         {view === 'history' && (
           <>
-            <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '16px' }}>Withdrawal History</div>
+            <div style={{ fontSize: '14px', fontWeight: '700', marginBottom: '16px', color: theme.text }}>Withdrawal History</div>
             {withdrawalRequests.length === 0 && (
-              <div style={{ ...glassCard(theme), padding: '40px', textAlign: 'center' }}>
+              <div style={{ ...glassCard(theme), padding: '50px 20px', textAlign: 'center' }}>
+                <div style={{ fontSize: '32px', marginBottom: '10px', opacity: 0.4 }}>📤</div>
                 <div style={{ color: theme.faint, fontSize: '13px' }}>No withdrawal records yet</div>
+                <div style={{ color: theme.faint, fontSize: '11px', marginTop: '4px' }}>Your withdrawals will appear here once submitted</div>
               </div>
             )}
-            {withdrawalRequests.map(wr => (
-              <div key={wr.id} style={{ ...glassCard(theme), padding: '14px 16px', marginBottom: '10px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '3px' }}>{Number(wr.amount).toFixed(2)} USDT</div>
-                    <div style={{ fontSize: '11px', color: theme.subtext }}>Net: {Number(wr.netPayout || wr.amount).toFixed(2)} USDT via {(wr.network || '').toUpperCase()}</div>
-                    <div style={{ fontSize: '11px', color: theme.faint }}>{new Date(wr.createdAt).toLocaleString()}</div>
+            {withdrawalRequests.map(wr => {
+              const isDone = wr.status === 'done' || wr.status === 'approved' || wr.status === 'completed';
+              const isPending = wr.status === 'pending';
+              const isRejected = wr.status === 'rejected';
+              const netInfo = NETWORKS.find(n => n.key === wr.network) || {};
+              const fee = wr.fee ?? (Number(wr.amount) < 100 ? 5 : Math.round(Number(wr.amount) * 0.05 * 100) / 100);
+              return (
+                <div key={wr.id} style={{
+                  borderRadius: '16px',
+                  marginBottom: '12px',
+                  overflow: 'hidden',
+                  border: isDone ? '1px solid rgba(239,68,68,0.35)' : isPending ? '1px solid rgba(245,158,11,0.3)' : '1px solid rgba(239,68,68,0.5)',
+                  boxShadow: isDone
+                    ? '0 4px 24px rgba(239,68,68,0.18), inset 0 1px 0 rgba(239,68,68,0.2)'
+                    : isPending
+                    ? '0 4px 16px rgba(245,158,11,0.1)'
+                    : '0 4px 16px rgba(239,68,68,0.15)',
+                  background: isDone
+                    ? 'linear-gradient(135deg, rgba(239,68,68,0.13) 0%, rgba(185,28,28,0.07) 100%)'
+                    : isPending
+                    ? 'linear-gradient(135deg, rgba(245,158,11,0.08) 0%, rgba(180,120,0,0.04) 100%)'
+                    : 'linear-gradient(135deg, rgba(239,68,68,0.1) 0%, rgba(150,0,0,0.06) 100%)',
+                }}>
+                  {/* Top strip */}
+                  <div style={{
+                    padding: '12px 16px 10px',
+                    borderBottom: isDone ? '1px solid rgba(239,68,68,0.15)' : isPending ? '1px solid rgba(245,158,11,0.12)' : '1px solid rgba(239,68,68,0.2)',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '18px' }}>📤</span>
+                      <div>
+                        <div style={{ fontWeight: '700', fontSize: '15px', color: '#EF4444' }}>
+                          -{fmt(wr.amount)} USDT
+                        </div>
+                        <div style={{ fontSize: '11px', color: theme.subtext, marginTop: '1px' }}>
+                          via {netInfo.label || wr.network?.toUpperCase()} · {netInfo.chain || ''}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{
+                      padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '700',
+                      background: isDone
+                        ? 'linear-gradient(135deg, #EF4444, #DC2626)'
+                        : isPending
+                        ? 'linear-gradient(135deg, #F59E0B, #D97706)'
+                        : 'linear-gradient(135deg, #6b7280, #4b5563)',
+                      color: '#fff',
+                      boxShadow: isDone ? '0 2px 8px rgba(239,68,68,0.4)' : isPending ? '0 2px 8px rgba(245,158,11,0.3)' : 'none',
+                    }}>
+                      {isDone ? 'Completed' : isPending ? 'Pending' : 'Rejected'}
+                    </div>
                   </div>
-                  <span style={{ fontSize: '11px', fontWeight: '700', padding: '4px 10px', borderRadius: '10px', backgroundColor: wr.status === 'completed' ? 'rgba(16,185,129,0.12)' : wr.status === 'rejected' ? 'rgba(239,68,68,0.12)' : 'rgba(245,158,11,0.12)', color: wr.status === 'completed' ? '#10B981' : wr.status === 'rejected' ? '#EF4444' : '#F59E0B' }}>
-                    {wr.status === 'completed' ? 'Completed' : wr.status === 'rejected' ? 'Rejected' : 'Pending'}
-                  </span>
+                  {/* Detail rows */}
+                  <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                      <span style={{ color: theme.subtext }}>Date</span>
+                      <span style={{ color: theme.text, fontWeight: '600' }}>{new Date(wr.createdAt || wr.requestedAt).toLocaleString('en-GB', { timeZone: 'Asia/Karachi', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                      <span style={{ color: theme.subtext }}>Network</span>
+                      <span style={{ color: theme.text, fontWeight: '600' }}>{netInfo.chain || wr.network?.toUpperCase()}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                      <span style={{ color: theme.subtext }}>Fee</span>
+                      <span style={{ color: '#EF4444', fontWeight: '600' }}>-{Number(fee).toFixed(2)} USDT</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                      <span style={{ color: theme.subtext }}>You Receive</span>
+                      <span style={{ color: theme.text, fontWeight: '700' }}>{Number(wr.netPayout || wr.amount).toFixed(2)} USDT</span>
+                    </div>
+                    {wr.walletAddress || wr.address ? (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', gap: '8px' }}>
+                        <span style={{ color: theme.subtext, flexShrink: 0 }}>To</span>
+                        <span style={{ color: theme.primary, fontWeight: '600', fontFamily: 'monospace', fontSize: '11px', wordBreak: 'break-all', textAlign: 'right' }}>{wr.walletAddress || wr.address}</span>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </>
         )}
       </div>
