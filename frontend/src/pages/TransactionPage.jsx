@@ -1,17 +1,135 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Receipt } from 'lucide-react';
+import { ArrowLeft, Receipt, X, Copy, CheckCheck } from 'lucide-react';
 import { getToken } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
 import { API_URL } from '../config';
 function authHeaders() { return { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` }; }
 function fmt(n) { return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-
+function fmtDate(ts) { return ts ? new Date(ts).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'; }
 function glassCard(theme) {
   return { backgroundColor: theme.card, borderRadius: '16px', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadow, backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)' };
 }
 
 const FILTERS = ['All', 'Deposit', 'Withdraw', 'Spot', 'Signal', 'Futures', 'Transfer'];
+
+/* ── Detail Modal ── */
+function DetailModal({ item, onClose, theme }) {
+  const [copied, setCopied] = useState(false);
+  if (!item) return null;
+
+  const copy = (text) => {
+    navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); });
+  };
+
+  const rows = [];
+  if (item.category === 'Deposit') {
+    rows.push(
+      { label: 'Type', value: 'Deposit' },
+      { label: 'Amount', value: `${fmt(item.rawAmount)} USDT` },
+      { label: 'Network', value: (item.network || '').toUpperCase() || '—' },
+      { label: 'Status', value: item.status ? item.status.charAt(0).toUpperCase() + item.status.slice(1) : '—', color: item.statusColor },
+      { label: 'Submitted', value: fmtDate(item.at) },
+      { label: 'Confirmed', value: fmtDate(item.processedAt) },
+      { label: 'TX Hash', value: item.txHash || '—', copyable: !!item.txHash },
+      { label: 'Auto Verified', value: item.autoVerified ? 'Yes (blockchain)' : 'Manual' },
+    );
+  } else if (item.category === 'Withdraw') {
+    rows.push(
+      { label: 'Type', value: 'Withdrawal' },
+      { label: 'Requested', value: `${fmt(item.rawAmount)} USDT` },
+      { label: 'Fee', value: `${fmt(item.fee)} USDT` },
+      { label: 'You Receive', value: `${fmt(item.netPayout)} USDT` },
+      { label: 'Network', value: (item.network || '').toUpperCase() || '—' },
+      { label: 'Wallet Address', value: item.walletAddress || '—', copyable: !!item.walletAddress },
+      { label: 'Status', value: item.status ? item.status.charAt(0).toUpperCase() + item.status.slice(1) : '—', color: item.statusColor },
+      { label: 'Submitted', value: fmtDate(item.at) },
+      { label: 'Reviewed', value: fmtDate(item.reviewedAt) },
+      { label: 'TX ID', value: item.txid || '—', copyable: !!item.txid },
+    );
+  } else {
+    rows.push(
+      { label: 'Type', value: item.category },
+      { label: 'Description', value: item.label },
+      { label: 'Amount', value: `${item.amount >= 0 ? '+' : ''}${fmt(Math.abs(item.amount))} USDT` },
+      { label: 'Date', value: fmtDate(item.at) },
+    );
+  }
+
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, zIndex: 999,
+      backgroundColor: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        ...glassCard(theme),
+        width: '100%', maxWidth: '520px', borderRadius: '20px 20px 0 0',
+        padding: '20px', paddingBottom: '36px',
+        animation: 'slideUp 0.22s ease',
+      }}>
+        <style>{`@keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`}</style>
+
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+          <div>
+            <span style={{ fontSize: '15px', fontWeight: '700', color: theme.text }}>Transaction Detail</span>
+            <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+              <span style={{ fontSize: '10px', fontWeight: '700', color: theme.primary, backgroundColor: theme.primarySoft, padding: '2px 8px', borderRadius: '6px' }}>{item.category}</span>
+              {item.status && (
+                <span style={{ fontSize: '10px', fontWeight: '700', color: item.statusColor, backgroundColor: item.statusColor + '1A', padding: '2px 8px', borderRadius: '6px', textTransform: 'capitalize' }}>{item.status}</span>
+              )}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.subtext, display: 'flex', padding: '4px' }}>
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Amount hero */}
+        {(item.category === 'Deposit' || item.category === 'Withdraw') && (
+          <div style={{
+            background: item.category === 'Deposit' ? theme.upGradient || theme.upSoft : theme.downGradient || theme.downSoft,
+            borderRadius: '14px', padding: '16px', textAlign: 'center', marginBottom: '16px',
+          }}>
+            <div style={{ fontSize: '26px', fontWeight: '800', color: item.category === 'Deposit' ? theme.up : theme.down }}>
+              {item.category === 'Deposit' ? '+' : '-'}{fmt(item.category === 'Withdraw' ? item.netPayout : item.rawAmount)} USDT
+            </div>
+            <div style={{ fontSize: '11px', color: theme.subtext, marginTop: '4px' }}>
+              {item.category === 'Withdraw' ? 'Net payout after fee' : 'Deposited amount'}
+            </div>
+          </div>
+        )}
+
+        {/* Detail rows */}
+        <div style={{ ...glassCard(theme), padding: '4px 0', borderRadius: '12px' }}>
+          {rows.map((row, i) => row.value !== '—' || row.label === 'TX Hash' || row.label === 'TX ID' || row.label === 'Wallet Address' ? (
+            <div key={row.label} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '11px 16px', borderTop: i === 0 ? 'none' : `1px solid ${theme.cardBorder}`,
+            }}>
+              <span style={{ fontSize: '12px', color: theme.subtext, flexShrink: 0, marginRight: '12px' }}>{row.label}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                <span style={{
+                  fontSize: '12px', fontWeight: '600',
+                  color: row.color || theme.text,
+                  wordBreak: 'break-all', textAlign: 'right',
+                  maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis',
+                  whiteSpace: row.copyable ? 'normal' : 'nowrap',
+                }}>{row.value}</span>
+                {row.copyable && row.value !== '—' && (
+                  <button onClick={() => copy(row.value)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.primary, flexShrink: 0, padding: '2px' }}>
+                    {copied ? <CheckCheck size={14} color={theme.up} /> : <Copy size={14} />}
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : null)}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const TransactionPage = () => {
   const { theme, iconBadges } = useTheme();
@@ -22,6 +140,7 @@ const TransactionPage = () => {
   const [deposits, setDeposits] = useState([]);
   const [withdrawals, setWithdrawals] = useState([]);
   const [filter, setFilter] = useState('All');
+  const [selectedItem, setSelectedItem] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -39,7 +158,7 @@ const TransactionPage = () => {
           setLedger(accData.ledger || []);
         }
         const depData = await depRes.json();
-        if (depRes.ok) setDeposits(depData.deposits || []);
+        if (depRes.ok) setDeposits(depData.requests || depData.deposits || []);
         const withData = await withRes.json();
         if (withRes.ok) setWithdrawals(withData.requests || []);
       } catch {}
@@ -50,12 +169,12 @@ const TransactionPage = () => {
   const closedFutures = useMemo(() => futures.filter(p => p.closed), [futures]);
 
   const depositStatusColor = (status) => {
-    if (status === 'confirmed') return theme.up;
+    if (status === 'confirmed' || status === 'done') return theme.up;
     if (status === 'pending') return theme.brand;
     return theme.faint;
   };
   const withdrawStatusColor = (status) => {
-    if (status === 'completed') return theme.up;
+    if (status === 'completed' || status === 'done') return theme.up;
     if (status === 'rejected') return theme.down;
     return theme.brand;
   };
@@ -76,12 +195,52 @@ const TransactionPage = () => {
       items.push({ id: p.id, at: p.settledAt || p.openedAt, category: 'Signal', label: isCancelled ? `Signal ${p.pair} CANCELLED` : `Signal ${p.pair} ${p.won ? 'WIN' : 'LOSS'}`, amount: isCancelled ? 0 : p.profit });
     });
     closedFutures.forEach(p => items.push({ id: p.id, at: p.closedAt, category: 'Futures', label: `Futures ${p.pair} ${p.direction.toUpperCase()} closed`, amount: p.pnl }));
-    deposits.forEach(d => items.push({ id: d.id || `dep-${d.at}`, at: d.at, category: 'Deposit', label: `Deposit ${fmt(d.amount)} USDT${d.network ? ` via ${d.network.toUpperCase()}` : ''}`, amount: d.amount, status: d.type === 'deposit' ? 'confirmed' : 'confirmed', statusColor: theme.up }));
-    withdrawals.forEach(w => items.push({ id: w.id, at: w.createdAt || w.at, category: 'Withdraw', label: `Withdraw ${fmt(w.netPayout || w.amount)} USDT via ${(w.network || '').toUpperCase()}`, amount: -(w.netPayout || w.amount), status: w.status, statusColor: withdrawStatusColor(w.status) }));
+
+    deposits.forEach(d => {
+      const sc = depositStatusColor(d.status);
+      items.push({
+        id: d.id || `dep-${d.at || d.createdAt}`,
+        at: d.createdAt || d.at,
+        category: 'Deposit',
+        label: `Deposit ${fmt(d.amount)} USDT${d.network ? ` via ${d.network.toUpperCase()}` : ''}`,
+        amount: d.amount,
+        rawAmount: d.amount,
+        status: d.status === 'done' ? 'confirmed' : d.status,
+        statusColor: sc,
+        // full detail fields
+        network: d.network,
+        txHash: d.txHash,
+        processedAt: d.processedAt,
+        autoVerified: d.autoVerified,
+      });
+    });
+
+    withdrawals.forEach(w => {
+      const sc = withdrawStatusColor(w.status);
+      items.push({
+        id: w.id,
+        at: w.createdAt || w.at,
+        category: 'Withdraw',
+        label: `Withdraw ${fmt(w.netPayout || w.amount)} USDT via ${(w.network || '').toUpperCase()}`,
+        amount: -(w.netPayout || w.amount),
+        rawAmount: w.amount,
+        netPayout: w.netPayout || w.amount,
+        fee: w.fee || 0,
+        status: w.status === 'done' ? 'completed' : w.status,
+        statusColor: sc,
+        // full detail fields
+        network: w.network,
+        walletAddress: w.walletAddress,
+        reviewedAt: w.reviewedAt,
+        txid: w.txid,
+      });
+    });
+
     return items.sort((a, b) => b.at - a.at);
   }, [trades, closedSignals, closedFutures, deposits, withdrawals]);
 
   const filtered = filter === 'All' ? activity : activity.filter(a => a.category === filter);
+  const isClickable = (item) => item.category === 'Deposit' || item.category === 'Withdraw';
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: theme.bg, color: theme.text }}>
@@ -109,18 +268,33 @@ const TransactionPage = () => {
         )}
 
         {filtered.map(item => (
-          <div key={item.id} style={{ ...glassCard(theme), padding: '14px 16px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ fontSize: '13px', fontWeight: '600' }}>{item.label}</div>
+          <div
+            key={item.id}
+            onClick={() => isClickable(item) ? setSelectedItem(item) : undefined}
+            style={{
+              ...glassCard(theme),
+              padding: '14px 16px', marginBottom: '10px',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              cursor: isClickable(item) ? 'pointer' : 'default',
+              transition: 'transform 0.12s ease, box-shadow 0.12s ease',
+            }}
+            onMouseEnter={e => { if (isClickable(item)) e.currentTarget.style.transform = 'translateY(-1px)'; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'none'; }}
+          >
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</div>
               <div style={{ fontSize: '10px', color: theme.faint, marginTop: '3px' }}>{new Date(item.at).toLocaleString()}</div>
-              <div style={{ display: 'flex', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '6px', marginTop: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
                 <span style={{ fontSize: '10px', fontWeight: '700', color: theme.primary, backgroundColor: theme.primarySoft, padding: '2px 8px', borderRadius: '6px', display: 'inline-block' }}>{item.category}</span>
                 {item.status && (
                   <span style={{ fontSize: '10px', fontWeight: '700', color: item.statusColor, backgroundColor: item.statusColor + '1A', padding: '2px 8px', borderRadius: '6px', display: 'inline-block', textTransform: 'capitalize' }}>{item.status}</span>
                 )}
+                {isClickable(item) && (
+                  <span style={{ fontSize: '10px', color: theme.primary, fontWeight: '600' }}>Tap for details</span>
+                )}
               </div>
             </div>
-            <span style={{ fontWeight: '700', fontSize: '14px', color: item.amount >= 0 ? theme.up : theme.down, flexShrink: 0 }}>
+            <span style={{ fontWeight: '700', fontSize: '14px', color: item.amount >= 0 ? theme.up : theme.down, flexShrink: 0, marginLeft: '12px' }}>
               {item.amount >= 0 ? '+' : ''}{fmt(Math.abs(item.amount))}
             </span>
           </div>
@@ -145,6 +319,8 @@ const TransactionPage = () => {
           </div>
         )}
       </div>
+
+      <DetailModal item={selectedItem} onClose={() => setSelectedItem(null)} theme={theme} />
     </div>
   );
 };
