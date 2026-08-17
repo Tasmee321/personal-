@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Home from './pages/Home';
 import KynexAuth from './KynexAuth';
@@ -40,6 +40,10 @@ function ProtectedRoute({ children }) {
 function App() {
   const authed = isAuthenticated();
 
+  // UpdateChecker sets this to true while an update prompt is visible.
+  // WhatsNewModal reads it — if update is pending, it stays silent.
+  const [updatePending, setUpdatePending] = useState(false);
+
   return (
     <ThemeProvider>
       <Router>
@@ -79,10 +83,11 @@ function App() {
           </Route>
         </Routes>
 
-        {/* Global overlays */}
+        {/* Global overlays — UpdateChecker has priority.
+            WhatsNewModal won't render while updatePending is true. */}
         {isAuthenticated() && <LiveChat />}
-        <UpdateChecker />  {/* shows update dialog when version.json has newer version_code */}
-        <WhatsNewModal />  {/* shows What's New after user installs the update */}
+        <UpdateChecker onPendingChange={setUpdatePending} />
+        <WhatsNewModal updatePending={updatePending} />
       </Router>
     </ThemeProvider>
   );
