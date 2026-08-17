@@ -13,10 +13,17 @@ const INSTALLED_KEY      = 'kynex_installed_version';
 const DISMISSED_KEY      = 'kynex_dismissed_version';
 const SEEN_WHATS_NEW_KEY = 'kynex_seen_whats_new';
 
-export default function UpdateChecker() {
+// onPendingChange(true)  → called when update dialog becomes visible
+// onPendingChange(false) → called when dialog is dismissed or no update found
+export default function UpdateChecker({ onPendingChange }) {
   const { theme } = useTheme();
   const [update, setUpdate]   = useState(null);
   const [visible, setVisible] = useState(false);
+
+  // Keep parent in sync whenever visibility changes
+  useEffect(() => {
+    onPendingChange?.(visible);
+  }, [visible, onPendingChange]);
 
   useEffect(() => {
     const check = async () => {
@@ -49,7 +56,7 @@ export default function UpdateChecker() {
 
   const handleDownload = () => {
     localStorage.setItem(INSTALLED_KEY, String(update.version_code));
-    localStorage.removeItem(SEEN_WHATS_NEW_KEY); // WhatsNewModal shows on next open
+    localStorage.removeItem(SEEN_WHATS_NEW_KEY); // WhatsNewModal shows AFTER user installs & reopens
     setVisible(false);
     window.location.href = update.download_url;
   };
