@@ -30,7 +30,8 @@ import TransferPage from './pages/TransferPage';
 import { isAuthenticated } from './utils/auth';
 import { ThemeProvider } from './ThemeContext';
 import LiveChat from './components/LiveChat';
-import WhatsNewModal from './components/WhatsNewModal'; // ← NEW
+import WhatsNewModal from './components/WhatsNewModal';
+import UpdateChecker from './components/UpdateChecker';
 
 function ProtectedRoute({ children }) {
   return isAuthenticated() ? children : <Navigate to="/auth" replace />;
@@ -80,7 +81,8 @@ function App() {
 
         {/* Global overlays */}
         {isAuthenticated() && <LiveChat />}
-        <WhatsNewModal /> {/* ← shows after update, first open only */}
+        <UpdateChecker />  {/* shows update dialog when version.json has newer version_code */}
+        <WhatsNewModal />  {/* shows What's New after user installs the update */}
       </Router>
     </ThemeProvider>
   );
