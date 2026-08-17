@@ -30,6 +30,7 @@ import TransferPage from './pages/TransferPage';
 import { isAuthenticated } from './utils/auth';
 import { ThemeProvider } from './ThemeContext';
 import LiveChat from './components/LiveChat';
+import WhatsNewModal from './components/WhatsNewModal'; // ← NEW
 
 function ProtectedRoute({ children }) {
   return isAuthenticated() ? children : <Navigate to="/auth" replace />;
@@ -76,8 +77,10 @@ function App() {
             <Route path="member-guide" element={<MemberGuide />} />
           </Route>
         </Routes>
-        {/* Global LiveChat — shows on all protected pages */}
+
+        {/* Global overlays */}
         {isAuthenticated() && <LiveChat />}
+        <WhatsNewModal /> {/* ← shows after update, first open only */}
       </Router>
     </ThemeProvider>
   );
