@@ -52,7 +52,7 @@ function App() {
           <Route path="/assets" element={<ProtectedRoute><Assets /></ProtectedRoute>} />
           <Route path="/signals" element={<ProtectedRoute><Signals /></ProtectedRoute>} />
           <Route path="/invite" element={<ProtectedRoute><Invite /></ProtectedRoute>} />
-          <Route path="/download" element={<ProtectedRoute><Download /></ProtectedRoute>} />
+          <Route path="/download" element={<Download />} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           <Route path="/security" element={<ProtectedRoute><Security /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
