@@ -1,72 +1,125 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Download, X, RefreshCw, Sparkles } from 'lucide-react';
 import { useTheme } from '../ThemeContext';
 
-// ─── BUMP THIS every time you ship a new APK ───────────────────────────────
-// Set this to the version_code of the CURRENT release.
-// Server par version_code 4 hai, toh yahan bhi 4 hona chahiye.
+// Web frontend release version. This is only the fallback for environments
+// where the native APK bridge is not available.
 const CURRENT_VERSION_CODE = 4;
-// ────────────────────────────────────────────────────────────────────────────
 
-const VERSION_JSON_URL   = 'https://kynex.site/version.json';
-const INSTALLED_KEY      = 'kynex_installed_version';
-const DISMISSED_KEY      = 'kynex_dismissed_version'; // Changed to use sessionStorage below
+const VERSION_JSON_URL = 'https://kynex.site/version.json';
+const INSTALLED_KEY = 'kynex_installed_version';
+const DISMISSED_KEY = 'kynex_dismissed_version';
 const SEEN_WHATS_NEW_KEY = 'kynex_seen_whats_new';
+
+// New APKs can expose the installed native version through the JS bridge.
+// Old APKs may not expose it; in that case we deliberately return 0 so an
+// old installation is offered the latest APK instead of being treated as v4.
+async function getInstalledVersionCode() {
+  try {
+    const bridge = window.KynexBridge;
+
+    if (bridge) {
+      if (typeof bridge.getVersionCode === 'function') {
+        const value = await Promise.resolve(bridge.getVersionCode());
+        const code = parseInt(value, 10);
+        if (Number.isFinite(code) && code > 0) return code;
+      }
+
+      if (typeof bridge.getLongVersionCode === 'function') {
+        const value = await Promise.resolve(bridge.getLongVersionCode());
+        const code = parseInt(value, 10);
+        if (Number.isFinite(code) && code > 0) return code;
+      }
+    }
+  } catch (_) {
+    // Fall through to the web fallback.
+  }
+
+  // If this is an older APK/webview without the bridge, don't trust the
+  // localStorage value as the installed APK version. localStorage survives
+  // APK updates and the old code used to mark a download as "installed"
+  // before the APK was actually installed.
+  const isAndroid = /Android/i.test(navigator.userAgent || '');
+  const isStandalone = window.matchMedia?.('(display-mode: standalone)')?.matches;
+
+  if (isAndroid || isStandalone) return 0;
+  return CURRENT_VERSION_CODE;
+}
 
 export default function UpdateChecker({ onPendingChange }) {
   const { theme } = useTheme();
-  const [update, setUpdate]   = useState(null);
+  const [update, setUpdate] = useState(null);
   const [visible, setVisible] = useState(false);
 
-  // Keep parent in sync whenever visibility changes
   useEffect(() => {
     onPendingChange?.(visible);
   }, [visible, onPendingChange]);
 
+  const check = useCallback(async () => {
+    try {
+      const res = await fetch(`${VERSION_JSON_URL}?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
+      if (!res.ok) return;
+
+      const data = await res.json();
+      const serverVersion = parseInt(data.version_code, 10);
+      if (!Number.isFinite(serverVersion)) return;
+
+      const installedVersion = await getInstalledVersionCode();
+
+      // Only compare against the actual/native installed version when it is
+      // available. This is what lets old APKs receive the update prompt.
+      if (serverVersion <= installedVersion) {
+        if (visible) {
+          setVisible(false);
+          setUpdate(null);
+        }
+        return;
+      }
+
+      // Never let the old "download clicked" localStorage value suppress an
+      // update. It was not proof that installation succeeded.
+      const dismissed = parseInt(
+        sessionStorage.getItem(DISMISSED_KEY) || '0',
+        10
+      );
+      if (dismissed >= serverVersion) return;
+
+      setUpdate({
+        version_code: serverVersion,
+        version_name: data.version_name || String(serverVersion),
+        download_url: data.download_url || 'https://kynex.site/KYNEX.apk',
+        message: data.message || 'A new KYNEX update is available.',
+      });
+      setVisible(true);
+    } catch (_) {
+      // Network failure is intentionally silent.
+    }
+  }, [visible]);
+
   useEffect(() => {
-    const check = async () => {
-      try {
-        // Cache bust query parameter added to bypass Service Worker/Browser caching
-        const res = await fetch(`${VERSION_JSON_URL}?t=${Date.now()}&bypass=true`, { 
-          cache: 'no-store',
-          headers: { 'Cache-Control': 'no-cache' }
-        });
-        if (!res.ok) return;
-        
-        const data = await res.json();
-        const { version_code, version_name, download_url, message } = data;
-
-        // 1. Check if server version is strictly newer than current app
-        if (version_code <= CURRENT_VERSION_CODE) return;
-
-        // 2. User already downloaded this specific version (LocalStorage)
-        const installed = parseInt(localStorage.getItem(INSTALLED_KEY) || '0', 10);
-        if (installed >= version_code) return;
-
-        // 3. User already dismissed this version in THIS session (SessionStorage)
-        const dismissed = parseInt(sessionStorage.getItem(DISMISSED_KEY) || '0', 10);
-        if (dismissed >= version_code) return;
-
-        setUpdate({ version_code, version_name, download_url, message });
-        setVisible(true);
-      } catch { /* silent — network failure is fine */ }
-    };
-
     check();
     const id = setInterval(check, 15 * 60 * 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [check]);
 
   const handleDownload = () => {
-    localStorage.setItem(INSTALLED_KEY, String(update.version_code));
-    localStorage.removeItem(SEEN_WHATS_NEW_KEY); // WhatsNewModal shows AFTER user installs & reopens
+    // Keep this only as a record for other UI; it is NOT used to decide
+    // whether an APK is installed.
+    if (update?.version_code) {
+      localStorage.setItem(INSTALLED_KEY, String(update.version_code));
+      localStorage.removeItem(SEEN_WHATS_NEW_KEY);
+    }
     setVisible(false);
     window.location.href = update.download_url;
   };
 
   const handleLater = () => {
-    // Changed to sessionStorage: Will remind again if they restart the app
-    sessionStorage.setItem(DISMISSED_KEY, String(update.version_code));
+    if (update?.version_code) {
+      sessionStorage.setItem(DISMISSED_KEY, String(update.version_code));
+    }
     setVisible(false);
   };
 
@@ -97,7 +150,6 @@ export default function UpdateChecker({ onPendingChange }) {
           border: `1px solid ${theme.cardBorder}`,
           boxShadow: '0 -4px 40px rgba(0,0,0,0.25)',
         }}>
-          {/* Header */}
           <div style={{
             background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)',
             padding: '20px 20px 18px',
@@ -145,7 +197,6 @@ export default function UpdateChecker({ onPendingChange }) {
             </div>
           </div>
 
-          {/* Body */}
           <div style={{ padding: '18px 20px 20px' }}>
             <div style={{
               background: theme.primarySoft, borderRadius: 12,
