@@ -5,7 +5,7 @@ import { useTheme } from '../ThemeContext';
 // ─── BUMP THIS every time you ship a new APK ───────────────────────────────
 // This must match the version_code in /public/version.json of the CURRENT build.
 // Old users (who have a lower version installed) will see the update dialog.
-const CURRENT_VERSION_CODE = 2;
+const CURRENT_VERSION_CODE = 3;
 // ────────────────────────────────────────────────────────────────────────────
 
 const VERSION_JSON_URL   = 'https://kynex.site/version.json';
