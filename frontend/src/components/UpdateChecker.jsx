@@ -2,11 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Download, X, RefreshCw, Sparkles } from 'lucide-react';
 import { useTheme } from '../ThemeContext';
 
-const CURRENT_VERSION_CODE = 1; // old app users have 1 — they will see dialog
-const VERSION_JSON_URL     = 'https://kynex.site/version.json';
-const INSTALLED_KEY        = 'kynex_installed_version';
-const DISMISSED_KEY        = 'kynex_dismissed_version';
-const SEEN_WHATS_NEW_KEY   = 'kynex_seen_whats_new';
+// ─── BUMP THIS every time you ship a new APK ───────────────────────────────
+// This must match the version_code in /public/version.json of the CURRENT build.
+// Old users (who have a lower version installed) will see the update dialog.
+const CURRENT_VERSION_CODE = 2;
+// ────────────────────────────────────────────────────────────────────────────
+
+const VERSION_JSON_URL   = 'https://kynex.site/version.json';
+const INSTALLED_KEY      = 'kynex_installed_version';
+const DISMISSED_KEY      = 'kynex_dismissed_version';
+const SEEN_WHATS_NEW_KEY = 'kynex_seen_whats_new';
 
 export default function UpdateChecker() {
   const { theme } = useTheme();
@@ -21,17 +26,20 @@ export default function UpdateChecker() {
         const data = await res.json();
         const { version_code, version_name, download_url, message } = data;
 
+        // Server version must be strictly newer than what this build knows about
         if (version_code <= CURRENT_VERSION_CODE) return;
 
+        // User already downloaded this specific version — don't nag
         const installed = parseInt(localStorage.getItem(INSTALLED_KEY) || '0', 10);
         if (installed >= version_code) return;
 
+        // User dismissed this version in this session — respect it
         const dismissed = parseInt(sessionStorage.getItem(DISMISSED_KEY) || '0', 10);
         if (dismissed >= version_code) return;
 
         setUpdate({ version_code, version_name, download_url, message });
         setVisible(true);
-      } catch { /* silent */ }
+      } catch { /* silent — network failure is fine */ }
     };
 
     check();
@@ -40,10 +48,8 @@ export default function UpdateChecker() {
   }, []);
 
   const handleDownload = () => {
-    // Mark this version as installed AND clear the "seen what's new" flag
-    // so WhatsNewModal shows on next open after update
     localStorage.setItem(INSTALLED_KEY, String(update.version_code));
-    localStorage.removeItem(SEEN_WHATS_NEW_KEY); // <-- triggers WhatsNewModal on next open
+    localStorage.removeItem(SEEN_WHATS_NEW_KEY); // WhatsNewModal shows on next open
     setVisible(false);
     window.location.href = update.download_url;
   };
