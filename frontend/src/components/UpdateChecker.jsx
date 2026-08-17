@@ -3,19 +3,16 @@ import { Download, X, RefreshCw, Sparkles } from 'lucide-react';
 import { useTheme } from '../ThemeContext';
 
 // ─── BUMP THIS every time you ship a new APK ───────────────────────────────
-// Set this to the version_code of the PREVIOUS release.
-// Old users (who have a lower version installed) will see the update dialog.
-// Example: if server version.json has version_code 4, set this to 3.
-const CURRENT_VERSION_CODE = 3;
+// Set this to the version_code of the CURRENT release.
+// Server par version_code 4 hai, toh yahan bhi 4 hona chahiye.
+const CURRENT_VERSION_CODE = 4;
 // ────────────────────────────────────────────────────────────────────────────
 
 const VERSION_JSON_URL   = 'https://kynex.site/version.json';
 const INSTALLED_KEY      = 'kynex_installed_version';
-const DISMISSED_KEY      = 'kynex_dismissed_version'; // now uses localStorage, not sessionStorage
+const DISMISSED_KEY      = 'kynex_dismissed_version'; // Changed to use sessionStorage below
 const SEEN_WHATS_NEW_KEY = 'kynex_seen_whats_new';
 
-// onPendingChange(true)  → called when update dialog becomes visible
-// onPendingChange(false) → called when dialog is dismissed or no update found
 export default function UpdateChecker({ onPendingChange }) {
   const { theme } = useTheme();
   const [update, setUpdate]   = useState(null);
@@ -29,20 +26,25 @@ export default function UpdateChecker({ onPendingChange }) {
   useEffect(() => {
     const check = async () => {
       try {
-        const res = await fetch(`${VERSION_JSON_URL}?t=${Date.now()}`, { cache: 'no-store' });
+        // Cache bust query parameter added to bypass Service Worker/Browser caching
+        const res = await fetch(`${VERSION_JSON_URL}?t=${Date.now()}&bypass=true`, { 
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' }
+        });
         if (!res.ok) return;
+        
         const data = await res.json();
         const { version_code, version_name, download_url, message } = data;
 
-        // Server version must be strictly newer than what this build knows about
+        // 1. Check if server version is strictly newer than current app
         if (version_code <= CURRENT_VERSION_CODE) return;
 
-        // User already downloaded this specific version — don't nag
+        // 2. User already downloaded this specific version (LocalStorage)
         const installed = parseInt(localStorage.getItem(INSTALLED_KEY) || '0', 10);
         if (installed >= version_code) return;
 
-        // User already dismissed this version — respect it permanently (localStorage, not sessionStorage)
-        const dismissed = parseInt(localStorage.getItem(DISMISSED_KEY) || '0', 10);
+        // 3. User already dismissed this version in THIS session (SessionStorage)
+        const dismissed = parseInt(sessionStorage.getItem(DISMISSED_KEY) || '0', 10);
         if (dismissed >= version_code) return;
 
         setUpdate({ version_code, version_name, download_url, message });
@@ -63,8 +65,8 @@ export default function UpdateChecker({ onPendingChange }) {
   };
 
   const handleLater = () => {
-    // Use localStorage so dismiss persists across page reloads
-    localStorage.setItem(DISMISSED_KEY, String(update.version_code));
+    // Changed to sessionStorage: Will remind again if they restart the app
+    sessionStorage.setItem(DISMISSED_KEY, String(update.version_code));
     setVisible(false);
   };
 
