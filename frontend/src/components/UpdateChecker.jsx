@@ -3,14 +3,15 @@ import { Download, X, RefreshCw, Sparkles } from 'lucide-react';
 import { useTheme } from '../ThemeContext';
 
 // ─── BUMP THIS every time you ship a new APK ───────────────────────────────
-// This must match the version_code in /public/version.json of the CURRENT build.
+// Set this to the version_code of the PREVIOUS release.
 // Old users (who have a lower version installed) will see the update dialog.
-const CURRENT_VERSION_CODE = 2;
+// Example: if server version.json has version_code 4, set this to 3.
+const CURRENT_VERSION_CODE = 3;
 // ────────────────────────────────────────────────────────────────────────────
 
 const VERSION_JSON_URL   = 'https://kynex.site/version.json';
 const INSTALLED_KEY      = 'kynex_installed_version';
-const DISMISSED_KEY      = 'kynex_dismissed_version';
+const DISMISSED_KEY      = 'kynex_dismissed_version'; // now uses localStorage, not sessionStorage
 const SEEN_WHATS_NEW_KEY = 'kynex_seen_whats_new';
 
 // onPendingChange(true)  → called when update dialog becomes visible
@@ -40,8 +41,8 @@ export default function UpdateChecker({ onPendingChange }) {
         const installed = parseInt(localStorage.getItem(INSTALLED_KEY) || '0', 10);
         if (installed >= version_code) return;
 
-        // User dismissed this version in this session — respect it
-        const dismissed = parseInt(sessionStorage.getItem(DISMISSED_KEY) || '0', 10);
+        // User already dismissed this version — respect it permanently (localStorage, not sessionStorage)
+        const dismissed = parseInt(localStorage.getItem(DISMISSED_KEY) || '0', 10);
         if (dismissed >= version_code) return;
 
         setUpdate({ version_code, version_name, download_url, message });
@@ -62,7 +63,8 @@ export default function UpdateChecker({ onPendingChange }) {
   };
 
   const handleLater = () => {
-    sessionStorage.setItem(DISMISSED_KEY, String(update.version_code));
+    // Use localStorage so dismiss persists across page reloads
+    localStorage.setItem(DISMISSED_KEY, String(update.version_code));
     setVisible(false);
   };
 
