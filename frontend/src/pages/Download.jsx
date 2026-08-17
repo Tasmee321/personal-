@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Zap, TrendingUp, Shield, Globe, Award, Smartphone, RefreshCw, Wifi, HardDrive, Download as DownloadIcon, CheckCircle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -139,6 +139,19 @@ const Download = () => {
   const { theme, iconBadges } = useTheme();
   const navigate = useNavigate();
   const [showIosGuide, setShowIosGuide] = useState(false);
+  const [apkInfo, setApkInfo] = useState({
+    version_name: '2.0.0',
+    download_url: 'https://kynex.site/KYNEX.apk',
+  });
+
+  useEffect(() => {
+    fetch(`https://kynex.site/version.json?t=${Date.now()}`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.download_url) setApkInfo(data);
+      })
+      .catch(() => {});
+  }, []);
 
   const features = [
     { icon: <Zap size={28} />, badge: iconBadges.amber, title: 'Lightning-fast transactions', desc: 'The KYNEX matching engine enables up to 100,000 transactions per second' },
@@ -280,10 +293,10 @@ const Download = () => {
               backgroundColor: `${theme.up}15`, padding: '3px 10px', borderRadius: 20,
               marginBottom: 14,
             }}>
-              <CheckCircle size={12} /> v1.0 — 3.4 MB
+              <CheckCircle size={12} /> v{apkInfo.version_name}
             </div>
             <a
-              href={`${window.location.origin}/kynex.apk`}
+              href={apkInfo.download_url}
               download
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
@@ -381,7 +394,7 @@ const Download = () => {
             marginBottom: 10,
           }}>
             <QRCodeSVG
-              value="https://kynex.site/download"
+              value="https://kynex.site/KYNEX.apk"
               size={100}
               bgColor="white"
               fgColor="#111827"
