@@ -136,10 +136,11 @@ export default function KynexAuth() {
   const [loginMethod, setLoginMethod] = useState('email');
   const [rememberPassword, setRememberPassword] = useState(() => !!localStorage.getItem(REMEMBERED_EMAIL_KEY));
   const [step, setStep] = useState(1);
+  const prefillEmail = location.state?.prefillEmail || '';
   const [formData, setFormData] = useState(() => ({
     name: '', password: '', confirmPassword: '', phone: '',
     referral: refFromLink.toUpperCase(),
-    email: localStorage.getItem(REMEMBERED_EMAIL_KEY) || '',
+    email: prefillEmail || localStorage.getItem(REMEMBERED_EMAIL_KEY) || '',
   }));
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
