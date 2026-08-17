@@ -24,6 +24,11 @@
       "icon": "🔒",
       "title": "Enhanced Security",
       "desc": "Upgraded 2FA flow and biometric login for faster, safer access."
+    },
+    {
+      "icon": "🔄",
+      "title": "Signal Cancellation Fixed",
+      "desc": "Cancelled signals no longer count against your daily limit. Only settled signals reduce your limit."
     }
   ]
 }
