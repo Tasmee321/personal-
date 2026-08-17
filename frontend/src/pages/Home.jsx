@@ -41,6 +41,7 @@ const Home = () => {
   const [langOpen, setLangOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [language, setLanguage] = useState(() => localStorage.getItem('kynex_language') || 'en');
+  const [heroEmail, setHeroEmail] = useState('');
   const selectedLang = LANGUAGES.find((l) => l.code === language);
 
   const chooseLanguage = (code) => {
@@ -235,10 +236,28 @@ const Home = () => {
             <p style={{ color: theme.subtext, fontSize: '13px', margin: '0 0 18px 0' }}>
               Trade with confidence — track live markets and manage your assets in one place.
             </p>
-            <div style={{ backgroundColor: theme.inputBg || theme.bg, border: `1px solid ${theme.cardBorder}`, borderRadius: '10px', padding: '12px', color: theme.faint, fontSize: '13px', marginBottom: '14px' }}>
-              Email / Phone number
-            </div>
-            <button className="kx-cta" style={{ width: '100%' }} onClick={() => navigate('/auth', { state: { mode: 'signup' } })}>
+            <input
+              type="text"
+              placeholder="Email / Phone number"
+              value={heroEmail}
+              onChange={(e) => setHeroEmail(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') navigate('/auth', { state: { mode: 'signup', prefillEmail: heroEmail } });
+              }}
+              style={{
+                width: '100%', boxSizing: 'border-box',
+                backgroundColor: theme.inputBg || theme.bg,
+                border: `1px solid ${theme.cardBorder}`,
+                borderRadius: '10px', padding: '12px',
+                color: theme.text, fontSize: '13px',
+                marginBottom: '14px', outline: 'none',
+              }}
+            />
+            <button
+              className="kx-cta"
+              style={{ width: '100%' }}
+              onClick={() => navigate('/auth', { state: { mode: 'signup', prefillEmail: heroEmail } })}
+            >
               Sign Up Now →
             </button>
           </div>
