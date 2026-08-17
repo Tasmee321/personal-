@@ -498,10 +498,10 @@ const Assets = () => {
   };
 
   const QUICK_ACTIONS = [
-    { key: 'deposit', label: 'Deposit', icon: ArrowDownToLine, badge: iconBadges.blue },
-    { key: 'withdraw', label: 'Withdraw', icon: ArrowUpFromLine, badge: iconBadges.teal },
-    { key: 'transfer', label: 'Transfer', icon: ArrowLeftRight, badge: iconBadges.purple },
-    { key: 'transaction', label: 'Transaction', icon: Receipt, badge: iconBadges.amber },
+    { key: 'deposit', label: 'Deposit', icon: ArrowDownToLine },
+    { key: 'withdraw', label: 'Withdraw', icon: ArrowUpFromLine },
+    { key: 'transfer', label: 'Transfer', icon: ArrowLeftRight },
+    { key: 'transaction', label: 'Transaction', icon: Receipt },
   ];
 
   return (
@@ -548,10 +548,18 @@ const Assets = () => {
               return (
                 <button key={action.key} onClick={() => route ? navigate(route) : setPanel(isActive ? null : action.key)}
                   style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', background: 'none', border: 'none', cursor: 'pointer', flex: 1 }}>
-                  <div style={{ width: '48px', height: '48px', borderRadius: '16px', backgroundColor: action.badge.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: isActive ? `0 4px 16px ${action.badge.fg}33` : theme.shadow, transform: isActive ? 'scale(1.08)' : 'scale(1)', transition: 'all 0.2s' }}>
-                    <Icon size={20} color={action.badge.fg} />
+                  <div style={{
+                    width: '52px', height: '52px', borderRadius: '16px',
+                    background: isActive ? theme.brandGradient : theme.brandSoft,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: isActive ? '0 6px 20px rgba(217,119,6,0.45)' : '0 2px 8px rgba(217,119,6,0.15)',
+                    transform: isActive ? 'scale(1.1)' : 'scale(1)',
+                    transition: 'all 0.2s',
+                    border: isActive ? 'none' : `1.5px solid rgba(217,119,6,0.2)`,
+                  }}>
+                    <Icon size={22} color={isActive ? '#1A1305' : theme.brand} />
                   </div>
-                  <span style={{ fontSize: '11px', color: isActive ? theme.text : theme.subtext, fontWeight: '700' }}>{action.label}</span>
+                  <span style={{ fontSize: '11px', color: isActive ? theme.brand : theme.subtext, fontWeight: '700', transition: 'color 0.2s' }}>{action.label}</span>
                 </button>
               );
             })}
