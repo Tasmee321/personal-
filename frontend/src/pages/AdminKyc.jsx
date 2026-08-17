@@ -175,12 +175,23 @@ const AdminKyc = () => {
     return () => { clearInterval(chatPollRef.current); clearInterval(typingPollRef.current); };
   }, [activeTab, authed, loadChatThreads]);
 
-  const safeFetch = async (url, opts) => {
-    try {
-      const res = await fetch(url, opts);
-      const text = await res.text();
-      try { return { ok: res.ok, data: JSON.parse(text) }; } catch { return { ok: false, data: { error: 'Backend server not running. Run: node server.js' } }; }
-    } catch { return { ok: false, data: { error: 'Cannot connect to backend. Run: node server.js' } }; }
+  const safeFetch = async (url, opts, retries = 2) => {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await fetch(url, opts);
+        const text = await res.text();
+        try {
+          return { ok: res.ok, data: JSON.parse(text) };
+        } catch {
+          return { ok: false, data: { error: 'Server returned invalid response. Try again.' } };
+        }
+      } catch {
+        if (attempt < retries) {
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      }
+    }
+    return { ok: false, data: { error: 'Server is waking up — please wait a moment and try again.' } };
   };
 
   const loadAll = useCallback(async (key) => {
