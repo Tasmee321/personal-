@@ -145,6 +145,7 @@ const Security = () => {
   const navigate = useNavigate();
   const [security, setSecurity] = useState(null);
   const [open, setOpen] = useState(null);
+  const [appLock, setAppLock] = useState(() => localStorage.getItem('kynex_app_lock') === 'true');
   const [msg, setMsg] = useState('');
 
   const load = async () => {
@@ -163,6 +164,16 @@ const Security = () => {
   }, []);
 
   const toggle = (panel) => { setOpen(open === panel ? null : panel); setMsg(''); };
+
+  const toggleAppLock = () => {
+    const next = !appLock;
+    setAppLock(next);
+    localStorage.setItem('kynex_app_lock', String(next));
+    // Tell native Android layer via postMessage
+    if (window.KynexBridge && window.KynexBridge.setAppLock) {
+      window.KynexBridge.setAppLock(String(next));
+    }
+  };
 
   /* security level helpers */
   const levelColor = security
@@ -330,6 +341,39 @@ const Security = () => {
                   <div style={{ fontSize: '11px', color: theme.faint, marginTop: '2px' }}>Restrict withdrawals to trusted destinations only.</div>
                 </div>
                 <WhitelistToggle theme={theme} enabled={security.withdrawalWhitelistEnabled} onDone={load} />
+              </div>
+
+              <Divider theme={theme} />
+
+              {/* App Lock */}
+              <Divider theme={theme} />
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '14px 6px',
+              }}>
+                <RowIcon name="identity" theme={theme} color={theme.primarySoft} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '14px', fontWeight: 600 }}>App Lock</div>
+                  <div style={{ fontSize: '11px', color: theme.faint, marginTop: '2px' }}>Require fingerprint or PIN when opening KYNEX.</div>
+                </div>
+                <div
+                  onClick={toggleAppLock}
+                  style={{
+                    width: 44, height: 24, borderRadius: 12, cursor: 'pointer',
+                    backgroundColor: appLock ? '#F59E0B' : theme.cardBorder,
+                    position: 'relative', transition: 'background 0.2s',
+                    flexShrink: 0,
+                  }}
+                >
+                  <div style={{
+                    position: 'absolute', top: 3, left: appLock ? 23 : 3,
+                    width: 18, height: 18, borderRadius: '50%',
+                    backgroundColor: 'white', transition: 'left 0.2s',
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+                  }} />
+                </div>
               </div>
 
               <Divider theme={theme} />
