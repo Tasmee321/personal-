@@ -9,52 +9,64 @@ import NotificationBell from '../components/NotificationBell';
 import ALL_COINS, { buildWsStreamUrl } from '../config/coins';
 import { API_URL } from '../config';
 
-// Advanced SVG icons for quick actions — realistic, distinct, not generic
-// Clean stroke-only icons — consistent weight, no visual clutter
+// Premium filled quick-action icons — vivid gradients, distinct shapes
 const DepositSVG = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 3v13"/><path d="M8 12l4 4 4-4"/>
-    <path d="M3 19h18"/>
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="2" y="17" width="20" height="5" rx="2" fill="white" fillOpacity="0.28"/>
+    <path d="M12 3L12 15" stroke="white" strokeWidth="2.2" strokeLinecap="round"/>
+    <path d="M7 10.5L12 15.5L17 10.5" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M4 19.5H20" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeOpacity="0.55"/>
   </svg>
 );
 const WithdrawSVG = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 21V8"/><path d="M8 12l4-4 4 4"/>
-    <path d="M3 5h18"/>
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="2" y="2" width="20" height="5" rx="2" fill="white" fillOpacity="0.28"/>
+    <path d="M12 21L12 9" stroke="white" strokeWidth="2.2" strokeLinecap="round"/>
+    <path d="M7 13.5L12 8.5L17 13.5" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M4 4.5H20" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeOpacity="0.55"/>
   </svg>
 );
 const InviteSVG = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
-    <path d="M19 8v6M16 11h6"/>
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="8.5" cy="7.5" r="3.5" fill="white" fillOpacity="0.9"/>
+    <path d="M2 20c0-3.314 2.909-5 6.5-5s6.5 1.686 6.5 5" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+    <path d="M18 5V11" stroke="white" strokeWidth="2.2" strokeLinecap="round"/>
+    <path d="M15 8H21" stroke="white" strokeWidth="2.2" strokeLinecap="round"/>
   </svg>
 );
 const DownloadSVG = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-    <path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="3" y="15.5" width="18" height="5.5" rx="2" fill="white" fillOpacity="0.28"/>
+    <path d="M12 3V13.5" stroke="white" strokeWidth="2.2" strokeLinecap="round"/>
+    <path d="M7.5 9.5L12 14L16.5 9.5" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+    <rect x="9.5" y="17.5" width="5" height="1.5" rx="0.75" fill="white" fillOpacity="0.65"/>
   </svg>
 );
 const GuideSVG = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" fill="white" fillOpacity="0.2" stroke="white" strokeWidth="1.7"/>
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="white" strokeWidth="1.7" strokeLinecap="round"/>
+    <path d="M8 7.5H16" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeOpacity="0.9"/>
+    <path d="M8 11H16" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeOpacity="0.9"/>
+    <path d="M8 14.5H12.5" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeOpacity="0.7"/>
   </svg>
 );
 const CertSVG = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="8" r="6"/><path d="M9 22l3-4 3 4"/>
-    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
-    <circle cx="12" cy="13" r="0.5" fill="currentColor"/>
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="12" cy="8.5" r="5" fill="white" fillOpacity="0.2" stroke="white" strokeWidth="1.8"/>
+    <circle cx="12" cy="8.5" r="2.2" fill="white" fillOpacity="0.5"/>
+    <path d="M9.5 21.5l2.5-3.5 2.5 3.5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M7 5.5L5.5 4M17 5.5L18.5 4M12 3.5V2" stroke="white" strokeWidth="1.3" strokeLinecap="round" strokeOpacity="0.6"/>
   </svg>
 );
 
 const QUICK_ACTIONS = [
-  { to: '/deposit',           label: 'Deposit',      SvgIcon: DepositSVG,  badgeKey: 'blue'   },
-  { to: '/withdraw',          label: 'Withdrawal',   SvgIcon: WithdrawSVG, badgeKey: 'teal'   },
-  { to: '/invite',            label: 'Invite',       SvgIcon: InviteSVG,   badgeKey: 'purple' },
-  { to: '/download',          label: 'Download',     SvgIcon: DownloadSVG, badgeKey: 'amber'  },
-  { to: '/legal/member-guide',label: 'Guide',        SvgIcon: GuideSVG,    badgeKey: 'green'  },
-  { to: '/certificates',      label: 'Certificates', SvgIcon: CertSVG,     badgeKey: 'teal'   },
+  { to: '/deposit',            label: 'Deposit',   SvgIcon: DepositSVG,  gradient: 'linear-gradient(140deg,#3B82F6 0%,#2563EB 100%)', glow: 'rgba(59,130,246,0.35)'  },
+  { to: '/withdraw',           label: 'Withdraw',  SvgIcon: WithdrawSVG, gradient: 'linear-gradient(140deg,#14B8A6 0%,#0D9488 100%)', glow: 'rgba(20,184,166,0.35)'  },
+  { to: '/invite',             label: 'Invite',    SvgIcon: InviteSVG,   gradient: 'linear-gradient(140deg,#A855F7 0%,#7C3AED 100%)', glow: 'rgba(168,85,247,0.35)'  },
+  { to: '/download',           label: 'Download',  SvgIcon: DownloadSVG, gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.35)'  },
+  { to: '/legal/member-guide', label: 'Guide',     SvgIcon: GuideSVG,    gradient: 'linear-gradient(140deg,#10B981 0%,#059669 100%)', glow: 'rgba(16,185,129,0.35)'  },
+  { to: '/certificates',       label: 'Certs',     SvgIcon: CertSVG,     gradient: 'linear-gradient(140deg,#EC4899 0%,#DB2777 100%)', glow: 'rgba(236,72,153,0.35)'  },
 ];
 
 function fmtPrice(n) {
@@ -278,23 +290,29 @@ const Dashboard = () => {
       </div>
 
       {/* Quick actions */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '22px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', gap: '6px' }}>
         {QUICK_ACTIONS.map((action) => {
           const { SvgIcon } = action;
-          const badge = iconBadges[action.badgeKey];
           return (
-            <Link key={action.label} to={action.to} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: theme.text, textDecoration: 'none', flex: 1 }}>
+            <Link key={action.label} to={action.to} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '7px', color: theme.text, textDecoration: 'none', flex: 1, minWidth: 0 }}>
               <div style={{
-                width: '46px', height: '46px', borderRadius: '14px',
-                backgroundColor: badge.bg,
+                width: '48px', height: '48px', borderRadius: '16px',
+                background: action.gradient,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: `0 2px 8px ${badge.fg}28`,
-                border: `1px solid ${badge.fg}20`,
-                color: badge.fg,
+                boxShadow: `0 4px 14px ${action.glow}, 0 1px 3px rgba(0,0,0,0.12)`,
+                position: 'relative',
+                overflow: 'hidden',
               }}>
+                {/* inner gloss */}
+                <div style={{
+                  position: 'absolute', top: 0, left: 0, right: 0, height: '50%',
+                  background: 'linear-gradient(to bottom, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0) 100%)',
+                  borderRadius: '16px 16px 0 0',
+                  pointerEvents: 'none',
+                }}/>
                 <SvgIcon />
               </div>
-              <span style={{ fontSize: '10px', color: theme.subtext, fontWeight: '600', textAlign: 'center' }}>{action.label}</span>
+              <span style={{ fontSize: '10px', color: theme.subtext, fontWeight: '600', textAlign: 'center', lineHeight: 1.2, letterSpacing: '0.01em' }}>{action.label}</span>
             </Link>
           );
         })}
