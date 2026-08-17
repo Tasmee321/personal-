@@ -53,20 +53,25 @@ const GuideSVG = () => (
 );
 const CertSVG = () => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="12" cy="8.5" r="5" fill="white" fillOpacity="0.2" stroke="white" strokeWidth="1.8"/>
-    <circle cx="12" cy="8.5" r="2.2" fill="white" fillOpacity="0.5"/>
-    <path d="M9.5 21.5l2.5-3.5 2.5 3.5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-    <path d="M7 5.5L5.5 4M17 5.5L18.5 4M12 3.5V2" stroke="white" strokeWidth="1.3" strokeLinecap="round" strokeOpacity="0.6"/>
+    {/* Scroll/document body */}
+    <rect x="3" y="2" width="14" height="18" rx="2" fill="white" fillOpacity="0.22" stroke="white" strokeWidth="1.6"/>
+    {/* Lines on document */}
+    <path d="M6 7H14M6 10.5H14M6 14H10" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeOpacity="0.85"/>
+    {/* Ribbon badge bottom-right */}
+    <circle cx="17" cy="17" r="4.5" fill="white" fillOpacity="0.35" stroke="white" strokeWidth="1.5"/>
+    <circle cx="17" cy="17" r="2" fill="white" fillOpacity="0.7"/>
+    {/* Star center */}
+    <path d="M17 15.2l.5 1.3H19l-1.1.8.4 1.3-1.3-.9-1.3.9.4-1.3L15 16.5h1.5z" fill="white" fillOpacity="0.9"/>
   </svg>
 );
 
 const QUICK_ACTIONS = [
-  { to: '/deposit',            label: 'Deposit',   SvgIcon: DepositSVG,  gradient: 'linear-gradient(140deg,#3B82F6 0%,#2563EB 100%)', glow: 'rgba(59,130,246,0.35)'  },
-  { to: '/withdraw',           label: 'Withdraw',  SvgIcon: WithdrawSVG, gradient: 'linear-gradient(140deg,#14B8A6 0%,#0D9488 100%)', glow: 'rgba(20,184,166,0.35)'  },
-  { to: '/invite',             label: 'Invite',    SvgIcon: InviteSVG,   gradient: 'linear-gradient(140deg,#A855F7 0%,#7C3AED 100%)', glow: 'rgba(168,85,247,0.35)'  },
-  { to: '/download',           label: 'Download',  SvgIcon: DownloadSVG, gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.35)'  },
-  { to: '/legal/member-guide', label: 'Guide',     SvgIcon: GuideSVG,    gradient: 'linear-gradient(140deg,#10B981 0%,#059669 100%)', glow: 'rgba(16,185,129,0.35)'  },
-  { to: '/certificates',       label: 'Certs',     SvgIcon: CertSVG,     gradient: 'linear-gradient(140deg,#EC4899 0%,#DB2777 100%)', glow: 'rgba(236,72,153,0.35)'  },
+  { to: '/deposit',            label: 'Deposit',     SvgIcon: DepositSVG,  gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
+  { to: '/withdraw',           label: 'Withdraw',    SvgIcon: WithdrawSVG, gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
+  { to: '/invite',             label: 'Invite',      SvgIcon: InviteSVG,   gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
+  { to: '/download',           label: 'Download',    SvgIcon: DownloadSVG, gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
+  { to: '/legal/member-guide', label: 'Guide',       SvgIcon: GuideSVG,    gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
+  { to: '/certificates',       label: 'Certificate', SvgIcon: CertSVG,     gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
 ];
 
 function fmtPrice(n) {
