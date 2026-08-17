@@ -6,6 +6,7 @@ const CURRENT_VERSION_CODE = 1; // old app users have 1 — they will see dialog
 const VERSION_JSON_URL     = 'https://kynex.site/version.json';
 const INSTALLED_KEY        = 'kynex_installed_version';
 const DISMISSED_KEY        = 'kynex_dismissed_version';
+const SEEN_WHATS_NEW_KEY   = 'kynex_seen_whats_new';
 
 export default function UpdateChecker() {
   const { theme } = useTheme();
@@ -39,7 +40,10 @@ export default function UpdateChecker() {
   }, []);
 
   const handleDownload = () => {
+    // Mark this version as installed AND clear the "seen what's new" flag
+    // so WhatsNewModal shows on next open after update
     localStorage.setItem(INSTALLED_KEY, String(update.version_code));
+    localStorage.removeItem(SEEN_WHATS_NEW_KEY); // <-- triggers WhatsNewModal on next open
     setVisible(false);
     window.location.href = update.download_url;
   };
