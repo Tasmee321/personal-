@@ -272,7 +272,7 @@ const Dashboard = () => {
           )}
         </div>
         <Link
-          to="/assets"
+          to="/transfer"
           style={{
             display: 'flex', alignItems: 'center', gap: '7px',
             background: 'rgba(255,255,255,0.18)',
