@@ -2,5 +2,28 @@
   "version_code": 2,
   "version_name": "2.0.0",
   "download_url": "https://kynex.site/KYNEX.apk",
-  "message": "New update available! KYNEX v2.0.0 is ready — tap below to download."
+  "message": "New update available! KYNEX v2.0.0 is ready — tap below to download.",
+  "tagline": "Your app is now up to date 🎉",
+  "features": [
+    {
+      "icon": "🚀",
+      "title": "Faster Performance",
+      "desc": "App loads 2x faster with improved background processing and smoother animations."
+    },
+    {
+      "icon": "🔔",
+      "title": "Smart Notifications",
+      "desc": "Get real-time alerts for price movements, deposits, and withdrawals instantly."
+    },
+    {
+      "icon": "🎨",
+      "title": "New UI Design",
+      "desc": "Completely redesigned dashboard with cleaner layout and better navigation."
+    },
+    {
+      "icon": "🔒",
+      "title": "Enhanced Security",
+      "desc": "Upgraded 2FA flow and biometric login for faster, safer access."
+    }
+  ]
 }
