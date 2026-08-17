@@ -2850,9 +2850,11 @@ app.post("/api/demo/predict", authenticate, async (req, res) => {
     const userLimit = account.dailySignalLimit || globalLimit || DEFAULT_DAILY_SIGNAL_LIMIT;
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const todayPositions = (account.positions || []).filter(p => p.openedAt >= todayStart.getTime());
-    const todaySignals = todayPositions.length;
+    // Only count settled (non-cancelled) signals against the daily limit
+    // Cancelled signals do NOT consume the limit — limit only reduces on settlement
+    const todaySignals = todayPositions.filter(p => !(p.cancelled)).length;
     const bonusSignals = account.referralBonusSignals || 0;
-    const bonusUsedToday = todayPositions.filter(p => p.isReferralBonus).length;
+    const bonusUsedToday = todayPositions.filter(p => p.isReferralBonus && !p.cancelled).length;
     const maxBonusPerDay = 1;
     const totalAllowed = userLimit + (bonusSignals > 0 && bonusUsedToday < maxBonusPerDay ? 1 : 0);
     if (todaySignals >= totalAllowed) {
