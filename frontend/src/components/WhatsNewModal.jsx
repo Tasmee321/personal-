@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, CheckCircle2, X, Star } from 'lucide-react';
+import { Sparkles, X, Star } from 'lucide-react';
 import { useTheme } from '../ThemeContext';
 
-const VERSION_JSON_URL = 'https://kynex.site/version.json';
+const VERSION_JSON_URL   = 'https://kynex.site/version.json';
 const SEEN_WHATS_NEW_KEY = 'kynex_seen_whats_new'; // stores version_code user has already seen
 
-export default function WhatsNewModal() {
+// updatePending — passed from App.jsx via UpdateChecker's onPendingChange.
+// If true, an update dialog is showing — we stay silent until it resolves.
+export default function WhatsNewModal({ updatePending }) {
   const { theme } = useTheme();
-  const [modal, setModal]   = useState(null); // { version_code, version_name, features, tagline }
+  const [modal, setModal]     = useState(null); // { version_code, version_name, features, tagline }
   const [visible, setVisible] = useState(false);
   const [animOut, setAnimOut] = useState(false);
+  const [ready, setReady]     = useState(false); // data fetched and passed all checks
 
   useEffect(() => {
     const check = async () => {
@@ -19,28 +22,45 @@ export default function WhatsNewModal() {
         const data = await res.json();
         const { version_code, version_name, features, tagline } = data;
 
-        // Only show if this version has features to show
+        // Only show if this version has features to display
         if (!features || features.length === 0) return;
 
         // Only show if user hasn't seen this version's What's New yet
         const seen = parseInt(localStorage.getItem(SEEN_WHATS_NEW_KEY) || '0', 10);
         if (seen >= version_code) return;
 
+        // Data is valid — store it and mark ready.
+        // Actual visibility is gated by updatePending below.
         setModal({ version_code, version_name, features, tagline });
-        setVisible(true);
+        setReady(true);
       } catch { /* silent */ }
     };
 
-    // Small delay so app renders first, then modal slides in
+    // Small delay so app renders first
     const t = setTimeout(check, 800);
     return () => clearTimeout(t);
   }, []);
+
+  // Gate: only show once UpdateChecker has confirmed no update is pending
+  useEffect(() => {
+    if (ready && !updatePending) {
+      setVisible(true);
+    }
+    // If update becomes pending while we're visible, hide immediately (edge case)
+    if (updatePending && visible) {
+      setVisible(false);
+      setAnimOut(false);
+    }
+  }, [ready, updatePending]);
 
   const handleClose = () => {
     if (!modal) return;
     localStorage.setItem(SEEN_WHATS_NEW_KEY, String(modal.version_code));
     setAnimOut(true);
-    setTimeout(() => setVisible(false), 300);
+    setTimeout(() => {
+      setVisible(false);
+      setReady(false);
+    }, 300);
   };
 
   if (!visible || !modal) return null;
@@ -85,7 +105,6 @@ export default function WhatsNewModal() {
             overflow: 'hidden',
             flexShrink: 0,
           }}>
-            {/* Decorative circles */}
             <div style={{ position:'absolute', top:-40, right:-40, width:140, height:140, borderRadius:'50%', background:'rgba(255,255,255,0.07)', pointerEvents:'none' }} />
             <div style={{ position:'absolute', bottom:-20, left:-20, width:80, height:80, borderRadius:'50%', background:'rgba(255,255,255,0.05)', pointerEvents:'none' }} />
 
