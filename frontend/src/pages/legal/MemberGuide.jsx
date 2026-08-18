@@ -96,7 +96,7 @@ const MemberGuide = () => {
       }}>
         <StatBadge value="$200" label="Min Deposit" />
         <StatBadge value="3x" label="Daily Signals" />
-        <StatBadge value="0.662%" label="Net Profit/Signal" />
+        <StatBadge value="0.66%" label="Net Profit/Signal" />
         <StatBadge value="23 Days" label="Volume Period" />
         <StatBadge value="LV10" label="Max Level" />
       </div>
@@ -175,7 +175,7 @@ const MemberGuide = () => {
               'Deposit minimum $200 USDT into your Signal Wallet.',
               'Platform releases 3 AI signals daily at scheduled times.',
               'Each signal stakes exactly 1% of your Signal Wallet balance.',
-              'Successful signal = 0.662% net profit on your total balance.',
+              'Successful signal = 0.66% net profit on your total balance.',
               'Execute all 3 daily signals → portfolio compounds steadily.',
             ].map((step, i) => (
               <div key={i} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '10px' }}>
@@ -204,7 +204,7 @@ const MemberGuide = () => {
                   ['Minimum Signal Wallet', '$200 USDT', 'Required to participate in signals'],
                   ['Daily Signals', '3 per day', 'Admin-configurable, default 3'],
                   ['Stake Per Signal', '1% of signal wallet', 'Fixed — protects capital by design'],
-                  ['Net Profit Per Signal', '0.662% of total balance', 'After platform service fee'],
+                  ['Net Profit Per Signal', '0.66% of total balance', 'After platform service fee'],
                   ['Volume Completion Period', '~23 days', 'Execute all signals without missing'],
                   ['Early Transfer Penalty', '20% deduction', 'Signal Wallet → Spot before volume done'],
                   ['Withdrawal Fee', '5% standard', 'Applied to all withdrawals'],
@@ -397,7 +397,7 @@ const MemberGuide = () => {
           </Section>
           <Section title="Why Reward Signals Matter">
             <InfoBox type="success">
-              <strong>Standard signals</strong> give you 0.662% net profit (after platform fee).<br />
+              <strong>Standard signals</strong> give you 0.66% net profit (after platform fee).<br />
               <strong>Reward Signals</strong> give you the FULL 1% — zero deduction.<br /><br />
               <strong>Example:</strong> $1,000 Signal Wallet + 1 invited member with $500 deposit =<br />
               • 3 standard signals = 3 × $6.62 = <strong>$19.86/day</strong><br />

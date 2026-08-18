@@ -71,7 +71,7 @@ const QUICK_ACTIONS = [
   { to: '/invite',             label: 'Invite',      SvgIcon: InviteSVG,   gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
   { to: '/download',           label: 'Download',    SvgIcon: DownloadSVG, gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
   { to: '/legal/member-guide', label: 'Guide',       SvgIcon: GuideSVG,    gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
-  { to: '/certificates',       label: 'Certificate', SvgIcon: CertSVG,     gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)', disabled: true  },
+  { to: '/certificates',       label: 'Certificate', SvgIcon: CertSVG,     gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
 ];
 
 function fmtPrice(n) {
