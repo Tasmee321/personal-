@@ -5,11 +5,23 @@ import { useTheme } from '../ThemeContext';
 const VERSION_JSON_URL = 'https://kynex.site/version.json';
 const DISMISSED_KEY = 'kynex_dismissed_version';
 
+// Returns true when running inside an Android WebView (i.e. the KYNEX APK wrapper).
+// Android Chrome has "Android" in UA but NOT the "wv" marker — that marker only
+// appears in apps that embed a WebView. This lets us distinguish APK users from
+// regular browser users even when the APK doesn't inject a version code.
+function isAndroidWebView() {
+  const ua = navigator.userAgent || '';
+  return /Android/i.test(ua) && /\bwv\b|WebView/i.test(ua);
+}
+
 // IMPORTANT:
 // A web page cannot reliably know the APK version unless the native APK exposes it.
 // The new APK can expose window.KYNEX_APP_VERSION_CODE (or window.KynexApp.versionCode).
-// If no native version is available, we DO NOT guess; this prevents the latest APK
-// from showing an update to itself.
+// If no native version is available AND we are NOT in a WebView, we stay silent
+// (browser users should never see APK update prompts).
+// If no native version is available AND we ARE in a WebView, the user has an old APK
+// that predates version-code injection — we treat it as version 0 so any server
+// version triggers the update banner.
 function getNativeVersionCode() {
   const candidates = [
     window.KYNEX_APP_VERSION_CODE,
@@ -58,9 +70,14 @@ export default function UpdateChecker({ onPendingChange }) {
           return;
         }
 
-        // If native version is unavailable, don't guess. This is critical for
-        // browser users and the latest APK, otherwise they see a false update.
-        if (installedCode === null) return;
+        // If native version is unavailable:
+        // - Browser users: stay silent (they should never see an APK prompt).
+        // - Old APK in WebView (no version injection yet): treat as version 0 so
+        //   any server release triggers the update banner.
+        if (installedCode === null) {
+          if (!isAndroidWebView()) return;
+          // Fall through — old APK user. serverCode > 0 is already guaranteed above.
+        }
 
         const dismissed = Number(sessionStorage.getItem(DISMISSED_KEY) || 0);
         if (dismissed >= serverCode) return;

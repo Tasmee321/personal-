@@ -4,6 +4,7 @@ import { ArrowLeft, Zap, TrendingUp, Shield, Globe, Award, Smartphone, RefreshCw
 import { QRCodeSVG } from 'qrcode.react';
 import { CoinIcon } from '../components/CoinIcons';
 import { useTheme } from '../ThemeContext';
+import { isAuthenticated } from '../utils/auth';
 
 const FloatingCoin = ({ symbol, size, top, left, right, bottom, delay, duration }) => (
   <div style={{
@@ -199,7 +200,7 @@ const Download = () => {
         backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)',
         position: 'relative', zIndex: 10,
       }}>
-        <Link to="/" style={{ color: theme.text, display: 'flex' }}><ArrowLeft size={20} /></Link>
+        <Link to={isAuthenticated() ? '/dashboard' : '/'} style={{ color: theme.text, display: 'flex' }}><ArrowLeft size={20} /></Link>
         <span style={{ fontWeight: 'bold', fontSize: '17px', letterSpacing: '0.3px', color: theme.brand }}>KYNEX</span>
       </div>
 
@@ -394,7 +395,7 @@ const Download = () => {
             marginBottom: 10,
           }}>
             <QRCodeSVG
-              value="https://kynex.site/KYNEX.apk"
+              value={apkInfo.download_url}
               size={100}
               bgColor="white"
               fgColor="#111827"

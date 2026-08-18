@@ -5,12 +5,20 @@ import { logout } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
 
 const LANGUAGES = [
-  { code: 'en', label: 'English', flag: '\u{1F1FA}\u{1F1F8}' },
-  { code: 'ar', label: 'العربية', flag: '\u{1F1EA}\u{1F1EC}' },
-  { code: 'fr', label: 'Français', flag: '\u{1F1EB}\u{1F1F7}' },
-  { code: 'sw', label: 'Kiswahili', flag: '\u{1F1F0}\u{1F1EA}' },
-  { code: 'pt', label: 'Português', flag: '\u{1F1F5}\u{1F1F9}' },
+  { code: 'en', label: 'English',   flag: '\u{1F1FA}\u{1F1F8}', dir: 'ltr' },
+  { code: 'ar', label: 'العربية',   flag: '\u{1F1EA}\u{1F1EC}', dir: 'rtl' },
+  { code: 'fr', label: 'Français',  flag: '\u{1F1EB}\u{1F1F7}', dir: 'ltr' },
+  { code: 'sw', label: 'Kiswahili', flag: '\u{1F1F0}\u{1F1EA}', dir: 'ltr' },
+  { code: 'pt', label: 'Português', flag: '\u{1F1F5}\u{1F1F9}', dir: 'ltr' },
 ];
+
+// Apply language to the document — sets lang attribute and RTL/LTR direction.
+// Called both on change and on app startup so the setting persists across page loads.
+export function applyLanguage(code) {
+  const lang = LANGUAGES.find(l => l.code === code) || LANGUAGES[0];
+  document.documentElement.lang = lang.code;
+  document.documentElement.dir = lang.dir;
+}
 
 function glassCard(theme) {
   return {
@@ -39,6 +47,7 @@ const Settings = () => {
   const chooseLanguage = (code) => {
     setLanguage(code);
     localStorage.setItem('kynex_language', code);
+    applyLanguage(code);
     setLangOpen(false);
   };
 
@@ -161,12 +170,11 @@ const Settings = () => {
         <button
           onClick={() => { logout(); window.location.href = '/'; }}
           style={{
-            width: '100%', padding: '15px', borderRadius: '14px',
-            border: `1px solid ${theme.cardBorder}`,
-            ...glassCard(theme),
-            color: theme.down, fontWeight: 'bold', cursor: 'pointer',
+            width: '100%', padding: '15px', borderRadius: '14px', border: 'none',
+            background: theme.downGradient || theme.down,
+            color: 'white', fontWeight: 'bold', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-            fontSize: '14px',
+            fontSize: '14px', boxShadow: '0 4px 14px rgba(239,68,68,0.25)',
           }}
         >
           <LogOut size={16} /> Logout
