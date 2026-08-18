@@ -188,7 +188,7 @@ export default function KynexAuth() {
   const t = translations[langCode] || translations.en;
   const isRTL = langCode === 'ar';
 
-  const selectedLangName = languages.find((l) => l.code === langCode).name;
+  const selectedLangName = (languages.find((l) => l.code === langCode) || languages.find((l) => l.code === 'en') || languages[0])?.name || 'English';
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -218,16 +218,32 @@ export default function KynexAuth() {
     } catch (err) { setError(err.message); } finally { setLoading(false); }
   };
 
+  // Google Authenticator step — shown only when the server says the account has 2FA enabled
+  const [needs2FA, setNeeds2FA] = useState(false);
+  const [totpCode, setTotpCode] = useState('');
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: formData.email, password: formData.password }) });
+      const body = { email: formData.email, password: formData.password };
+      if (needs2FA) body.totpCode = totpCode.replace(/\s+/g, '');
+      const res = await fetch(`${API_URL}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Login failed');
+      if (!res.ok) {
+        if (data.requires2FA) setNeeds2FA(true);
+        throw new Error(data.error || 'Login failed');
+      }
+      if (data.requires2FA && !data.token) {
+        // Password accepted; now ask for the authenticator code
+        setNeeds2FA(true);
+        setTotpCode('');
+        return;
+      }
       if (rememberPassword) { localStorage.setItem(REMEMBERED_EMAIL_KEY, formData.email); } else { localStorage.removeItem(REMEMBERED_EMAIL_KEY); }
       localStorage.setItem('kynex_token', data.token);
+      setNeeds2FA(false);
       setSuccessPopup({ type: 'login' });
     } catch (err) { setError(err.message); } finally { setLoading(false); }
   };
@@ -406,7 +422,7 @@ export default function KynexAuth() {
 
                   <div className="ka-mode-tabs">
                     <button type="button" className={`ka-mode-tab ${isLogin ? 'active' : ''}`} onClick={() => { setIsLogin(true); setError(''); }}>{t.logInTitle}</button>
-                    <button type="button" className={`ka-mode-tab ${!isLogin ? 'active' : ''}`} onClick={() => { setIsLogin(false); setError(''); }}>{t.signUp}</button>
+                    <button type="button" className={`ka-mode-tab ${!isLogin ? 'active' : ''}`} onClick={() => { setIsLogin(false); setError(''); setNeeds2FA(false); setTotpCode(''); }}>{t.signUp}</button>
                   </div>
 
                   <form onSubmit={isLogin ? handleLogin : handleRegister}>
@@ -420,7 +436,7 @@ export default function KynexAuth() {
 
                     <div className="ka-input-wrap">
                       <span className="ka-input-icon"><Mail size={17} /></span>
-                      <input type="email" placeholder={t.emailAddress} className="ka-input has-icon" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} required />
+                      <input type="email" placeholder={t.emailAddress} className="ka-input has-icon" value={formData.email} onChange={(e) => { setFormData({ ...formData, email: e.target.value }); if (needs2FA) { setNeeds2FA(false); setTotpCode(''); } }} required />
                     </div>
 
                     <div className="ka-input-wrap">
@@ -430,6 +446,18 @@ export default function KynexAuth() {
                     </div>
 
                     {!isLogin && <p style={{ fontSize: '12px', color: theme.faint, margin: '-12px 0 16px 2px' }}>{t.passwordHint}</p>}
+
+                    {isLogin && needs2FA && (
+                      <div className="ka-input-wrap">
+                        <span className="ka-input-icon"><Lock size={17} /></span>
+                        <input type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="Authenticator code (6 digits)" className="ka-input has-icon"
+                          value={totpCode} onChange={(e) => setTotpCode(e.target.value.replace(/[^0-9 ]/g, '').slice(0, 7))} required maxLength={7} autoFocus
+                          style={{ letterSpacing: '4px', fontWeight: 600 }} />
+                        <p style={{ fontSize: '12px', color: theme.faint, margin: '-12px 0 16px 2px' }}>
+                          Two-factor authentication is on for this account. Open Google Authenticator and enter the current code.
+                        </p>
+                      </div>
+                    )}
 
                     {isLogin && (
                       <div className="ka-extras-row">

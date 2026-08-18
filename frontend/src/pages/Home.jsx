@@ -55,9 +55,9 @@ const Home = () => {
   useEffect(() => {
     const ws = new WebSocket(buildWsStreamUrl());
     ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
+      let msg; try { msg = JSON.parse(event.data); } catch { return; }
       const data = msg?.data;
-      if (!data) return;
+      if (!data || !data.s) return;
       setPrices((prev) => ({ ...prev, [data.s]: { price: parseFloat(data.c), change: parseFloat(data.P) } }));
     };
     return () => ws.close();

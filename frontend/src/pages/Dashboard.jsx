@@ -103,7 +103,7 @@ const Dashboard = () => {
     const ws = new WebSocket(buildWsStreamUrl());
 
     ws.onmessage = (event) => {
-      const { data } = JSON.parse(event.data);
+      let data; try { ({ data } = JSON.parse(event.data)); } catch { return; }
       if (!data || !data.s) return;
       const symbol = data.s.replace('USDT', '');
       setMarkets((prev) => ({

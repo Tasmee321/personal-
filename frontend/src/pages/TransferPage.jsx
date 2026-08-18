@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, ArrowUpDown, ArrowRight, CheckCircle } from 'lucide-react';
 import { getToken } from '../utils/auth';
@@ -42,10 +42,13 @@ const TransferPage = () => {
   const fromLabel = direction === 'toSignal' ? 'Spot Account' : 'Signal Account';
   const toLabel = direction === 'toSignal' ? 'Signal Account' : 'Spot Account';
 
+  const txInFlight = useRef(false); // synchronous double-submit guard
   const doTransfer = async (confirm) => {
+    if (txInFlight.current) return;
     const amt = Number(amount);
     if (!amt || amt <= 0) { setMsg('Please enter a valid amount.'); setMsgType('error'); return; }
     if (amt > availableBalance) { setMsg('Insufficient balance.'); setMsgType('error'); return; }
+    txInFlight.current = true;
     setBusy(true); setMsg('');
     try {
       const body = { direction, amount: amt };
@@ -61,6 +64,7 @@ const TransferPage = () => {
         loadAccount();
       }
     } catch { setMsg('Network error.'); setMsgType('error'); }
+    txInFlight.current = false;
     setBusy(false);
   };
 

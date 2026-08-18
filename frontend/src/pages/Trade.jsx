@@ -252,7 +252,7 @@ const Trade = () => {
   useEffect(() => {
     const ws = new WebSocket(buildWsStreamUrl());
     ws.onmessage = (event) => {
-      const { data } = JSON.parse(event.data);
+      let data; try { ({ data } = JSON.parse(event.data)); } catch { return; }
       if (!data || !data.s) return;
       setLivePrices((prev) => ({ ...prev, [data.s]: { price: parseFloat(data.c), change: parseFloat(data.P) } }));
     };
@@ -345,7 +345,8 @@ const Trade = () => {
       ws = new WebSocket(`wss://stream.binance.com:9443/ws/${selectedCoin.symbol.toLowerCase()}@kline_${timeframe}`);
       ws.onmessage = (event) => {
         if (cancelled || !seriesRef.current) return;
-        const { k } = JSON.parse(event.data);
+        let k; try { ({ k } = JSON.parse(event.data)); } catch { return; }
+        if (!k) return;
         const c = {
           time: Math.floor(k.t / 1000) + PKT_OFFSET_SEC,
           open: parseFloat(k.o),

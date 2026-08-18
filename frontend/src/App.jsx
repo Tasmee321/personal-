@@ -27,6 +27,7 @@ import DepositPage from './pages/DepositPage';
 import WithdrawPage from './pages/WithdrawPage';
 import TransactionPage from './pages/TransactionPage';
 import TransferPage from './pages/TransferPage';
+import NotFound from './pages/NotFound';
 import { isAuthenticated } from './utils/auth';
 import { ThemeProvider } from './ThemeContext';
 import LiveChat from './components/LiveChat';
@@ -97,6 +98,9 @@ function App() {
             <Route path="contact" element={<ContactUs />} />
             <Route path="member-guide" element={<MemberGuide />} />
           </Route>
+
+          {/* Catch-all — mistyped URLs get a proper page instead of a blank screen */}
+          <Route path="*" element={<NotFound />} />
         </Routes></AnimatedRoutes>
 
         {/* Global overlays — rendered outside AnimatedRoutes so they don't re-animate on navigation */}

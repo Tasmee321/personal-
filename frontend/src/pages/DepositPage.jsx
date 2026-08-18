@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Copy, Check, AlertTriangle, Clock, Shield, ChevronDown } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -59,11 +59,14 @@ const DepositPage = () => {
   const addr = depositAddresses[depNet] || '';
   const copyAddr = () => { if (!addr) return; navigator.clipboard.writeText(addr); setCopied(true); setTimeout(() => setCopied(false), 2000); };
 
+  const depInFlight = useRef(false); // synchronous double-submit guard
   const submitDeposit = async () => {
+    if (depInFlight.current) return;
     const amt = Number(depAmt);
     if (!amt || amt <= 0) { setDepError('Enter a valid amount.'); return; }
     if (amt < net.min) { setDepError(`Minimum deposit is ${net.min} USDT.`); return; }
     if (!txHash.trim()) { setDepError('Enter the transaction hash (TXID).'); return; }
+    depInFlight.current = true;
     setSubmitting(true); setDepError(''); setDepMsg('');
     try {
       const res = await fetch(`${API_URL}/api/demo/deposit/request`, {
@@ -82,7 +85,7 @@ const DepositPage = () => {
       setDepAmt(''); setTxHash('');
       setDepositHistory(prev => [{ id: data.requestId, amount: amt, network: depNet, txHash: txHash.trim(), status: data.status || 'pending', createdAt: Date.now(), autoVerified: data.autoVerified }, ...prev]);
     } catch (err) { setDepError(err.message); }
-    finally { setSubmitting(false); }
+    finally { depInFlight.current = false; setSubmitting(false); }
   };
 
   const infoRow = (label, value, valueColor) => (

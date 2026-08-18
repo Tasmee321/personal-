@@ -1279,14 +1279,16 @@ This cannot be undone!`)) return;
               const tableRows = flattenDeposited(teamTree, 1, []);
 
               const downloadPdf = () => {
-                const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Referral Team - ${teamUser.name}</title>
+                // Escape all user-supplied strings — a user named "<script>…" must not run in the admin's browser
+                const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+                const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Referral Team - ${esc(teamUser.name)}</title>
                 <style>body{font-family:sans-serif;padding:20px;color:#111}h2{margin-bottom:4px}p{color:#555;margin:0 0 16px}
                 table{width:100%;border-collapse:collapse;font-size:12px}th{background:#f5f5f5;padding:8px 10px;text-align:left;border:1px solid #ddd;font-size:11px}
                 td{padding:8px 10px;border:1px solid #ddd}tr:nth-child(even){background:#fafafa}</style></head><body>
-                <h2>Referral Team Tree — ${teamUser.name}</h2>
-                <p>UID: ${teamUser.uid} · Email: ${teamUser.email} · Direct: ${directCount} · Total: ${totalMembers}</p>
+                <h2>Referral Team Tree — ${esc(teamUser.name)}</h2>
+                <p>UID: ${esc(teamUser.uid)} · Email: ${esc(teamUser.email)} · Direct: ${directCount} · Total: ${totalMembers}</p>
                 <table><thead><tr><th>#</th><th>Level</th><th>UID</th><th>Name</th><th>Email</th><th>Deposited</th><th>Balance</th><th>KYC</th></tr></thead>
-                <tbody>${tableRows.map((r, i) => `<tr><td>${i+1}</td><td>${r.depth}</td><td>${r.uid||''}</td><td>${'—'.repeat(r.depth-1)} ${r.name||''}</td><td>${r.email||''}</td><td>$${(r.totalDeposited||0).toFixed(2)}</td><td>$${(r.balance||0).toFixed(2)}</td><td>${r.kycStatus==='certified'?'✓':r.kycStatus||'—'}</td></tr>`).join('')}
+                <tbody>${tableRows.map((r, i) => `<tr><td>${i+1}</td><td>${r.depth}</td><td>${esc(r.uid||'')}</td><td>${'—'.repeat(r.depth-1)} ${esc(r.name||'')}</td><td>${esc(r.email||'')}</td><td>$${(r.totalDeposited||0).toFixed(2)}</td><td>$${(r.balance||0).toFixed(2)}</td><td>${r.kycStatus==='certified'?'✓':esc(r.kycStatus||'—')}</td></tr>`).join('')}
                 </tbody></table></body></html>`;
                 const w = window.open('', '_blank');
                 w.document.write(html);

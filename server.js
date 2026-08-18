@@ -4,6 +4,7 @@ import cors from "cors";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 // nodemailer replaced by Resend API (Render blocks SMTP)
@@ -25,8 +26,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PORT = process.env.PORT || 4000;
 const OTP_EXPIRY_MS = (Number(process.env.OTP_EXPIRY_MINUTES) || 10) * 60 * 1000;
+const IS_PRODUCTION = process.env.NODE_ENV === "production" || !!process.env.RENDER;
+if (!process.env.JWT_SECRET) {
+  if (IS_PRODUCTION) {
+    console.error("FATAL: JWT_SECRET environment variable is not set. Refusing to start in production.");
+    process.exit(1);
+  }
+  console.warn("WARNING: JWT_SECRET not set — using an insecure dev-only secret. Never run like this in production.");
+}
 const JWT_SECRET = process.env.JWT_SECRET || "dev_only_secret_change_me";
 const ADMIN_KEY = process.env.ADMIN_KEY || "";
+if (!ADMIN_KEY) console.warn("WARNING: ADMIN_KEY not set — all admin endpoints are disabled.");
 const EMAIL_CHANGE_WITHDRAW_LOCK_MS = 12 * 60 * 60 * 1000;
 const PASSWORD_CHANGE_WITHDRAW_LOCK_MS = 2 * 60 * 60 * 1000;
 const FUND_PASSWORD_PATTERN = /^[0-9]{4,6}$/;
@@ -40,6 +50,26 @@ function acquireTransferLock(userId) {
   const p = new Promise(r => { unlock = r; });
   _transferLocks.set(userId, p);
   return () => { _transferLocks.delete(userId); unlock(); };
+}
+
+// Express middleware: serialize all account-mutating requests for the same user (shares the same
+// lock map as /api/demo/transfer). Prevents double-withdraw / double-predict / double-buy races
+// where two simultaneous requests both pass the balance check. Released when the response ends.
+// Do NOT stack this on a handler that already calls acquireTransferLock itself (it would deadlock).
+function userLock(req, res, next) {
+  const userId = req.user?.sub;
+  if (!userId) return next();
+  Promise.resolve(acquireTransferLock(userId)).then((unlock) => {
+    let released = false;
+    let timer = null;
+    const release = () => { if (!released) { released = true; if (timer) clearTimeout(timer); unlock(); } };
+    res.once("finish", release);
+    res.once("close", release);
+    // Safety net: if a handler throws asynchronously and never responds, don't wedge the user forever.
+    timer = setTimeout(release, 30 * 1000);
+    timer.unref?.();
+    next();
+  }).catch(next);
 }
 
 // ---- Demo/practice trading only — no real money ever moves through these accounts ----
@@ -144,8 +174,9 @@ async function verifyTRC20(txHash, expectedAddr, expectedAmt) {
     const data = await resp.json();
     if (!data || !data.confirmed) return { verified: false, reason: "Transaction not confirmed yet." };
     const transfers = data.trc20TransferInfo || data.tokenTransferInfo || [];
+    // Must be the real USDT contract AND sent to our wallet — never accept an arbitrary token.
     const usdtTransfer = transfers.find(t =>
-      t.contract_address === USDT_CONTRACTS.trc20 ||
+      t.contract_address === USDT_CONTRACTS.trc20 &&
       t.to_address?.toLowerCase() === expectedAddr.toLowerCase()
     );
     if (!usdtTransfer) return { verified: false, reason: "No USDT transfer found in this transaction." };
@@ -485,7 +516,29 @@ try {
 }
 
 const app = express();
-app.use(cors());
+// Behind Render/Vercel proxies: makes req.ip the real client IP so per-IP rate limits work.
+app.set("trust proxy", 1);
+
+// CORS allowlist — production domains + local dev. Requests with no Origin header (native
+// APK WebView, curl, server-to-server) are allowed; browser origins not on the list are refused.
+const CORS_ALLOWED = new Set([
+  "https://kynex.site", "https://www.kynex.site",
+  "http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:4173",
+  ...(process.env.CORS_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean),
+]);
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin || origin === "null") return cb(null, true);
+    if (CORS_ALLOWED.has(origin)) return cb(null, true);
+    // Allow LAN dev (http://192.168.x.x:5173) and Vercel preview deploys
+    if (/^http:\/\/(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/.test(origin)) return cb(null, true);
+    if (/^https:\/\/[a-z0-9-]+\.vercel\.app$/.test(origin)) return cb(null, true);
+    return cb(null, false);
+  },
+  credentials: false,
+  allowedHeaders: ["Content-Type", "Authorization", "x-admin-key"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+}));
 app.use(express.json({ limit: "15mb" })); // KYC document photos are small base64 images
 
 // ---- Security headers ----
@@ -542,6 +595,34 @@ setInterval(async () => {
 
 const authRateLimit = rateLimit(15 * 60 * 1000, 15);
 const otpRateLimit = rateLimit(60 * 1000, 3);
+// OTP *verification* attempts (verify-otp / reset-password): 10 per 15 min per IP
+const otpVerifyRateLimit = rateLimit(15 * 60 * 1000, 10);
+// Light per-IP limits on money-moving endpoints — generous enough for real use, blocks scripts
+const financialRateLimit = rateLimit(60 * 1000, 30);
+const transferRateLimit = rateLimit(60 * 1000, 10);
+
+// ---- Failed-attempt limiter (only counts failures, not successes) ----
+// Used for admin-key checks: 10 wrong keys per IP in 15 min → 429 for the rest of the window.
+const failedAttemptStore = new Map(); // key -> { count, resetAt }
+function failedAttempts(bucket, key, windowMs, maxFails) {
+  const now = Date.now();
+  const k = `${bucket}:${key}`;
+  const rec = failedAttemptStore.get(k);
+  if (rec && rec.resetAt < now) failedAttemptStore.delete(k);
+  return {
+    blocked: () => { const r = failedAttemptStore.get(k); return !!(r && r.count >= maxFails && r.resetAt >= now); },
+    fail: () => {
+      const r = failedAttemptStore.get(k);
+      if (!r || r.resetAt < now) failedAttemptStore.set(k, { count: 1, resetAt: now + windowMs });
+      else r.count++;
+    },
+    reset: () => failedAttemptStore.delete(k),
+  };
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, r] of failedAttemptStore) if (r.resetAt < now) failedAttemptStore.delete(k);
+}, 10 * 60 * 1000).unref?.();
 
 // ---- File-based database functions ----
 function generateUid(existingUsers) {
@@ -787,7 +868,15 @@ function authenticate(req, res, next) {
 
 // Reviewing KYC submissions is an operator action, gated by a shared secret rather than a user login
 function requireAdmin(req, res, next) {
-  if (!ADMIN_KEY || req.headers["x-admin-key"] !== ADMIN_KEY) {
+  const guard = failedAttempts("admin-key", req.ip, 15 * 60 * 1000, 10);
+  if (guard.blocked()) {
+    return res.status(429).json({ error: "Too many failed admin attempts. Try again in 15 minutes." });
+  }
+  const supplied = String(req.headers["x-admin-key"] || "");
+  const ok = !!ADMIN_KEY && supplied.length === ADMIN_KEY.length &&
+    crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(ADMIN_KEY));
+  if (!ok) {
+    guard.fail();
     return res.status(403).json({ error: "Admin key required." });
   }
   next();
@@ -803,15 +892,32 @@ async function requestSecurityOtp(user, purpose) {
   await sendOtpEmail(user.email, user.name, otp, purpose);
 }
 
+// Max wrong guesses per issued OTP before it is invalidated (6-digit code → brute-force guard)
+const OTP_MAX_ATTEMPTS = 5;
+
+// Shared check for any pending OTP record { otp, expiresAt, attempts }.
+// Returns { ok } or { ok:false, error, invalidated } — invalidated=true means caller must delete it.
+function checkOtpAttempt(pending, otp) {
+  if (!pending) return { ok: false, error: "Request a code first." };
+  if (Date.now() > pending.expiresAt) return { ok: false, error: "Code expired. Request a new one.", invalidated: true };
+  if (String(otp || "") !== String(pending.otp)) {
+    pending.attempts = (pending.attempts || 0) + 1;
+    if (pending.attempts >= OTP_MAX_ATTEMPTS) {
+      return { ok: false, error: "Too many incorrect attempts. Request a new code.", invalidated: true };
+    }
+    return { ok: false, error: `Incorrect code. ${OTP_MAX_ATTEMPTS - pending.attempts} attempt(s) left.` };
+  }
+  return { ok: true };
+}
+
 function consumeSecurityOtp(userId, purpose, otp) {
   const key = `${userId}:${purpose}`;
   const pending = pendingSecurityOtps.get(key);
-  if (!pending) return { ok: false, error: "Request a code first." };
-  if (Date.now() > pending.expiresAt) {
-    pendingSecurityOtps.delete(key);
-    return { ok: false, error: "Code expired. Request a new one." };
+  const check = checkOtpAttempt(pending, otp);
+  if (!check.ok) {
+    if (check.invalidated) pendingSecurityOtps.delete(key);
+    return { ok: false, error: check.error };
   }
-  if (otp !== pending.otp) return { ok: false, error: "Incorrect code." };
   pendingSecurityOtps.delete(key);
   return { ok: true };
 }
@@ -891,9 +997,12 @@ async function getLivePrice(pair) {
 // forces win/loss based on override direction vs user direction.
 async function settleDuePositions(account) {
   const now = Date.now();
+  // candle_overrides is stored as a plain array (see /api/admin/candle-override). Accept both the
+  // array shape and a legacy { items: [] } wrapper so admin overrides actually apply at settlement.
   let overrideData;
-  try { overrideData = await readCandleOverrides(); } catch (_) { overrideData = { items: [] }; }
-  const activeOverrides = (overrideData.items || []).filter(o => o.startsAt <= now && o.endsAt > now);
+  try { overrideData = await readCandleOverrides(); } catch (_) { overrideData = []; }
+  const overrideList = Array.isArray(overrideData) ? overrideData : (overrideData?.items || []);
+  const activeOverrides = overrideList.filter(o => o && o.startsAt <= now && o.endsAt > now);
 
   for (const pos of account.positions) {
     if (pos.settled || pos.settleAt > now) continue;
@@ -1094,7 +1203,7 @@ app.post("/api/resend-otp", otpRateLimit, async (req, res) => {
 });
 
 // Step 2: Verify OTP -> create real user account
-app.post("/api/verify-otp", async (req, res) => {
+app.post("/api/verify-otp", otpVerifyRateLimit, async (req, res) => {
   const { email, otp } = req.body || {};
   const key = (email || "").toLowerCase();
   const pending = pendingSignups.get(key);
@@ -1102,12 +1211,10 @@ app.post("/api/verify-otp", async (req, res) => {
   if (!pending) {
     return res.status(400).json({ error: "No pending signup found. Start again." });
   }
-  if (Date.now() > pending.expiresAt) {
-    pendingSignups.delete(key);
-    return res.status(400).json({ error: "Code expired. Request a new one." });
-  }
-  if (otp !== pending.otp) {
-    return res.status(400).json({ error: "Incorrect code." });
+  const check = checkOtpAttempt(pending, otp);
+  if (!check.ok) {
+    if (check.invalidated) pendingSignups.delete(key);
+    return res.status(400).json({ error: check.error });
   }
 
   if (await findUserByEmail(pending.email)) {
@@ -1156,7 +1263,7 @@ app.post("/api/verify-otp", async (req, res) => {
 
 // Login
 app.post("/api/login", authRateLimit, async (req, res) => {
-  const { email, password } = req.body || {};
+  const { email, password, totpCode } = req.body || {};
   const user = await findUserByEmail(email || "");
   if (!user) {
     return res.status(401).json({ error: "No account found with this email." });
@@ -1167,6 +1274,23 @@ app.post("/api/login", authRateLimit, async (req, res) => {
   }
   if (user.closed) {
     return res.status(403).json({ error: "This account has been closed." });
+  }
+  // Enforce Google Authenticator 2FA when the user has enabled it.
+  if (user.twoFactorEnabled && user.twoFactorSecret) {
+    const code = String(totpCode || "").replace(/\s+/g, "");
+    if (!code) {
+      // Password is correct — tell the client to ask for the authenticator code (no token yet).
+      return res.status(200).json({ ok: false, requires2FA: true, message: "Enter the 6-digit code from your authenticator app." });
+    }
+    const guard = failedAttempts("login-2fa", user.id, 15 * 60 * 1000, 8);
+    if (guard.blocked()) return res.status(429).json({ error: "Too many incorrect 2FA codes. Try again in 15 minutes." });
+    let valid = false;
+    try { valid = (await verifyTotp({ secret: user.twoFactorSecret, token: code })).valid; } catch (_) { valid = false; }
+    if (!valid) {
+      guard.fail();
+      return res.status(401).json({ error: "Incorrect authenticator code.", requires2FA: true });
+    }
+    guard.reset();
   }
   // Track last login time and IP
   const users = await readUsers();
@@ -1204,17 +1328,17 @@ app.post("/api/forgot-password", otpRateLimit, async (req, res) => {
   }
 });
 
-app.post("/api/reset-password", async (req, res) => {
+app.post("/api/reset-password", otpVerifyRateLimit, async (req, res) => {
   try {
     const { email, otp, newPassword } = req.body || {};
     const key = (email || "").trim().toLowerCase();
     const pending = pendingPasswordResets.get(key);
     if (!pending) return res.status(400).json({ error: "No password reset in progress. Start again." });
-    if (Date.now() > pending.expiresAt) {
-      pendingPasswordResets.delete(key);
-      return res.status(400).json({ error: "Code expired. Start again." });
+    const check = checkOtpAttempt(pending, otp);
+    if (!check.ok) {
+      if (check.invalidated) pendingPasswordResets.delete(key);
+      return res.status(400).json({ error: check.error });
     }
-    if (otp !== pending.otp) return res.status(400).json({ error: "Incorrect code." });
     if (!PASSWORD_PATTERN.test(newPassword || "")) {
       return res.status(400).json({ error: "Password must be at least 6 characters with an uppercase letter, a lowercase letter, and a number." });
     }
@@ -1886,7 +2010,7 @@ app.get("/api/admin/livechat/:uid/typing-status", async (req, res) => {
 
 // ---- Demo/practice trading account — no real money, ever ----
 
-app.get("/api/demo/account", authenticate, async (req, res) => {
+app.get("/api/demo/account", authenticate, userLock, async (req, res) => {
   const accounts = await readDemoAccounts();
   const account = getDemoAccount(accounts, req.user.sub);
   await settleDuePositions(account);
@@ -1912,7 +2036,7 @@ app.get("/api/demo/account", authenticate, async (req, res) => {
 });
 
 // Spot <-> Signal transfer — tracks volume, applies 20% penalty on early Signal→Spot
-app.post("/api/demo/transfer", authenticate, async (req, res) => {
+app.post("/api/demo/transfer", authenticate, transferRateLimit, async (req, res) => {
   const { direction, amount, confirmPenalty } = req.body || {};
   const amt = Number(amount);
   if (!["toSignal", "toSpot"].includes(direction)) {
@@ -1987,9 +2111,10 @@ app.post("/api/demo/transfer", authenticate, async (req, res) => {
   }
 
   const vd = account.volumeData;
-  const VOLUME_DEADLINE_DAYS = 23;
-  const deadlineExpired = vd.firstDepositAt && (Date.now() - vd.firstDepositAt > VOLUME_DEADLINE_DAYS * 24 * 60 * 60 * 1000);
-  const volumeComplete = vd.requiredVolume > 0 && vd.tradedVolume >= vd.requiredVolume && !deadlineExpired;
+  // Rule: the required volume (5× everything transferred into Signal) must be traded before a
+  // penalty-free Signal → Spot transfer. There is NO time deadline — "23 days" is only the
+  // estimate for a user placing 3 signals daily; missing days simply takes longer.
+  const volumeComplete = vd.requiredVolume > 0 && vd.tradedVolume >= vd.requiredVolume;
 
   if (!volumeComplete && vd.requiredVolume > 0 && !confirmPenalty) {
     await writeDemoAccounts(accounts);
@@ -2034,25 +2159,14 @@ app.post("/api/demo/transfer", authenticate, async (req, res) => {
   } finally { unlock(); }
 });
 
-// ---- Demo top up / withdraw — practice funds only, never real money ----
-const DEMO_TOPUP_MAX = 100000;
-
-app.post("/api/demo/topup", authenticate, async (req, res) => {
-  const amount = Number((req.body || {}).amount);
-  if (!amount || amount <= 0 || amount > DEMO_TOPUP_MAX) {
-    return res.status(400).json({ error: `Enter an amount between 0 and ${DEMO_TOPUP_MAX}.` });
-  }
-  const accounts = await readDemoAccounts();
-  const account = getDemoAccount(accounts, req.user.sub);
-  account.balance = Math.round((account.balance + amount) * 100) / 100;
-  account.totalDeposited = Math.round((account.totalDeposited + amount) * 100) / 100;
-  addLedgerEntry(account, 'deposit', 'spot', amount, `Deposit ${amount.toFixed(2)} USDT`, null);
-  await writeDemoAccounts(accounts);
-  await pushMessage(req.user.sub, "Deposit received", `${amount.toFixed(2)} USDT was added to your Spot wallet.`);
-  res.json({ ok: true, balance: account.balance });
+// ---- Withdraw / deposit ----
+// NOTE: the old self-service "/api/demo/topup" endpoint (free balance top-up, legacy demo mode) has
+// been removed — balances only change via verified on-chain deposits or admin actions.
+app.post("/api/demo/topup", authenticate, (req, res) => {
+  res.status(410).json({ error: "This endpoint has been disabled." });
 });
 
-app.post("/api/demo/withdraw", authenticate, rateLimit(60 * 1000, 5), async (req, res) => {
+app.post("/api/demo/withdraw", authenticate, rateLimit(60 * 1000, 5), userLock, async (req, res) => {
   const { amount, fundPassword, network, walletAddress } = req.body || {};
   const amt = Number(amount);
   if (!Number.isFinite(amt) || amt <= 0) {
@@ -2078,9 +2192,29 @@ app.post("/api/demo/withdraw", authenticate, rateLimit(60 * 1000, 5), async (req
   if (!me.fundPasswordHash) {
     return res.status(403).json({ error: "Set a fund password before withdrawing." });
   }
+  // Fund-password brute-force guard: 5 wrong PINs → locked for 30 minutes (persisted on the user)
+  const FUND_PW_MAX_FAILS = 5, FUND_PW_LOCK_MS = 30 * 60 * 1000;
+  if (me.fundPwLockedUntil && me.fundPwLockedUntil > Date.now()) {
+    const minsLeft = Math.ceil((me.fundPwLockedUntil - Date.now()) / 60000);
+    return res.status(429).json({ error: `Too many incorrect fund password attempts. Try again in ${minsLeft} minute(s).` });
+  }
   const fundMatch = await bcrypt.compare(String(fundPassword || ""), me.fundPasswordHash);
   if (!fundMatch) {
-    return res.status(401).json({ error: "Incorrect fund password." });
+    me.fundPwFailCount = (me.fundPwFailCount || 0) + 1;
+    let msg = "Incorrect fund password.";
+    if (me.fundPwFailCount >= FUND_PW_MAX_FAILS) {
+      me.fundPwLockedUntil = Date.now() + FUND_PW_LOCK_MS;
+      me.fundPwFailCount = 0;
+      msg = "Too many incorrect fund password attempts. Withdrawals locked for 30 minutes.";
+    } else {
+      msg += ` ${FUND_PW_MAX_FAILS - me.fundPwFailCount} attempt(s) left.`;
+    }
+    await writeUsers(users);
+    return res.status(401).json({ error: msg });
+  }
+  if (me.fundPwFailCount || me.fundPwLockedUntil) {
+    me.fundPwFailCount = 0; me.fundPwLockedUntil = null;
+    await writeUsers(users);
   }
   if (me.emailChangedAt && Date.now() - me.emailChangedAt < EMAIL_CHANGE_WITHDRAW_LOCK_MS) {
     const hoursLeft = Math.ceil((EMAIL_CHANGE_WITHDRAW_LOCK_MS - (Date.now() - me.emailChangedAt)) / (60 * 60 * 1000));
@@ -2158,7 +2292,7 @@ app.get("/api/admin/deposit-wallets", requireAdmin, async (req, res) => {
   res.json({ ok: true, wallets: cfg.adminWallets || {} });
 });
 
-app.post("/api/demo/deposit/request", authenticate, rateLimit(60 * 1000, 5), async (req, res) => {
+app.post("/api/demo/deposit/request", authenticate, rateLimit(60 * 1000, 5), userLock, async (req, res) => {
   const { amount, network, txHash } = req.body || {};
   const amt = Number(amount);
   if (!Number.isFinite(amt) || amt <= 0) return res.status(400).json({ error: "Enter a valid amount." });
@@ -2370,7 +2504,8 @@ app.post("/api/admin/set-level", requireAdmin, async (req, res) => {
   const { userId, level } = req.body || {};
   if (!userId || typeof userId !== "string") return res.status(400).json({ error: "userId is required." });
   const lvl = Number(level);
-  if (!Number.isFinite(lvl) || lvl < 0 || lvl > 9) return res.status(400).json({ error: "level must be between 0 and 9." });
+  const MAX_LEVEL = LEVEL_REQUIREMENTS[LEVEL_REQUIREMENTS.length - 1].level; // 10
+  if (!Number.isFinite(lvl) || lvl < 0 || lvl > MAX_LEVEL) return res.status(400).json({ error: `level must be between 0 and ${MAX_LEVEL}.` });
   const users = await readUsers();
   const user = users.find(u => u.id === userId);
   if (!user) return res.status(404).json({ error: "User not found." });
@@ -2476,17 +2611,8 @@ app.post("/api/admin/referral-signal-time", requireAdmin, async (req, res) => {
   cfg.referralDirection = direction;
   cfg.referralSymbol = sym;
   await writeSignalConfig(cfg);
-
-  const overrides = await readCandleOverrides();
-  overrides.items = (overrides.items || []).filter(o => !o.isReferralAuto);
-  overrides.items.push({
-    symbol: sym,
-    direction,
-    scheduledTime: time,
-    durationMinutes: win,
-    isReferralAuto: true,
-  });
-  await writeCandleOverrides(overrides);
+  // Note: referral signals are settled from cfg.referralDirection (and always win — see
+  // settleDuePositions), so no candle override entry is needed here.
 
   res.json({ ok: true, referralSignalTime: time, referralSignalWindow: win, referralDirection: direction, referralSymbol: sym });
 });
@@ -2747,6 +2873,8 @@ app.delete("/api/admin/user/:userId", requireAdmin, async (req, res) => {
   if (idx === -1) return res.status(404).json({ error: "User not found." });
   const user = users[idx];
   users.splice(idx, 1);
+  // Detach anyone this user referred so the referral tree doesn't point at a ghost UID
+  for (const u of users) if (u.referredByUid && u.referredByUid === user.uid) u.referredByUid = null;
   await writeUsers(users);
   const accounts = await readDemoAccounts();
   delete accounts[req.params.userId];
@@ -2754,6 +2882,9 @@ app.delete("/api/admin/user/:userId", requireAdmin, async (req, res) => {
   const msgs = await readAllMessages();
   delete msgs[req.params.userId];
   await writeAllMessages(msgs);
+  // Stop push notifications and drop chat history for the deleted user
+  try { const subs = await readPushSubs(); if (subs && subs[req.params.userId]) { delete subs[req.params.userId]; await writePushSubs(subs); } } catch (_) {}
+  try { const chats = await readLiveChats(); if (chats && chats[req.params.userId]) { delete chats[req.params.userId]; await writeLiveChats(chats); } } catch (_) {}
   const blocked = await readBlockedEmails();
   if (!blocked.includes(user.email.toLowerCase())) { blocked.push(user.email.toLowerCase()); await writeBlockedEmails(blocked); }
   res.json({ ok: true });
@@ -2890,7 +3021,7 @@ app.get("/api/admin/user/:userId/team", requireAdmin, async (req, res) => {
   });
 });
 
-app.get("/api/signal-status", authenticate, async (req, res) => {
+app.get("/api/signal-status", authenticate, userLock, async (req, res) => {
   const cfg = await readSignalConfig();
   const accounts = await readDemoAccounts();
   const account = getDemoAccount(accounts, req.user.sub);
@@ -2931,7 +3062,7 @@ app.get("/api/signal-status", authenticate, async (req, res) => {
 });
 
 // Referral bonus signal — auto direction, auto settle at window end
-app.post("/api/demo/referral-signal", authenticate, async (req, res) => {
+app.post("/api/demo/referral-signal", authenticate, financialRateLimit, userLock, async (req, res) => {
   try {
     const cfg = await readSignalConfig();
     if (!cfg.referralSignalTime || !cfg.referralDirection) {
@@ -2998,7 +3129,7 @@ const MAX_DURATION_MIN = 1440;
 
 const SIGNAL_STAKE_RATE = 0.01;
 
-app.post("/api/demo/predict", authenticate, async (req, res) => {
+app.post("/api/demo/predict", authenticate, financialRateLimit, userLock, async (req, res) => {
   try {
     const signalCfg = await readSignalConfig();
     if (!signalCfg.signalActive) {
@@ -3102,7 +3233,7 @@ app.post("/api/demo/predict", authenticate, async (req, res) => {
 });
 
 // --- CANCEL DEMO TRADE ROUTE ---
-app.post("/api/demo/cancel", authenticate, async (req, res) => {
+app.post("/api/demo/cancel", authenticate, financialRateLimit, userLock, async (req, res) => {
   try {
     const { id } = req.body;
     if (!id) return res.status(400).json({ error: "Missing position ID." });
@@ -3142,7 +3273,7 @@ app.post("/api/demo/cancel", authenticate, async (req, res) => {
 // ---- Spot trading (demo) — converts practice USDT into practice coin holdings and back ----
 const NON_SIGNAL_CUT_RATE = 0.20;
 
-app.post("/api/demo/spot/buy", authenticate, async (req, res) => {
+app.post("/api/demo/spot/buy", authenticate, financialRateLimit, userLock, async (req, res) => {
   try {
     const { pair, usdtAmount } = req.body || {};
     if (!PAIR_TO_SYMBOL[pair]) return res.status(400).json({ error: "Unsupported trading pair." });
@@ -3152,12 +3283,13 @@ app.post("/api/demo/spot/buy", authenticate, async (req, res) => {
     const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
     await settleDuePositions(account);
-    if (spend > account.balance) {
+    // Balance must cover the spend PLUS the risk fee — otherwise the fee was silently waived
+    const riskFee = Math.round(spend * NON_SIGNAL_CUT_RATE * 100) / 100;
+    if (spend + riskFee > account.balance + 1e-9) {
       await writeDemoAccounts(accounts);
-      return res.status(400).json({ error: "Insufficient demo balance." });
+      return res.status(400).json({ error: `Insufficient balance. You need ${(spend + riskFee).toFixed(2)} USDT (${spend.toFixed(2)} + ${riskFee.toFixed(2)} risk fee).` });
     }
 
-    const riskFee = Math.round(spend * NON_SIGNAL_CUT_RATE * 100) / 100;
     const price = await getLivePrice(pair);
     const quantity = spend / price;
     account.balance = Math.round((account.balance - spend - riskFee) * 100) / 100;
@@ -3173,7 +3305,7 @@ app.post("/api/demo/spot/buy", authenticate, async (req, res) => {
   }
 });
 
-app.post("/api/demo/spot/sell", authenticate, async (req, res) => {
+app.post("/api/demo/spot/sell", authenticate, financialRateLimit, userLock, async (req, res) => {
   try {
     const { pair, quantity } = req.body || {};
     if (!PAIR_TO_SYMBOL[pair]) return res.status(400).json({ error: "Unsupported trading pair." });
@@ -3209,7 +3341,7 @@ app.post("/api/demo/spot/sell", authenticate, async (req, res) => {
 // ---- Futures trading (demo) — leveraged positions, closed manually, settled against the real price ----
 const FUTURES_LEVERAGE_OPTIONS = [1, 5, 10, 20, 50];
 
-app.post("/api/demo/futures/open", authenticate, async (req, res) => {
+app.post("/api/demo/futures/open", authenticate, financialRateLimit, userLock, async (req, res) => {
   try {
     const { pair, direction, margin, leverage } = req.body || {};
     if (!PAIR_TO_SYMBOL[pair]) return res.status(400).json({ error: "Unsupported trading pair." });
@@ -3223,12 +3355,13 @@ app.post("/api/demo/futures/open", authenticate, async (req, res) => {
     const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
     await settleDuePositions(account);
-    if (marginAmount > account.balance) {
+    // Balance must cover margin PLUS the risk fee
+    const riskFee = Math.round(marginAmount * NON_SIGNAL_CUT_RATE * 100) / 100;
+    if (marginAmount + riskFee > account.balance + 1e-9) {
       await writeDemoAccounts(accounts);
-      return res.status(400).json({ error: "Insufficient demo balance." });
+      return res.status(400).json({ error: `Insufficient balance. You need ${(marginAmount + riskFee).toFixed(2)} USDT (${marginAmount.toFixed(2)} margin + ${riskFee.toFixed(2)} risk fee).` });
     }
 
-    const riskFee = Math.round(marginAmount * NON_SIGNAL_CUT_RATE * 100) / 100;
     const entryPrice = await getLivePrice(pair);
     const now = Date.now();
     account.balance = Math.round((account.balance - marginAmount - riskFee) * 100) / 100;
@@ -3247,7 +3380,7 @@ app.post("/api/demo/futures/open", authenticate, async (req, res) => {
   }
 });
 
-app.post("/api/demo/futures/close", authenticate, async (req, res) => {
+app.post("/api/demo/futures/close", authenticate, financialRateLimit, userLock, async (req, res) => {
   try {
     const { positionId } = req.body || {};
     const accounts = await readDemoAccounts();
@@ -3320,6 +3453,14 @@ app.post("/api/fcm-token", authenticate, async (req, res) => {
   if (!me) return res.status(404).json({ error: "User not found." });
   me.fcmToken = token;
   await writeUsers(users);
+  res.json({ ok: true });
+});
+
+// Called on logout so a shared device stops receiving this account's push notifications
+app.delete("/api/fcm-token", authenticate, async (req, res) => {
+  const users = await readUsers();
+  const me = users.find(u => u.id === req.user.sub);
+  if (me && me.fcmToken) { me.fcmToken = null; await writeUsers(users); }
   res.json({ ok: true });
 });
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { getToken } from '../utils/auth';
@@ -48,11 +48,14 @@ const WithdrawPage = () => {
     })();
   }, []);
 
+  const wdInFlight = useRef(false); // synchronous guard — state updates are async, so a fast double-tap could submit twice
   const submitWithdraw = async () => {
+    if (wdInFlight.current) return;
     const amt = Number(wdAmt);
     if (!amt || amt <= 0) return setWdMsg('Enter an amount.');
     if (!wdAddr.trim()) return setWdMsg('Enter your wallet address.');
     if (!wdPin) return setWdMsg('Enter your fund password.');
+    wdInFlight.current = true;
     setWdBusy(true); setWdMsg('');
     try {
       const res = await fetch(`${API_URL}/api/demo/withdraw`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ amount: amt, network: wdNet, walletAddress: wdAddr, fundPassword: wdPin }) });
@@ -65,6 +68,7 @@ const WithdrawPage = () => {
         setWithdrawalRequests(prev => [{ id: data.requestId, amount: amt, fee: data.fee, netPayout: data.netPayout, network: wdNet, status: 'pending', createdAt: Date.now() }, ...prev]);
       }
     } catch { setWdMsg('Network error.'); }
+    wdInFlight.current = false;
     setWdBusy(false);
   };
 
