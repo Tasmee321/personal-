@@ -1,5 +1,15 @@
 {
+  "headers": [
+    {
+      "source": "/KYNEX.apk",
+      "headers": [
+        { "key": "Content-Type", "value": "application/vnd.android.package-archive" },
+        { "key": "Content-Disposition", "value": "attachment; filename=\"KYNEX.apk\"" }
+      ]
+    }
+  ],
   "rewrites": [
+    { "source": "/KYNEX.apk", "destination": "/KYNEX.apk" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
