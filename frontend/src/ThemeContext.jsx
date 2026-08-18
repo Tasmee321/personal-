@@ -9,6 +9,9 @@ export function ThemeProvider({ children }) {
 
   useEffect(() => {
     localStorage.setItem(MODE_KEY, mode);
+    const bg = (mode === 'dark' ? darkTheme : lightTheme).bg;
+    document.documentElement.style.backgroundColor = bg;
+    document.body.style.backgroundColor = bg;
   }, [mode]);
 
   const value = {
