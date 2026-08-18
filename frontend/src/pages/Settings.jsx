@@ -158,10 +158,10 @@ const Settings = () => {
           onClick={() => { logout(); window.location.href = '/'; }}
           style={{
             width: '100%', padding: '15px', borderRadius: '14px', border: 'none',
-            background: theme.downGradient || theme.down,
+            background: theme.brandGradient || theme.brand,
             color: 'white', fontWeight: 'bold', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-            fontSize: '14px', boxShadow: '0 4px 14px rgba(239,68,68,0.25)',
+            fontSize: '14px', boxShadow: '0 4px 14px rgba(217,119,6,0.3)',
           }}
         >
           <LogOut size={16} /> Logout

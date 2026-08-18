@@ -614,7 +614,7 @@ This cannot be undone!`)) return;
         gap: '16px',
       }}>
         <div style={{ fontWeight: 'bold', fontSize: '18px', color: theme.brand }}>KYNEX</div>
-        <div style={{ fontSize: '12px', color: theme.subtext, padding: '3px 10px', borderRadius: '6px', backgroundColor: theme.primarySoft || 'rgba(99,102,241,0.15)', color: theme.primary }}>Admin</div>
+        <div style={{ fontSize: '12px', padding: '3px 10px', borderRadius: '6px', backgroundColor: theme.primarySoft || 'rgba(99,102,241,0.15)', color: theme.primary }}>Admin</div>
         <div style={{ flex: 1 }} />
         <div style={{ fontSize: '11px', color: theme.faint }}>supportkynex@gmail.com</div>
       </div>

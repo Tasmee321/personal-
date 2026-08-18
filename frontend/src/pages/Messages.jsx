@@ -61,7 +61,8 @@ const Messages = () => {
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '16px 20px',
-        borderBottom: `1px solid ${theme.cardBorder}`, backgroundColor: theme.bg,
+        borderBottom: `1px solid ${theme.cardBorder}`, backgroundColor: theme.card,
+        backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)',
         position: 'sticky', top: 0, zIndex: 10,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>

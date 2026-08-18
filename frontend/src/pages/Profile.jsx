@@ -234,9 +234,9 @@ const Profile = () => {
               onClick={handleLogout}
               style={{
                 width: '100%', padding: '14px', borderRadius: '14px', border: 'none', cursor: 'pointer',
-                background: theme.downGradient || theme.down, color: 'white', fontWeight: 'bold', fontSize: '14px',
+                background: theme.brandGradient || theme.brand, color: 'white', fontWeight: 'bold', fontSize: '14px',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                boxShadow: '0 4px 14px rgba(239,68,68,0.25)',
+                boxShadow: '0 4px 14px rgba(217,119,6,0.3)',
               }}
             >
               <LogOut size={16} /> Logout

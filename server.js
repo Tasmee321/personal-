@@ -2505,7 +2505,7 @@ app.get("/api/admin/users", requireAdmin, async (req, res) => {
       referralBonusSignals: acct.referralBonusSignals || 0,
       referredByUid: u.referredByUid || null,
       inviteCode: u.inviteCode || null,
-      totalWithdrawn: Math.round(((acct.withdrawalRequests || []).filter(w => w.status === 'done').reduce((s, w) => s + (w.netPayout || 0), 0)) * 100) / 100,
+      totalWithdrawn: Math.round(((acct.withdrawalRequests || []).filter(w => w.status === 'completed').reduce((s, w) => s + (w.netPayout || 0), 0)) * 100) / 100,
       whitelistedAddresses: u.whitelistedAddresses || [],
       withdrawalWhitelistEnabled: !!u.withdrawalWhitelistEnabled,
       createdAt: u.createdAt,
@@ -2622,7 +2622,7 @@ app.get("/api/admin/user/:userId/deposits", requireAdmin, async (req, res) => {
 app.get("/api/admin/user/:userId/withdrawals", requireAdmin, async (req, res) => {
   const accounts = await readDemoAccounts();
   const account = accounts[req.params.userId] || {};
-  const withdrawals = (account.withdrawalRequests || []).sort((a,b) => b.requestedAt - a.requestedAt);
+  const withdrawals = (account.withdrawalRequests || []).sort((a,b) => b.createdAt - a.createdAt);
   res.json({ ok: true, withdrawals });
 });
 

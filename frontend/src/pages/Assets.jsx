@@ -286,8 +286,10 @@ function WithdrawPanel({ balance, withdrawalRequests, onWithdrawn }) {
   const [wdPin, setWdPin] = useState('');
   const [wdBusy, setWdBusy] = useState(false);
   const [wdMsg, setWdMsg] = useState('');
-  const wdFee = Math.round(Number(wdAmt || 0) * 0.05 * 100) / 100;
-  const wdNet_ = Number(wdAmt || 0) - wdFee;
+  const wdAmt_ = Number(wdAmt || 0);
+  const wdFee = wdAmt_ > 0 ? (wdAmt_ < 100 ? 5 : Math.round(wdAmt_ * 0.05 * 100) / 100) : 0;
+  const wdFeeLabel = wdAmt_ > 0 && wdAmt_ < 100 ? 'Fee ($5 flat)' : 'Fee (5%)';
+  const wdNet_ = wdAmt_ - wdFee;
   const networks = [
     { key: 'trc20', label: 'TRC20', chain: 'TRON' },
     { key: 'erc20', label: 'ERC20', chain: 'Ethereum' },
@@ -327,7 +329,7 @@ function WithdrawPanel({ balance, withdrawalRequests, onWithdrawn }) {
       {Number(wdAmt) > 0 && (
         <div style={{ backgroundColor: theme.inputBg, borderRadius: '14px', padding: '14px', marginBottom: '10px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px' }}><span style={{ color: theme.subtext }}>Amount</span><span style={{ fontWeight: 'bold' }}>{fmt(Number(wdAmt))} USDT</span></div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px' }}><span style={{ color: theme.down }}>Fee (5%)</span><span style={{ fontWeight: 'bold', color: theme.down }}>-{wdFee.toFixed(2)} USDT</span></div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px' }}><span style={{ color: theme.down }}>{wdFeeLabel}</span><span style={{ fontWeight: 'bold', color: theme.down }}>-{wdFee.toFixed(2)} USDT</span></div>
           <div style={{ borderTop: `1px solid ${theme.cardBorder}`, paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}><span style={{ color: theme.subtext, fontWeight: '600' }}>You Receive</span><span style={{ fontWeight: 'bold', color: theme.up }}>{wdNet_ > 0 ? wdNet_.toFixed(2) : '0.00'} USDT</span></div>
         </div>
       )}
