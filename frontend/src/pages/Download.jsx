@@ -299,11 +299,10 @@ const Download = () => {
             <button
               onClick={() => {
                 const url = apkInfo.download_url;
-                // Native Android bridge — triggers DownloadManager directly
                 if (window.KynexBridge?.downloadApk) {
                   window.KynexBridge.downloadApk(url);
                 } else {
-                  window.open(url, '_blank', 'noopener,noreferrer');
+                  window.location.href = url;
                 }
               }}
               style={{
