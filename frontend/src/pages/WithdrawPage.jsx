@@ -4,6 +4,8 @@ import { ArrowLeft } from 'lucide-react';
 import { getToken } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
 import { API_URL } from '../config';
+import TxDetailModal from '../components/TxDetailModal';
+
 function authHeaders() { return { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` }; }
 function fmt(n) { return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
@@ -28,7 +30,8 @@ const WithdrawPage = () => {
   const [wdMsg, setWdMsg] = useState('');
   const [withdrawalRequests, setWithdrawalRequests] = useState([]);
   const [view, setView] = useState('withdraw');
-  const [wdPopup, setWdPopup] = useState(null); // { amount, network, netPayout }
+  const [wdPopup, setWdPopup] = useState(null);
+  const [selectedWr, setSelectedWr] = useState(null);
 
   const wdFee = Number(wdAmt || 0) > 0
     ? (Number(wdAmt) < 100 ? 5 : Math.round(Number(wdAmt) * 0.05 * 100) / 100)
@@ -131,30 +134,45 @@ const WithdrawPage = () => {
             {withdrawalRequests.map(wr => {
               const isDone = wr.status === 'done' || wr.status === 'approved' || wr.status === 'completed';
               const isPending = wr.status === 'pending';
-              const isRejected = wr.status === 'rejected';
               const netInfo = NETWORKS.find(n => n.key === wr.network) || {};
               const fee = wr.fee ?? (Number(wr.amount) < 100 ? 5 : Math.round(Number(wr.amount) * 0.05 * 100) / 100);
               return (
-                <div key={wr.id} style={{
-                  borderRadius: '16px',
-                  marginBottom: '12px',
-                  overflow: 'hidden',
-                  border: isDone ? '1px solid rgba(239,68,68,0.35)' : isPending ? '1px solid rgba(245,158,11,0.3)' : '1px solid rgba(239,68,68,0.5)',
-                  boxShadow: isDone
-                    ? '0 4px 24px rgba(239,68,68,0.18), inset 0 1px 0 rgba(239,68,68,0.2)'
-                    : isPending
-                    ? '0 4px 16px rgba(245,158,11,0.1)'
-                    : '0 4px 16px rgba(239,68,68,0.15)',
-                  background: isDone
-                    ? 'linear-gradient(135deg, rgba(239,68,68,0.13) 0%, rgba(185,28,28,0.07) 100%)'
-                    : isPending
-                    ? 'linear-gradient(135deg, rgba(245,158,11,0.08) 0%, rgba(180,120,0,0.04) 100%)'
-                    : 'linear-gradient(135deg, rgba(239,68,68,0.1) 0%, rgba(150,0,0,0.06) 100%)',
-                }}>
+                <div
+                  key={wr.id}
+                  onClick={() => setSelectedWr(wr)}
+                  style={{
+                    borderRadius: '16px',
+                    marginBottom: '12px',
+                    overflow: 'hidden',
+                    cursor: 'pointer',
+                    transition: 'transform 0.12s ease',
+                    border: isDone
+                      ? '1px solid rgba(16,185,129,0.35)'
+                      : isPending
+                      ? '1px solid rgba(245,158,11,0.3)'
+                      : '1px solid rgba(239,68,68,0.5)',
+                    boxShadow: isDone
+                      ? '0 4px 24px rgba(16,185,129,0.18), inset 0 1px 0 rgba(16,185,129,0.2)'
+                      : isPending
+                      ? '0 4px 16px rgba(245,158,11,0.1)'
+                      : '0 4px 16px rgba(239,68,68,0.15)',
+                    background: isDone
+                      ? 'linear-gradient(135deg, rgba(16,185,129,0.13) 0%, rgba(5,150,105,0.07) 100%)'
+                      : isPending
+                      ? 'linear-gradient(135deg, rgba(245,158,11,0.08) 0%, rgba(180,120,0,0.04) 100%)'
+                      : 'linear-gradient(135deg, rgba(239,68,68,0.1) 0%, rgba(150,0,0,0.06) 100%)',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'none'; }}
+                >
                   {/* Top strip */}
                   <div style={{
                     padding: '12px 16px 10px',
-                    borderBottom: isDone ? '1px solid rgba(239,68,68,0.15)' : isPending ? '1px solid rgba(245,158,11,0.12)' : '1px solid rgba(239,68,68,0.2)',
+                    borderBottom: isDone
+                      ? '1px solid rgba(16,185,129,0.15)'
+                      : isPending
+                      ? '1px solid rgba(245,158,11,0.12)'
+                      : '1px solid rgba(239,68,68,0.2)',
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -171,12 +189,12 @@ const WithdrawPage = () => {
                     <div style={{
                       padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '700',
                       background: isDone
-                        ? 'linear-gradient(135deg, #EF4444, #DC2626)'
+                        ? 'linear-gradient(135deg, #10B981, #059669)'
                         : isPending
                         ? 'linear-gradient(135deg, #F59E0B, #D97706)'
-                        : 'linear-gradient(135deg, #6b7280, #4b5563)',
+                        : 'linear-gradient(135deg, #EF4444, #DC2626)',
                       color: '#fff',
-                      boxShadow: isDone ? '0 2px 8px rgba(239,68,68,0.4)' : isPending ? '0 2px 8px rgba(245,158,11,0.3)' : 'none',
+                      boxShadow: isDone ? '0 2px 8px rgba(16,185,129,0.4)' : isPending ? '0 2px 8px rgba(245,158,11,0.3)' : '0 2px 8px rgba(239,68,68,0.3)',
                     }}>
                       {isDone ? 'Completed' : isPending ? 'Pending' : 'Rejected'}
                     </div>
@@ -197,7 +215,7 @@ const WithdrawPage = () => {
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
                       <span style={{ color: theme.subtext }}>You Receive</span>
-                      <span style={{ color: theme.text, fontWeight: '700' }}>{Number(wr.netPayout || wr.amount).toFixed(2)} USDT</span>
+                      <span style={{ color: isDone ? '#10B981' : theme.text, fontWeight: '700' }}>{Number(wr.netPayout || wr.amount).toFixed(2)} USDT</span>
                     </div>
                     {wr.walletAddress || wr.address ? (
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', gap: '8px' }}>
@@ -205,6 +223,7 @@ const WithdrawPage = () => {
                         <span style={{ color: theme.primary, fontWeight: '600', fontFamily: 'monospace', fontSize: '11px', wordBreak: 'break-all', textAlign: 'right' }}>{wr.walletAddress || wr.address}</span>
                       </div>
                     ) : null}
+                    <div style={{ fontSize: '11px', color: theme.primary, fontWeight: '600', marginTop: '2px' }}>Tap for full details →</div>
                   </div>
                 </div>
               );
@@ -212,51 +231,25 @@ const WithdrawPage = () => {
           </>
         )}
       </div>
-      {/* Withdrawal popup */}
+
+      {/* Withdrawal submitted popup */}
       {wdPopup && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)',
-        }} onClick={() => setWdPopup(null)}>
-          <div style={{
-            background: 'linear-gradient(135deg, #1a0f0f 0%, #2a1515 100%)',
-            border: '1.5px solid rgba(239,68,68,0.45)',
-            borderRadius: '24px', padding: '36px 28px',
-            maxWidth: '300px', width: '90%', textAlign: 'center',
-            boxShadow: '0 20px 60px rgba(239,68,68,0.2), 0 8px 24px rgba(0,0,0,0.6)',
-            animation: 'popIn 0.3s cubic-bezier(0.34,1.56,0.64,1)',
-          }} onClick={e => e.stopPropagation()}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)' }} onClick={() => setWdPopup(null)}>
+          <div style={{ background: 'linear-gradient(135deg, #1a0f0f 0%, #2a1515 100%)', border: '1.5px solid rgba(239,68,68,0.45)', borderRadius: '24px', padding: '36px 28px', maxWidth: '300px', width: '90%', textAlign: 'center', boxShadow: '0 20px 60px rgba(239,68,68,0.2), 0 8px 24px rgba(0,0,0,0.6)', animation: 'popIn 0.3s cubic-bezier(0.34,1.56,0.64,1)' }} onClick={e => e.stopPropagation()}>
             <style>{`@keyframes popIn { from { transform: scale(0.7); opacity: 0 } to { transform: scale(1); opacity: 1 } }`}</style>
-            <div style={{
-              width: '64px', height: '64px', borderRadius: '50%', margin: '0 auto 20px',
-              background: 'linear-gradient(135deg, #EF4444, #DC2626)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 8px 24px rgba(239,68,68,0.5)',
-              fontSize: '28px',
-            }}>📤</div>
-            <div style={{ fontWeight: '800', fontSize: '18px', color: '#fff', marginBottom: '8px' }}>
-              Withdrawal Submitted!
-            </div>
-            <div style={{ fontSize: '22px', fontWeight: '800', color: '#EF4444', marginBottom: '4px' }}>
-              -{wdPopup.amount?.toFixed(2)} USDT
-            </div>
-            <div style={{ fontSize: '14px', color: '#10B981', fontWeight: '700', marginBottom: '4px' }}>
-              You receive: {wdPopup.netPayout?.toFixed(2)} USDT
-            </div>
+            <div style={{ width: '64px', height: '64px', borderRadius: '50%', margin: '0 auto 20px', background: 'linear-gradient(135deg, #EF4444, #DC2626)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 24px rgba(239,68,68,0.5)', fontSize: '28px' }}>📤</div>
+            <div style={{ fontWeight: '800', fontSize: '18px', color: '#fff', marginBottom: '8px' }}>Withdrawal Submitted!</div>
+            <div style={{ fontSize: '22px', fontWeight: '800', color: '#EF4444', marginBottom: '4px' }}>-{wdPopup.amount?.toFixed(2)} USDT</div>
+            <div style={{ fontSize: '14px', color: '#10B981', fontWeight: '700', marginBottom: '4px' }}>You receive: {wdPopup.netPayout?.toFixed(2)} USDT</div>
             <div style={{ fontSize: '12px', color: '#9CA3AF', marginBottom: '6px' }}>via {wdPopup.network}</div>
-            <div style={{ fontSize: '13px', color: '#9CA3AF', lineHeight: '1.6', marginBottom: '24px' }}>
-              Your withdrawal is under review. Processing time is typically 1–24 hours.
-            </div>
-            <button onClick={() => setWdPopup(null)} style={{
-              padding: '12px 32px', borderRadius: '12px', border: 'none',
-              background: 'linear-gradient(135deg, #EF4444, #DC2626)',
-              color: '#fff', fontWeight: '700', fontSize: '14px', cursor: 'pointer',
-              boxShadow: '0 4px 14px rgba(239,68,68,0.4)',
-            }}>OK</button>
+            <div style={{ fontSize: '13px', color: '#9CA3AF', lineHeight: '1.6', marginBottom: '24px' }}>Your withdrawal is under review. Processing time is typically 1–24 hours.</div>
+            <button onClick={() => setWdPopup(null)} style={{ padding: '12px 32px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #EF4444, #DC2626)', color: '#fff', fontWeight: '700', fontSize: '14px', cursor: 'pointer', boxShadow: '0 4px 14px rgba(239,68,68,0.4)' }}>OK</button>
           </div>
         </div>
       )}
+
+      {/* Tap-to-detail modal */}
+      <TxDetailModal item={selectedWr} type="withdraw" onClose={() => setSelectedWr(null)} theme={theme} />
     </div>
   );
 };

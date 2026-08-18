@@ -5,6 +5,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { getToken } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
 import { API_URL } from '../config';
+import TxDetailModal from '../components/TxDetailModal';
 function authHeaders() { return { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` }; }
 function fmt(n) { return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
@@ -29,6 +30,7 @@ const DepositPage = () => {
   const [balance, setBalance] = useState(0);
 
   const [depPopup, setDepPopup] = useState(null); // { type: 'pending'|'credited', amount, network }
+  const [selectedDep, setSelectedDep] = useState(null);
   const [depAmt, setDepAmt] = useState('');
   const [txHash, setTxHash] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -161,7 +163,7 @@ const DepositPage = () => {
                 </button>
               </div>
               {showNetDropdown && (
-                <div style={{ position: 'absolute', left: '0', right: '0', top: '100%', marginTop: '4px', backgroundColor: theme.bg === '#080C18' ? '#111830' : '#FFFFFF', borderRadius: '12px', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 8px 32px rgba(0,0,0,0.3)', zIndex: 100, overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', left: '0', right: '0', top: '100%', marginTop: '4px', backgroundColor: theme.inputBg || theme.bg, borderRadius: '12px', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 8px 32px rgba(0,0,0,0.3)', zIndex: 100, overflow: 'hidden' }}>
                   {NETWORKS.map(n => (
                     <button key={n.key} onClick={() => { setDepNet(n.key); setShowNetDropdown(false); }} style={{
                       width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 16px',
@@ -187,7 +189,7 @@ const DepositPage = () => {
                 <div style={{ fontSize: '11px', color: theme.faint, marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '600' }}>
                   {net.label} Deposit Address
                 </div>
-                <p style={{ fontSize: '13px', color: theme.text, wordBreak: 'break-all', fontFamily: 'monospace', lineHeight: '2', textAlign: 'center', letterSpacing: '0.5px', fontWeight: '600', margin: '0 0 12px 0', padding: '14px 16px', background: theme.bg === '#080C18' ? '#1E293B' : '#F8FAFC', borderRadius: '12px', border: theme.bg === '#080C18' ? '1px solid #334155' : '1px solid #CBD5E1' }}>{addr}</p>
+                <p style={{ fontSize: '13px', color: theme.text, wordBreak: 'break-all', fontFamily: 'monospace', lineHeight: '2', textAlign: 'center', letterSpacing: '0.5px', fontWeight: '600', margin: '0 0 12px 0', padding: '14px 16px', background: theme.inputBg || theme.bg, borderRadius: '12px', border: `1px solid ${theme.cardBorder}` }}>{addr}</p>
                 <button onClick={copyAddr} style={{
                   padding: '12px 24px', border: 'none', borderRadius: '10px',
                   background: copied ? theme.up : theme.primary, color: 'white', fontWeight: '700', fontSize: '13px',
@@ -288,10 +290,12 @@ const DepositPage = () => {
               const isRejected = entry.status === 'rejected';
               const netInfo = NETWORKS.find(n => n.key === entry.network) || {};
               return (
-                <div key={entry.id} style={{
+                <div key={entry.id} onClick={() => setSelectedDep(entry)} style={{
                   borderRadius: '16px',
                   marginBottom: '12px',
                   overflow: 'hidden',
+                  cursor: 'pointer',
+                  transition: 'transform 0.12s ease',
                   border: isDone ? '1px solid rgba(16,185,129,0.35)' : isPending ? '1px solid rgba(245,158,11,0.3)' : '1px solid rgba(239,68,68,0.3)',
                   boxShadow: isDone
                     ? '0 4px 24px rgba(16,185,129,0.18), inset 0 1px 0 rgba(16,185,129,0.2)'
@@ -353,6 +357,7 @@ const DepositPage = () => {
                     {entry.autoVerified && (
                       <div style={{ marginTop: '2px', fontSize: '11px', color: '#10B981', fontWeight: '600' }}>⚡ Auto-verified</div>
                     )}
+                    <div style={{ fontSize: '11px', color: theme.primary, fontWeight: '600', marginTop: '2px' }}>Tap for full details →</div>
                   </div>
                 </div>
               );
@@ -416,6 +421,8 @@ const DepositPage = () => {
           </div>
         </div>
       )}
+      {/* Tap-to-detail modal */}
+      <TxDetailModal item={selectedDep} type="deposit" onClose={() => setSelectedDep(null)} theme={theme} />
     </div>
   );
 };

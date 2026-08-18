@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Mail, Lock, Sun, Moon } from 'lucide-react';
 import { useTheme } from './ThemeContext';
 import { API_URL } from './config';
+import { applyLanguage } from './utils/language';
 
 const translations = {
   en: {
@@ -174,7 +175,7 @@ export default function KynexAuth() {
   };
 
   const [langCode, setLangCodeState] = useState(() => localStorage.getItem('kynex_language') || 'en');
-  const setLangCode = (code) => { setLangCodeState(code); localStorage.setItem('kynex_language', code); };
+  const setLangCode = (code) => { setLangCodeState(code); localStorage.setItem('kynex_language', code); applyLanguage(code); };
   const [isOpen, setIsOpen] = useState(false);
   const [successPopup, setSuccessPopup] = useState(null);
 
