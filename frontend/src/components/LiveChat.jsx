@@ -544,8 +544,11 @@ const LiveChat = () => {
     try {
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
       const reg = await navigator.serviceWorker.ready;
+      // Clear any stale/wrong-key subscription from a previous session
+      const alreadyFixed = localStorage.getItem('kynex_push_v2');
       const existing = await reg.pushManager.getSubscription();
-      if (existing) return; // already subscribed
+      if (alreadyFixed && existing) return; // already subscribed with correct key
+      if (existing) await existing.unsubscribe(); // clear stale
       const keyRes = await fetch(`${API_URL}/api/push/vapid-key`);
       if (!keyRes.ok) return;
       const { publicKey } = await keyRes.json();
@@ -561,6 +564,7 @@ const LiveChat = () => {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify(sub),
       });
+      localStorage.setItem('kynex_push_v2', '1');
     } catch { /* browser or network error */ }
   }, []);
 
