@@ -27,7 +27,7 @@ function fmt(n, digits = 2) {
   return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-const PKT_OFFSET_SEC = (300 + new Date().getTimezoneOffset()) * 60;
+const PKT_OFFSET_SEC = 5 * 60 * 60;
 function toCandle(k) {
   return { time: Math.floor(k[0] / 1000) + PKT_OFFSET_SEC, open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]) };
 }

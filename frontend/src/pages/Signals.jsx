@@ -15,7 +15,7 @@ function authHeaders() {
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` };
 }
 
-const PKT_OFFSET_SEC = (300 + new Date().getTimezoneOffset()) * 60;
+const PKT_OFFSET_SEC = 5 * 60 * 60;
 function fmtClock(ms) {
   return new Date(ms).toLocaleTimeString('en-US', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
