@@ -502,7 +502,7 @@ const Signals = () => {
             </span>
           </div>
         )}
-        {/* Trading-volume progress (5× of everything transferred into Signal; unlocks penalty-free Signal → Spot) */}
+        {/* Trading-volume progress */}
         {volumeData && volumeData.requiredVolume > 0 && (() => {
           const done = volumeData.tradedVolume >= volumeData.requiredVolume;
           const pct = Math.min(100, (volumeData.tradedVolume / volumeData.requiredVolume) * 100);
@@ -510,15 +510,13 @@ const Signals = () => {
           return (
             <div style={{ marginTop: '10px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: theme.subtext, marginBottom: '4px' }}>
-                <span>Trading volume {done ? '✓ complete' : ''}</span>
+                <span>
+                  {done ? '✓ Volume complete' : `Remaining: ${fmtUsd(remaining)} USDT`}
+                </span>
                 <span style={{ fontWeight: 600, color: done ? theme.up : theme.text }}>{Math.round(pct)}%</span>
               </div>
               <div style={{ height: '6px', borderRadius: '3px', backgroundColor: theme.inputBg || theme.cardBorder, overflow: 'hidden' }}>
                 <div style={{ height: '100%', borderRadius: '3px', background: done ? theme.upGradient : theme.brandGradient, width: `${pct}%`, transition: 'width 0.4s ease' }} />
-              </div>
-              <div style={{ fontSize: '10px', color: theme.faint, marginTop: '4px' }}>
-                {fmtUsd(volumeData.tradedVolume)} / {fmtUsd(volumeData.requiredVolume)} USDT
-                {done ? ' · Signal → Spot transfers are penalty-free' : ` · ${fmtUsd(remaining)} USDT more to unlock penalty-free transfer`}
               </div>
             </div>
           );
