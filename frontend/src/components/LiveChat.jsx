@@ -426,6 +426,8 @@ const LiveChat = () => {
   const initialLoadRef = useRef(false); // resume agent session on first load
   const seenMsgIdsRef = useRef(new Set());
   const toastTimerRef = useRef(null);
+  // Track last time user was active in agent view (send message or opened chat in agent view)
+  const lastAgentActivityRef = useRef(parseInt(localStorage.getItem('kynex_last_agent_active') || '0', 10));
 
   const savedPos = (() => { try { return JSON.parse(localStorage.getItem(DRAG_KEY)); } catch { return null; } })();
   const [btnPos, setBtnPos] = useState(savedPos || { bottom: 88, right: 16 });
@@ -492,6 +494,7 @@ const LiveChat = () => {
             clearTimeout(toastTimerRef.current);
             toastTimerRef.current = setTimeout(() => setToast(null), 8000);
             if (!latestNew.broadcast) {
+              touchAgentActivity();
               setOpen(true);
               setView('agent');
             }
@@ -499,7 +502,7 @@ const LiveChat = () => {
         }
       }
     } catch { /* network */ }
-  }, [open]);
+  }, [open, touchAgentActivity]);
 
   const markRead = useCallback(async () => {
     try {
@@ -629,10 +632,36 @@ const LiveChat = () => {
     }
   }, []);
 
-  // ── 5-minute idle auto-reset to welcome ───────────────────────────────
+  const IDLE_RESET_MS = 2 * 60 * 1000; // 2 minutes
+
+  // Record "agent active now" — call whenever user does something in agent view
+  const touchAgentActivity = useCallback(() => {
+    const now = Date.now();
+    lastAgentActivityRef.current = now;
+    localStorage.setItem('kynex_last_agent_active', String(now));
+  }, []);
+
+  // When chat opens: if >2 min since last agent activity and there were messages → show welcome
+  useEffect(() => {
+    if (!open) return;
+    if (view === 'agent' && messages.length > 0) {
+      const elapsed = Date.now() - lastAgentActivityRef.current;
+      if (lastAgentActivityRef.current > 0 && elapsed > IDLE_RESET_MS) {
+        setView('welcome');
+        return;
+      }
+      // Still fresh — record this open as activity
+      touchAgentActivity();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // While chat is open in agent view: auto-reset to welcome after 2 min of no new messages
   useEffect(() => {
     if (view !== 'agent' || !open) return;
-    const timer = setTimeout(() => setView('welcome'), 2 * 60 * 1000);
+    const timer = setTimeout(() => {
+      setView('welcome');
+    }, IDLE_RESET_MS);
     return () => clearTimeout(timer);
   }, [view, open, messages.length]);
 
@@ -716,6 +745,7 @@ const LiveChat = () => {
     setSending(true); setInput('');
     // If user types from welcome (not typical, but possible), switch to agent
     if (view !== 'agent') setView('agent');
+    touchAgentActivity();
     try {
       const res = await fetch(`${API_URL}/api/livechat/send`, {
         method: 'POST',
