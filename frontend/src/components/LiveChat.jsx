@@ -597,7 +597,7 @@ const LiveChat = () => {
   // ── 5-minute idle auto-reset to welcome ───────────────────────────────
   useEffect(() => {
     if (view !== 'agent' || !open) return;
-    const timer = setTimeout(() => setView('welcome'), 2 * 60 * 1000);
+    const timer = setTimeout(() => { setView('welcome'); setOpen(false); }, 2 * 60 * 1000);
     return () => clearTimeout(timer);
   }, [view, open, messages.length]);
 
