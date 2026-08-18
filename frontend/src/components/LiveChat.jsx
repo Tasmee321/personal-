@@ -539,6 +539,56 @@ const LiveChat = () => {
     }
   }, [open, markRead]);
 
+  // ── Web Push subscription ──────────────────────────────────────────────
+  const subscribePush = useCallback(async () => {
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      const reg = await navigator.serviceWorker.ready;
+      const existing = await reg.pushManager.getSubscription();
+      if (existing) return; // already subscribed
+      const keyRes = await fetch(`${API_URL}/api/push/vapid-key`);
+      if (!keyRes.ok) return;
+      const { publicKey } = await keyRes.json();
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: publicKey,
+      });
+      await fetch(`${API_URL}/api/push/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify(sub),
+      });
+    } catch { /* browser or network error */ }
+  }, []);
+
+  // Request notification permission when chat first opens; subscribe to push
+  useEffect(() => {
+    if (!open) return;
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'granted') {
+      subscribePush();
+    } else if (Notification.permission === 'default') {
+      Notification.requestPermission().then(p => { if (p === 'granted') subscribePush(); });
+    }
+  }, [open, subscribePush]);
+
+  // Listen for SW notification click → open chat in agent view
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const handler = (e) => {
+      if (e.data?.type === 'KYNEX_NOTIF_CLICK') { setOpen(true); setView('agent'); }
+    };
+    navigator.serviceWorker.addEventListener('message', handler);
+    return () => navigator.serviceWorker.removeEventListener('message', handler);
+  }, []);
+
+  // ── 5-minute idle auto-reset to welcome ───────────────────────────────
+  useEffect(() => {
+    if (view !== 'agent' || !open) return;
+    const timer = setTimeout(() => setView('welcome'), 5 * 60 * 1000);
+    return () => clearTimeout(timer);
+  }, [view, open, messages.length]);
+
   // ── View control helpers ───────────────────────────────────────────────
   // resetToWelcome: clears bot session, stays open (or closes if called with close=true)
   const resetToWelcome = useCallback((andClose = false) => {

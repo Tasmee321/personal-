@@ -25,3 +25,38 @@ self.addEventListener('fetch', (e) => {
     fetch(e.request).catch(() => caches.match(e.request))
   );
 });
+
+// ── Web Push ─────────────────────────────────────────────────────────────────
+self.addEventListener('push', (e) => {
+  let data = {};
+  try { data = e.data ? e.data.json() : {}; } catch { data = { title: 'KYNEX', body: e.data ? e.data.text() : '' }; }
+
+  const title = data.title || 'KYNEX Support';
+  const options = {
+    body: data.body || 'You have a new message.',
+    icon: data.icon || '/icons/icon-192.png',
+    badge: data.badge || '/icons/icon-192.png',
+    tag: data.tag || 'kynex-chat',
+    renotify: data.renotify !== false,
+    data: { url: '/' },
+    vibrate: [200, 100, 200],
+  };
+
+  e.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const targetUrl = (e.notification.data && e.notification.data.url) || '/';
+  e.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      for (const client of windowClients) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          client.postMessage({ type: 'KYNEX_NOTIF_CLICK' });
+          return client.focus();
+        }
+      }
+      return clients.openWindow(targetUrl);
+    })
+  );
+});

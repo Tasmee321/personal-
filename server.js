@@ -10,6 +10,7 @@ import jwt from "jsonwebtoken";
 import { generateSecret as generateTotpSecret, generateURI as generateTotpURI, verify as verifyTotp } from "otplib";
 import { v2 as cloudinary } from "cloudinary";
 import helmet from "helmet";
+import webpush from "web-push";
 import { initDb, dbRead, dbWrite } from "./db.js";
 
 cloudinary.config({
@@ -593,6 +594,51 @@ async function pushMessage(userId, title, body) {
   if (!all[userId]) all[userId] = [];
   all[userId].unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, title, body, read: false, at: Date.now() });
   await writeAllMessages(all);
+}
+
+// ---- Web Push helpers ----
+let vapidReady = false;
+async function initVapid() {
+  if (vapidReady) return;
+  let keys = await dbRead('vapid_keys');
+  if (!keys || !keys.publicKey) {
+    keys = webpush.generateVAPIDKeys();
+    await dbWrite('vapid_keys', keys);
+  }
+  webpush.setVapidDetails('mailto:supportkynex@gmail.com', keys.publicKey, keys.privateKey);
+  vapidReady = true;
+}
+
+async function readPushSubs() { return await dbRead('push_subscriptions') || {}; }
+async function writePushSubs(data) { await dbWrite('push_subscriptions', data); }
+
+async function sendWebPush(uid, title, body) {
+  if (!vapidReady) return;
+  try {
+    const subs = await readPushSubs();
+    const userSubs = subs[uid] || [];
+    if (!userSubs.length) return;
+    const payload = JSON.stringify({ title, body, icon: '/icons/icon-192.png', badge: '/icons/icon-192.png', tag: 'kynex-chat', renotify: true });
+    const expired = [];
+    await Promise.allSettled(userSubs.map(async (sub, i) => {
+      try { await webpush.sendNotification(sub, payload); }
+      catch (e) { if (e.statusCode === 410 || e.statusCode === 404) expired.push(i); }
+    }));
+    if (expired.length) {
+      subs[uid] = userSubs.filter((_, i) => !expired.includes(i));
+      await writePushSubs(subs);
+    }
+  } catch { /* ignore push errors */ }
+}
+
+async function sendWebPushAll(title, body) {
+  if (!vapidReady) return;
+  try {
+    const subs = await readPushSubs();
+    await Promise.allSettled(Object.entries(subs).map(([uid, userSubs]) =>
+      Promise.allSettled(userSubs.map(sub => webpush.sendNotification(sub, JSON.stringify({ title, body, icon: '/icons/icon-192.png', tag: 'kynex-broadcast', renotify: true })).catch(() => {})))
+    ));
+  } catch { /* ignore */ }
 }
 
 // ---- Live Chat helpers ----
@@ -1708,8 +1754,28 @@ app.post("/api/admin/livechat/:uid/reply", async (req, res) => {
   const msg = { id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`, from: 'admin', text: String(text).trim(), at: Date.now(), read: false };
   chats[uid].messages.push(msg);
   await writeLiveChats(chats);
-  // notification goes to floating chat button only — NOT to bell inbox
+  sendWebPush(uid, 'KYNEX Support', String(text).trim()).catch(() => {});
   res.json({ ok: true, message: msg });
+});
+
+// ---- Web Push subscription endpoints ----
+app.get('/api/push/vapid-key', async (req, res) => {
+  const keys = await dbRead('vapid_keys');
+  if (!keys?.publicKey) return res.status(503).json({ error: 'Push not ready.' });
+  res.json({ publicKey: keys.publicKey });
+});
+
+app.post('/api/push/subscribe', authenticate, async (req, res) => {
+  const uid = req.user.sub;
+  const sub = req.body;
+  if (!sub?.endpoint) return res.status(400).json({ error: 'Invalid subscription.' });
+  const subs = await readPushSubs();
+  if (!subs[uid]) subs[uid] = [];
+  if (!subs[uid].some(s => s.endpoint === sub.endpoint)) {
+    subs[uid].push(sub);
+    await writePushSubs(subs);
+  }
+  res.json({ ok: true });
 });
 
 // ---- Typing indicators (in-memory, no persistence needed) ----
@@ -3117,6 +3183,7 @@ app.post("/api/admin/livechat/broadcast", async (req, res) => {
     sent++;
   }
   await writeLiveChats(chats);
+  sendWebPushAll('📢 KYNEX Announcement', String(text).trim()).catch(() => {});
   res.json({ ok: true, sent });
 });
 
@@ -3140,7 +3207,7 @@ function scheduleDailyChatClear() {
   }, msUntilNext);
 }
 
-initDb().then(() => {
+initDb().then(() => initVapid()).then(() => {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`KYNEX backend running on http://0.0.0.0:${PORT}`);
     setInterval(() => {
