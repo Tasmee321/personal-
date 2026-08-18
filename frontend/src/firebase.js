@@ -26,6 +26,36 @@ function getFirebaseMessaging() {
 // Call this once after login — registers FCM token with the server
 export async function registerFcmToken() {
   try {
+    // Store API_URL so native onPageFinished injection can use it
+    try { localStorage.setItem('kynex_api_url', API_URL); } catch (_) {}
+
+    // APK: use native FCM token via KynexBridge (WebView has no service worker)
+    if (window.KynexBridge) {
+      let fcmToken = '';
+      try { fcmToken = window.KynexBridge.getFcmToken(); } catch (_) {}
+      if (!fcmToken) fcmToken = window.KYNEX_FCM_TOKEN || '';
+      if (!fcmToken) return;
+
+      const stored = localStorage.getItem('kynex_fcm_token');
+      if (stored === fcmToken) return;
+
+      const authToken = getAuthToken();
+      if (!authToken) return;
+
+      const res = await fetch(`${API_URL}/api/fcm-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ token: fcmToken }),
+      });
+
+      if (res.ok) localStorage.setItem('kynex_fcm_token', fcmToken);
+      return;
+    }
+
+    // Browser / PWA: use web FCM SDK
     if (!('Notification' in window)) return;
     if (!('serviceWorker' in navigator)) return;
 
@@ -68,6 +98,7 @@ export async function registerFcmToken() {
 // Optional: handle foreground messages (when app is open)
 export function onForegroundMessage(callback) {
   try {
+    if (window.KynexBridge) return () => {};
     const msg = getFirebaseMessaging();
     return onMessage(msg, callback);
   } catch {

@@ -173,7 +173,7 @@ const Security = () => {
 
     if (appLock) {
       // ── Turn OFF ──
-      if (window.KynexBridge?.setAppLock) window.KynexBridge.setAppLock('false');
+      try { window.KynexBridge?.setAppLock('false'); } catch (_) {}
       clearBiometric();
       // reset first-load flag so next session starts clean
       localStorage.removeItem('kynex_lock_first_load');
@@ -183,9 +183,8 @@ const Security = () => {
     }
 
     // ── Turn ON ──
-    if (window.KynexBridge?.setAppLock) {
-      // APK: native layer handles the actual lock
-      window.KynexBridge.setAppLock('true');
+    if (window.KynexBridge) {
+      try { window.KynexBridge.setAppLock('true'); } catch (_) {}
       localStorage.setItem('kynex_app_lock', 'true');
       setAppLock(true);
       setMsg('App Lock enabled. Screen will lock when you leave the app.');
