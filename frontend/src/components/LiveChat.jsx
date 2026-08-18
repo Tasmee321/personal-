@@ -708,8 +708,8 @@ const LiveChat = () => {
                 </div>
               )}
               <div ref={bottomRef} />
-              </div>{/* inner padding div */}
-            </div>{/* outer scroll div */}
+              </div>
+            </div>
           )}
 
           {/* Input */}
