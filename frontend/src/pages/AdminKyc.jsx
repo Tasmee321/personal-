@@ -702,7 +702,7 @@ This cannot be undone!`)) return;
         <div style={{ fontWeight: 'bold', fontSize: '18px', color: theme.brand }}>KYNEX</div>
         <div style={{ fontSize: '12px', padding: '3px 10px', borderRadius: '6px', backgroundColor: theme.primarySoft || 'rgba(99,102,241,0.15)', color: theme.primary }}>Admin</div>
         <div style={{ flex: 1 }} />
-        <div style={{ fontSize: '11px', color: theme.faint }}>supportkynex@gmail.com</div>
+        <div className="admin-email" style={{ fontSize: '11px', color: theme.faint }}>supportkynex@gmail.com</div>
       </div>
 
       <div style={{ display: 'flex', gap: '10px', padding: '16px 24px', overflowX: 'auto', borderBottom: `1px solid ${theme.cardBorder}` }}>
@@ -755,7 +755,7 @@ This cannot be undone!`)) return;
               ))}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+            <div className="admin-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
               <div style={card}>
                 <div style={{ fontWeight: 'bold', marginBottom: '12px', fontSize: '14px' }}>Recent KYC Submissions</div>
                 {pending.length === 0 && <div style={{ color: theme.faint, fontSize: '13px' }}>No pending submissions</div>}
@@ -860,7 +860,7 @@ This cannot be undone!`)) return;
               ← Back to Users
             </button>
             {/* Detail tabs */}
-            <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', flexWrap: 'wrap' }}>
+            <div className="admin-detail-tabs" style={{ display: 'flex', gap: '6px', marginBottom: '16px', flexWrap: 'wrap' }}>
               {[
                 { key: 'info', label: 'Info & Actions' },
                 { key: 'kyc_detail', label: 'KYC Detail' },
@@ -1102,7 +1102,7 @@ This cannot be undone!`)) return;
 
             {/* KYC DETAIL TAB */}
             {userDetailTab === 'kyc_detail' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div className="admin-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <div style={card}>
                   <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '14px' }}>KYC Information</div>
                   {!selectedUser.kyc || selectedUser.kyc.status === 'not_started' ? (
@@ -1154,7 +1154,7 @@ This cannot be undone!`)) return;
 
             {/* SECURITY & LOGINS TAB */}
             {userDetailTab === 'security' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div className="admin-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <div style={card}>
                   <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '14px' }}>Security Overview</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -1458,9 +1458,9 @@ This cannot be undone!`)) return;
                   { key: 'erc20', label: 'ERC20 (Ethereum)', color: '#627EEA' },
                   { key: 'bep20', label: 'BEP20 (BSC)', color: '#F3BA2F' },
                 ].map(n => (
-                  <div key={n.key} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div key={n.key} style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                     <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: n.color, flexShrink: 0 }}></span>
-                    <span style={{ fontSize: '12px', fontWeight: '600', minWidth: '130px' }}>{n.label}</span>
+                    <span style={{ fontSize: '12px', fontWeight: '600', minWidth: '100px' }}>{n.label}</span>
                     <input type="text" placeholder={`${n.label} wallet address`}
                       value={depositWallets[n.key] || ''}
                       onChange={(e) => setDepositWallets(prev => ({ ...prev, [n.key]: e.target.value }))}
@@ -1554,7 +1554,7 @@ This cannot be undone!`)) return;
               </button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+            <div className="admin-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
               {/* Global daily limit */}
               <div style={card}>
                 <div style={{ fontWeight: 'bold', fontSize: '13px', marginBottom: '10px' }}>Global Daily Signal Limit (All Users)</div>
@@ -1625,9 +1625,9 @@ This cannot be undone!`)) return;
               <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '12px' }}>
                 Grant extra bonus signals (1% profit each) to users who referred active depositors.
               </div>
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <select value={referralBonusUser} onChange={(e) => setReferralBonusUser(e.target.value)}
-                  style={{ ...inputStyle, width: 'auto', minWidth: '200px' }}>
+                  style={{ ...inputStyle, width: 'auto', minWidth: '160px', flex: '1 1 160px' }}>
                   <option value="">Select user...</option>
                   {activeReferrers.map(u => (
                     <option key={u.id} value={u.id}>{u.name} ({u.email}) — {u.referredCount} referral(s)</option>
@@ -1685,9 +1685,9 @@ This cannot be undone!`)) return;
 
         {/* ── Live Chat Tab ── */}
         {activeTab === 'livechat' && (
-          <div style={{ display: 'flex', gap: '16px', height: '600px' }}>
+          <div className="admin-chat-wrap" style={{ display: 'flex', gap: '16px', height: '600px' }}>
             {/* Thread list */}
-            <div style={{ display: 'flex', flexDirection: 'column', width: '280px', flexShrink: 0, gap: '10px' }}>
+            <div className={`admin-chat-sidebar${activeChatUid ? ' chat-open' : ''}`} style={{ display: 'flex', flexDirection: 'column', width: '280px', flexShrink: 0, gap: '10px' }}>
               {/* Broadcast box */}
               <div style={{ ...card, padding: '12px', flexShrink: 0 }}>
                 <div style={{ fontWeight: 'bold', fontSize: '13px', marginBottom: '8px', color: theme.text }}>
@@ -1774,7 +1774,7 @@ This cannot be undone!`)) return;
             </div>
 
             {/* Chat window */}
-            <div style={{ ...card, flex: 1, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+            <div className="admin-chat-main" style={{ ...card, flex: 1, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
               {!activeChatUid ? (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.faint, fontSize: '14px' }}>
                   Select a thread to start chatting
@@ -1786,6 +1786,8 @@ This cannot be undone!`)) return;
                     padding: '14px 16px', borderBottom: `1px solid ${theme.cardBorder}`,
                     display: 'flex', alignItems: 'center', gap: '10px',
                   }}>
+                    <button className="admin-chat-back" onClick={() => { setActiveChatUid(null); setChatMessages([]); clearInterval(chatPollRef.current); }}
+                      style={{ display: 'none', background: 'none', border: 'none', color: theme.primary, cursor: 'pointer', fontSize: '14px', fontWeight: '700', padding: 0 }}>←</button>
                     <div style={{ flex: 1 }}>
                       {(() => {
                         const t = chatThreads.find(x => x.uid === activeChatUid);
@@ -1894,18 +1896,25 @@ This cannot be undone!`)) return;
         @media (max-width: 768px) {
           table { font-size: 11px !important; }
           td, th { padding: 6px 4px !important; }
+          .admin-two-col { grid-template-columns: 1fr !important; }
+          .admin-email { display: none !important; }
         }
         @media (max-width: 600px) {
           .admin-root { font-size: 13px; }
           .admin-root > div:nth-child(2) { padding: 10px 12px !important; gap: 8px !important; }
-          .admin-root > div:nth-child(3) { padding: 10px 12px !important; gap: 6px !important; }
-          .admin-root > div:nth-child(3) button { padding: 7px 12px !important; font-size: 12px !important; }
-          .admin-content { padding: 12px !important; }
+          .admin-root > div:nth-child(3) { padding: 10px 8px !important; gap: 6px !important; }
+          .admin-root > div:nth-child(3) button { padding: 7px 10px !important; font-size: 11px !important; }
+          .admin-content { padding: 10px !important; }
           .admin-stat-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
           .admin-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
           .admin-table-wrap table { min-width: 600px; }
           .admin-detail-tabs { flex-wrap: wrap !important; }
           .admin-detail-tabs button { flex: 0 0 auto !important; font-size: 11px !important; padding: 6px 10px !important; }
+          .admin-chat-wrap { flex-direction: column !important; height: calc(100vh - 130px) !important; }
+          .admin-chat-sidebar { width: 100% !important; flex-shrink: 1 !important; max-height: 50% !important; }
+          .admin-chat-sidebar.chat-open { display: none !important; }
+          .admin-chat-main { min-height: 0 !important; flex: 1 !important; }
+          .admin-chat-back { display: inline-block !important; }
         }
       `}</style>
     </div>

@@ -32,6 +32,16 @@ const PASSWORD_CHANGE_WITHDRAW_LOCK_MS = 2 * 60 * 60 * 1000;
 const FUND_PASSWORD_PATTERN = /^[0-9]{4,6}$/;
 const KYC_DOC_TYPES = ["passport", "driving_license", "national_id"];
 
+// Per-user transfer lock to prevent race conditions on reward claims
+const _transferLocks = new Map();
+function acquireTransferLock(userId) {
+  if (_transferLocks.has(userId)) return _transferLocks.get(userId).then(() => acquireTransferLock(userId));
+  let unlock;
+  const p = new Promise(r => { unlock = r; });
+  _transferLocks.set(userId, p);
+  return () => { _transferLocks.delete(userId); unlock(); };
+}
+
 // ---- Demo/practice trading only — no real money ever moves through these accounts ----
 const DEMO_STARTING_BALANCE = 0;
 const DEMO_PAYOUT_RATE = 0.8; // legacy — kept for reference
@@ -1896,7 +1906,7 @@ app.get("/api/demo/account", authenticate, async (req, res) => {
     rewardSummary: {
       totalDeposited: account.totalDeposited || 0,
       firstRewardClaimed: !!account.firstRewardClaimed,
-      eligible: !account.firstRewardClaimed && (account.totalDeposited || 0) > 200,
+      eligible: !account.firstRewardClaimed && (account.totalDeposited || 0) >= 200,
     },
   });
 });
@@ -1912,6 +1922,8 @@ app.post("/api/demo/transfer", authenticate, async (req, res) => {
     return res.status(400).json({ error: "Enter a valid amount greater than 0." });
   }
 
+  const unlock = await acquireTransferLock(req.user.sub);
+  try {
   const accounts = await readDemoAccounts();
   const account = getDemoAccount(accounts, req.user.sub);
 
@@ -1932,22 +1944,30 @@ app.post("/api/demo/transfer", authenticate, async (req, res) => {
     let referrerReward = 0;
     const deposited = account.totalDeposited || 0;
     if (!account.firstRewardClaimed && deposited >= 200) {
-      reward = Math.round(deposited * 0.04 * 100) / 100;
-      account.balance = Math.round((account.balance + reward) * 100) / 100;
-      account.firstRewardClaimed = true;
-      addLedgerEntry(account, 'reward', 'spot', reward, `4% first-deposit reward (${deposited.toFixed(2)} USDT deposited)`, null);
-      await pushMessage(req.user.sub, 'Joining Reward Received', `Your joining reward of $${reward.toFixed(2)} USDT (4% of your $${deposited.toFixed(2)} deposit) has been sent to your Spot wallet.`);
+      const rewardRef = `first-deposit-reward-${req.user.sub}`;
+      const alreadyInLedger = (account.ledger || []).some(e => e.ref === rewardRef);
+      if (!alreadyInLedger) {
+        reward = Math.round(deposited * 0.04 * 100) / 100;
+        account.balance = Math.round((account.balance + reward) * 100) / 100;
+        account.firstRewardClaimed = true;
+        addLedgerEntry(account, 'reward', 'spot', reward, `4% first-deposit reward (${deposited.toFixed(2)} USDT deposited)`, rewardRef);
+        await pushMessage(req.user.sub, 'Joining Reward Received', `Your joining reward of $${reward.toFixed(2)} USDT (4% of your $${deposited.toFixed(2)} deposit) has been sent to your Spot wallet.`);
 
-      const users = await readUsers();
-      const me = users.find(u => u.id === req.user.sub);
-      if (me && me.referredByUid) {
-        const referrerUser = users.find(u => u.uid === me.referredByUid);
-        if (referrerUser && referrerUser.id !== req.user.sub) {
-          referrerReward = Math.round(deposited * 0.06 * 100) / 100;
-          const refAccount = getDemoAccount(accounts, referrerUser.id);
-          refAccount.balance = Math.round((refAccount.balance + referrerReward) * 100) / 100;
-          addLedgerEntry(refAccount, 'reward', 'spot', referrerReward, `6% referral reward — new user qualified (${deposited.toFixed(2)} USDT deposited)`, null);
-          await pushMessage(referrerUser.id, 'Referral Reward Received', `Your referral (UID: ${me.uid} — ${me.name}) made a deposit of $${deposited.toFixed(2)} USDT. You have received a 6% referral reward of $${referrerReward.toFixed(2)} USDT in your Spot wallet.`);
+        const users = await readUsers();
+        const me = users.find(u => u.id === req.user.sub);
+        if (me && me.referredByUid) {
+          const referrerUser = users.find(u => u.uid === me.referredByUid);
+          if (referrerUser && referrerUser.id !== req.user.sub) {
+            const refRewardRef = `referral-reward-${req.user.sub}`;
+            const refAccount = getDemoAccount(accounts, referrerUser.id);
+            const refAlreadyPaid = (refAccount.ledger || []).some(e => e.ref === refRewardRef);
+            if (!refAlreadyPaid) {
+              referrerReward = Math.round(deposited * 0.06 * 100) / 100;
+              refAccount.balance = Math.round((refAccount.balance + referrerReward) * 100) / 100;
+              addLedgerEntry(refAccount, 'reward', 'spot', referrerReward, `6% referral reward — new user qualified (${deposited.toFixed(2)} USDT deposited)`, refRewardRef);
+              await pushMessage(referrerUser.id, 'Referral Reward Received', `Your referral (UID: ${me.uid} — ${me.name}) made a deposit of $${deposited.toFixed(2)} USDT. You have received a 6% referral reward of $${referrerReward.toFixed(2)} USDT in your Spot wallet.`);
+            }
+          }
         }
       }
     }
@@ -2011,6 +2031,7 @@ app.post("/api/demo/transfer", authenticate, async (req, res) => {
   });
   await writeDemoAccounts(accounts);
   res.json({ ok: true, balance: account.balance, signalBalance: account.signalBalance });
+  } finally { unlock(); }
 });
 
 // ---- Demo top up / withdraw — practice funds only, never real money ----
