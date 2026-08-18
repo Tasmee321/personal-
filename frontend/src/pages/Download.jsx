@@ -296,9 +296,16 @@ const Download = () => {
             }}>
               <CheckCircle size={12} /> v{apkInfo.version_name}
             </div>
-            <a
-              href={apkInfo.download_url}
-              download
+            <button
+              onClick={() => {
+                const url = apkInfo.download_url;
+                // Native Android bridge — triggers DownloadManager directly
+                if (window.KynexBridge?.downloadApk) {
+                  window.KynexBridge.downloadApk(url);
+                } else {
+                  window.open(url, '_blank', 'noopener,noreferrer');
+                }
+              }}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                 padding: '12px 24px', borderRadius: '10px', border: 'none', width: '100%',
@@ -308,7 +315,7 @@ const Download = () => {
               }}
             >
               <DownloadIcon size={16} /> Download
-            </a>
+            </button>
           </div>
 
           {/* iOS Card */}
