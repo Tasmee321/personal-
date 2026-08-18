@@ -1719,6 +1719,7 @@ app.get("/api/admin/livechat", async (req, res) => {
     const user = users.find(u => u.id === uid);
     return {
       uid,
+      userUid: user?.uid || '',
       email: user?.email || uid,
       name: user?.name || '',
       unreadAdmin: chat.unreadAdmin || 0,
@@ -2549,8 +2550,11 @@ app.post("/api/admin/referral-bonus", requireAdmin, async (req, res) => {
   const account = getDemoAccount(accounts, userId);
   account.referralBonusSignals = (account.referralBonusSignals || 0) + n;
   account.totalBonusGranted = (account.totalBonusGranted || 0) + n;
+  // Signals expire after N days from now (one per day, missed days are forfeit)
+  const newExpiry = Date.now() + n * 24 * 60 * 60 * 1000;
+  account.referralBonusExpireAt = Math.max(account.referralBonusExpireAt || 0, newExpiry);
   await writeDemoAccounts(accounts);
-  await pushMessage(userId, "Referral Reward", `You earned ${n} bonus signal(s) as a referral reward!`);
+  await pushMessage(userId, "Referral Reward", `You earned ${n} bonus signal(s) as a referral reward! Valid for ${n} days.`);
   res.json({ ok: true, referralBonusSignals: account.referralBonusSignals });
 });
 
@@ -2782,7 +2786,16 @@ app.get("/api/signal-status", authenticate, async (req, res) => {
   const cfg = await readSignalConfig();
   const accounts = await readDemoAccounts();
   const account = getDemoAccount(accounts, req.user.sub);
+  const nowMs = Date.now();
+  // Expire signals if the grant window has passed
+  const expireAt = account.referralBonusExpireAt || 0;
+  const isExpired = expireAt > 0 && nowMs >= expireAt;
+  if (isExpired && account.referralBonusSignals > 0) {
+    account.referralBonusSignals = 0;
+    await writeDemoAccounts(accounts);
+  }
   const bonusSignals = account.referralBonusSignals || 0;
+  const daysRemaining = expireAt > nowMs ? Math.ceil((expireAt - nowMs) / (24 * 60 * 60 * 1000)) : 0;
   let referralWindowOpen = false;
   if (bonusSignals > 0) {
     const now = new Date();
@@ -2795,6 +2808,7 @@ app.get("/api/signal-status", authenticate, async (req, res) => {
     ok: true,
     signalActive: !!cfg.signalActive,
     bonusSignals,
+    daysRemaining,
     bonusUsedToday,
     referralWindowOpen,
     referralSignalTime: "20:00",

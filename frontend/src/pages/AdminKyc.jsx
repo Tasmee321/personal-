@@ -62,6 +62,8 @@ const AdminKyc = () => {
   const [depositWallets, setDepositWallets] = useState({ trc20: '', erc20: '', bep20: '' });
   const [pendingDeposits, setPendingDeposits] = useState([]);
   const [savingWallets, setSavingWallets] = useState(false);
+  const [showDepositDetail, setShowDepositDetail] = useState(false);
+  const [showWithdrawDetail, setShowWithdrawDetail] = useState(false);
 
   // Live Chat
   const [chatThreads, setChatThreads] = useState([]);
@@ -608,6 +610,90 @@ This cannot be undone!`)) return;
         }}>{toast}</div>
       )}
 
+      {/* Deposit detail modal */}
+      {showDepositDetail && (() => {
+        const deposited = users.filter(u => u.totalDeposited > 0).sort((a, b) => b.totalDeposited - a.totalDeposited);
+        return (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 2000, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            onClick={() => setShowDepositDetail(false)}>
+            <div style={{ backgroundColor: theme.card, borderRadius: '16px', padding: '24px', maxWidth: '600px', width: '92%', maxHeight: '80vh', display: 'flex', flexDirection: 'column', border: `1px solid ${theme.cardBorder}` }}
+              onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: '16px' }}>Deposits by User</div>
+                  <div style={{ fontSize: '12px', color: theme.subtext }}>{deposited.length} users · Total ${totalDeposited.toLocaleString()}</div>
+                </div>
+                <button onClick={() => setShowDepositDetail(false)} style={{ background: 'none', border: 'none', color: theme.faint, cursor: 'pointer', fontSize: '20px' }}>✕</button>
+              </div>
+              <div style={{ overflowY: 'auto', flex: 1 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead style={{ position: 'sticky', top: 0, backgroundColor: theme.card }}>
+                    <tr style={{ borderBottom: `2px solid ${theme.cardBorder}` }}>
+                      {['#', 'UID', 'Name', 'Email', 'Deposited'].map(h => (
+                        <th key={h} style={{ padding: '8px 10px', textAlign: 'left', color: theme.subtext, fontWeight: '600', fontSize: '11px', textTransform: 'uppercase' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deposited.map((u, i) => (
+                      <tr key={u.id} style={{ borderBottom: `1px solid ${theme.cardBorder}` }}>
+                        <td style={{ padding: '8px 10px', color: theme.faint, fontSize: '12px' }}>{i + 1}</td>
+                        <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontSize: '11px' }}>{u.uid}</td>
+                        <td style={{ padding: '8px 10px', fontWeight: '600' }}>{u.name}</td>
+                        <td style={{ padding: '8px 10px', color: theme.subtext }}>{u.email}</td>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold', color: theme.up }}>${u.totalDeposited.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Withdraw detail modal */}
+      {showWithdrawDetail && (() => {
+        const withdrawn = users.filter(u => (u.totalWithdrawn || 0) > 0).sort((a, b) => (b.totalWithdrawn || 0) - (a.totalWithdrawn || 0));
+        return (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 2000, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            onClick={() => setShowWithdrawDetail(false)}>
+            <div style={{ backgroundColor: theme.card, borderRadius: '16px', padding: '24px', maxWidth: '600px', width: '92%', maxHeight: '80vh', display: 'flex', flexDirection: 'column', border: `1px solid ${theme.cardBorder}` }}
+              onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: '16px' }}>Withdrawals by User</div>
+                  <div style={{ fontSize: '12px', color: theme.subtext }}>{withdrawn.length} users · Total ${totalWithdrawn.toLocaleString()}</div>
+                </div>
+                <button onClick={() => setShowWithdrawDetail(false)} style={{ background: 'none', border: 'none', color: theme.faint, cursor: 'pointer', fontSize: '20px' }}>✕</button>
+              </div>
+              <div style={{ overflowY: 'auto', flex: 1 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead style={{ position: 'sticky', top: 0, backgroundColor: theme.card }}>
+                    <tr style={{ borderBottom: `2px solid ${theme.cardBorder}` }}>
+                      {['#', 'UID', 'Name', 'Email', 'Withdrawn'].map(h => (
+                        <th key={h} style={{ padding: '8px 10px', textAlign: 'left', color: theme.subtext, fontWeight: '600', fontSize: '11px', textTransform: 'uppercase' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {withdrawn.map((u, i) => (
+                      <tr key={u.id} style={{ borderBottom: `1px solid ${theme.cardBorder}` }}>
+                        <td style={{ padding: '8px 10px', color: theme.faint, fontSize: '12px' }}>{i + 1}</td>
+                        <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontSize: '11px' }}>{u.uid}</td>
+                        <td style={{ padding: '8px 10px', fontWeight: '600' }}>{u.name}</td>
+                        <td style={{ padding: '8px 10px', color: theme.subtext }}>{u.email}</td>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold', color: theme.down }}>${(u.totalWithdrawn || 0).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <div style={{
         display: 'flex', alignItems: 'center', padding: '14px 24px',
         borderBottom: `1px solid ${theme.cardBorder}`, backgroundColor: theme.card,
@@ -660,8 +746,10 @@ This cannot be undone!`)) return;
                 { label: 'Signals', value: signalActive ? 'Active' : 'Inactive', color: signalActive ? theme.up : theme.down },
                 { label: 'Blocked Users', value: users.filter(u => u.closed).length, color: theme.down },
               ].map((s, i) => (
-                <div key={i} style={{ ...card, padding: '16px 18px' }}>
-                  <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '6px' }}>{s.label}</div>
+                <div key={i}
+                  onClick={s.label === 'Total Deposited' ? () => setShowDepositDetail(true) : s.label === 'Total Withdrawn' ? () => setShowWithdrawDetail(true) : undefined}
+                  style={{ ...card, padding: '16px 18px', cursor: (s.label === 'Total Deposited' || s.label === 'Total Withdrawn') ? 'pointer' : 'default' }}>
+                  <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '6px' }}>{s.label}{(s.label === 'Total Deposited' || s.label === 'Total Withdrawn') && <span style={{ fontSize: '10px', marginLeft: '4px', opacity: 0.6 }}>▶ details</span>}</div>
                   <div style={{ fontSize: '22px', fontWeight: 'bold', color: s.color }}>{s.value}</div>
                 </div>
               ))}
@@ -1180,6 +1268,33 @@ This cannot be undone!`)) return;
               const totalMembers = countAll(teamTree);
               const directCount = teamTree.length;
 
+              // Flatten tree into rows for table view
+              const flattenDeposited = (nodes, depth, rows) => {
+                for (const n of nodes) {
+                  if ((n.totalDeposited || 0) > 0) rows.push({ ...n, depth });
+                  flattenDeposited(n.children || [], depth + 1, rows);
+                }
+                return rows;
+              };
+              const tableRows = flattenDeposited(teamTree, 1, []);
+
+              const downloadPdf = () => {
+                const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Referral Team - ${teamUser.name}</title>
+                <style>body{font-family:sans-serif;padding:20px;color:#111}h2{margin-bottom:4px}p{color:#555;margin:0 0 16px}
+                table{width:100%;border-collapse:collapse;font-size:12px}th{background:#f5f5f5;padding:8px 10px;text-align:left;border:1px solid #ddd;font-size:11px}
+                td{padding:8px 10px;border:1px solid #ddd}tr:nth-child(even){background:#fafafa}</style></head><body>
+                <h2>Referral Team Tree — ${teamUser.name}</h2>
+                <p>UID: ${teamUser.uid} · Email: ${teamUser.email} · Direct: ${directCount} · Total: ${totalMembers}</p>
+                <table><thead><tr><th>#</th><th>Level</th><th>UID</th><th>Name</th><th>Email</th><th>Deposited</th><th>Balance</th><th>KYC</th></tr></thead>
+                <tbody>${tableRows.map((r, i) => `<tr><td>${i+1}</td><td>${r.depth}</td><td>${r.uid||''}</td><td>${'—'.repeat(r.depth-1)} ${r.name||''}</td><td>${r.email||''}</td><td>$${(r.totalDeposited||0).toFixed(2)}</td><td>$${(r.balance||0).toFixed(2)}</td><td>${r.kycStatus==='certified'?'✓':r.kycStatus||'—'}</td></tr>`).join('')}
+                </tbody></table></body></html>`;
+                const w = window.open('', '_blank');
+                w.document.write(html);
+                w.document.close();
+                w.focus();
+                setTimeout(() => w.print(), 500);
+              };
+
               const minBal = teamData?.minBalance || 200;
               const TreeNode = ({ node, depth = 0 }) => {
                 const qualReason = !node.isQualified
@@ -1228,24 +1343,59 @@ This cannot be undone!`)) return;
 
               return (
                 <div style={{ ...card, marginTop: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
                     <div>
                       <div style={{ fontWeight: 'bold', fontSize: '14px' }}>Referral Team Tree — {teamUser.name}</div>
                       <div style={{ fontSize: '12px', color: theme.subtext, marginTop: '2px' }}>
-                        Direct: <b style={{ color: theme.primary }}>{directCount}</b> · Total: <b style={{ color: theme.primary }}>{totalMembers}</b> · Level: <b style={{ color: theme.primary }}>{teamUser.level}</b>
+                        Direct: <b style={{ color: theme.primary }}>{directCount}</b> · Total: <b style={{ color: theme.primary }}>{totalMembers}</b> · Deposited members: <b style={{ color: theme.up }}>{tableRows.length}</b> · Level: <b style={{ color: theme.primary }}>{teamUser.level}</b>
                       </div>
                       <div style={{ fontSize: '12px', marginTop: '4px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                         <span style={{ color: theme.up, fontWeight: '700' }}>✓ {teamData?.qualifiedDirectCount || 0} counting</span>
                         <span style={{ color: theme.down, fontWeight: '700' }}>✗ {teamData?.unqualifiedDirectCount || 0} not counting</span>
-                        <span style={{ color: theme.faint, fontSize: '11px' }}>· Green = counts toward level · Red = balance {'<'} ${teamData?.minBalance || 200} or no KYC</span>
                       </div>
                     </div>
-                    <button onClick={() => { setTeamTree(null); setTeamUser(null); }} style={{ ...btnDanger, padding: '6px 14px', fontSize: '11px' }}>Close</button>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button onClick={downloadPdf} style={{ ...btnPrimary, padding: '6px 14px', fontSize: '11px', backgroundColor: '#7C3AED' }}>⬇ PDF</button>
+                      <button onClick={() => { setTeamTree(null); setTeamUser(null); }} style={{ ...btnDanger, padding: '6px 14px', fontSize: '11px' }}>Close</button>
+                    </div>
                   </div>
+
+                  {/* Deposited members table */}
+                  {tableRows.length > 0 && (
+                    <div style={{ marginBottom: '16px', overflowX: 'auto' }}>
+                      <div style={{ fontSize: '12px', fontWeight: '600', color: theme.subtext, marginBottom: '8px' }}>Deposited Members (all levels)</div>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                        <thead>
+                          <tr style={{ borderBottom: `2px solid ${theme.cardBorder}` }}>
+                            {['#', 'Gen', 'UID', 'Name', 'Email', 'Deposited', 'Balance', 'KYC'].map(h => (
+                              <th key={h} style={{ padding: '6px 8px', textAlign: 'left', color: theme.subtext, fontSize: '10px', textTransform: 'uppercase', fontWeight: '600' }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tableRows.map((r, i) => (
+                            <tr key={r.id} style={{ borderBottom: `1px solid ${theme.cardBorder}` }}>
+                              <td style={{ padding: '6px 8px', color: theme.faint }}>{i + 1}</td>
+                              <td style={{ padding: '6px 8px', color: theme.primary, fontWeight: '700' }}>G{r.depth}</td>
+                              <td style={{ padding: '6px 8px', fontFamily: 'monospace', fontSize: '11px' }}>{r.uid || '—'}</td>
+                              <td style={{ padding: '6px 8px', fontWeight: '600', paddingLeft: `${(r.depth - 1) * 12 + 8}px` }}>{'└ '.repeat(r.depth - 1)}{r.name}</td>
+                              <td style={{ padding: '6px 8px', color: theme.subtext }}>{r.email}</td>
+                              <td style={{ padding: '6px 8px', fontWeight: 'bold', color: theme.up }}>${(r.totalDeposited || 0).toFixed(2)}</td>
+                              <td style={{ padding: '6px 8px', color: r.balance >= minBal ? theme.up : theme.down }}>${(r.balance || 0).toFixed(2)}</td>
+                              <td style={{ padding: '6px 8px', color: r.kycStatus === 'certified' ? theme.up : theme.faint, fontSize: '11px' }}>{r.kycStatus === 'certified' ? '✓' : r.kycStatus || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Original tree view */}
+                  <div style={{ fontSize: '12px', fontWeight: '600', color: theme.subtext, marginBottom: '8px' }}>Full Tree View</div>
                   {teamTree.length === 0 ? (
                     <div style={{ color: theme.faint, textAlign: 'center', padding: '30px', fontSize: '13px' }}>No team members</div>
                   ) : (
-                    <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
+                    <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
                       {teamTree.map(n => <TreeNode key={n.id} node={n} depth={0} />)}
                     </div>
                   )}
@@ -1642,7 +1792,7 @@ This cannot be undone!`)) return;
                         return (
                           <>
                             <div style={{ fontWeight: '700', fontSize: '14px', color: theme.text }}>{t?.name || t?.email || activeChatUid}</div>
-                            <div style={{ fontSize: '11px', color: theme.faint }}>{t?.email} · UID: {activeChatUid.slice(0, 8)}</div>
+                            <div style={{ fontSize: '11px', color: theme.faint }}>{t?.email} · UID: {t?.userUid || '—'}</div>
                           </>
                         );
                       })()}

@@ -154,7 +154,7 @@ const Signals = () => {
   const [now, setNow] = useState(() => Date.now());
   const [activeTab, setActiveTab] = useState('current');
   const [actionError, setActionError] = useState('');
-  const [bonusInfo, setBonusInfo] = useState({ bonusSignals: 0, bonusUsedToday: 0, referralWindowOpen: false, referralSignalTime: null, referralDirection: null, referralSymbol: null, referralEndTime: null });
+  const [bonusInfo, setBonusInfo] = useState({ bonusSignals: 0, daysRemaining: 0, bonusUsedToday: 0, referralWindowOpen: false, referralSignalTime: null, referralDirection: null, referralSymbol: null, referralEndTime: null });
   const [placingBonus, setPlacingBonus] = useState(false);
 
   const chartContainerRef = useRef(null);
@@ -195,7 +195,7 @@ const Signals = () => {
       try {
         const res = await fetch(`${API_URL}/api/signal-status`, { headers: authHeaders() });
         const data = await res.json();
-        if (res.ok) setBonusInfo({ bonusSignals: data.bonusSignals || 0, bonusUsedToday: data.bonusUsedToday || 0, referralWindowOpen: !!data.referralWindowOpen, referralSignalTime: data.referralSignalTime, referralDirection: data.referralDirection, referralSymbol: data.referralSymbol, referralEndTime: data.referralEndTime });
+        if (res.ok) setBonusInfo({ bonusSignals: data.bonusSignals || 0, daysRemaining: data.daysRemaining || 0, bonusUsedToday: data.bonusUsedToday || 0, referralWindowOpen: !!data.referralWindowOpen, referralSignalTime: data.referralSignalTime, referralDirection: data.referralDirection, referralSymbol: data.referralSymbol, referralEndTime: data.referralEndTime });
       } catch { /* silent */ }
     };
     loadBonusStatus();
@@ -518,7 +518,10 @@ const Signals = () => {
             <div style={{ ...glassCard(theme), padding: '14px 16px', marginBottom: '24px', border: `1px solid ${theme.up}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <span style={{ fontWeight: 'bold', fontSize: '14px', color: theme.up }}>Referral Bonus Signal</span>
-                <span style={{ fontSize: '12px', color: theme.subtext }}>{bonusInfo.bonusSignals} remaining</span>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '12px', color: theme.subtext }}>{bonusInfo.bonusSignals} remaining</div>
+                  {bonusInfo.daysRemaining > 0 && <div style={{ fontSize: '11px', color: theme.faint }}>Expires in {bonusInfo.daysRemaining} day{bonusInfo.daysRemaining !== 1 ? 's' : ''}</div>}
+                </div>
               </div>
               <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '10px' }}>
                 1% profit · {bonusInfo.referralSymbol ? bonusInfo.referralSymbol.replace('USDT','') : '—'} · Available at <b style={{ color: theme.text }}>{bonusInfo.referralSignalTime || '—'}</b>
