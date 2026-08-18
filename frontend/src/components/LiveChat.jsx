@@ -8,12 +8,17 @@ const DRAG_KEY = 'kynex_chat_btn_pos';
 const IDLE_MS = 4000;
 
 const TOPICS = [
-  { id: 'transfer', emoji: '💰', label: 'Transfer Balance',  msg: 'Hi, I need help with a balance transfer issue.' },
-  { id: 'withdraw', emoji: '📤', label: 'Withdrawal Issue',  msg: 'Hi, I need help with a withdrawal.' },
-  { id: 'deposit',  emoji: '📥', label: 'Deposit Issue',     msg: 'Hi, I need help with a deposit.' },
-  { id: 'trading',  emoji: '📊', label: 'Trading Help',      msg: 'Hi, I have a trading-related question.' },
-  { id: 'signal',   emoji: '📡', label: 'Signal Issue',      msg: 'Hi, I have a question about signals.' },
-  { id: 'other',    emoji: '❓', label: 'Other Issue',        msg: 'Hi, I need help with something else.' },
+  { id: 'deposit',   emoji: '📥', label: 'Deposit Issue',        msg: 'Hi, I need help with a deposit.' },
+  { id: 'withdraw',  emoji: '📤', label: 'Withdrawal Issue',     msg: 'Hi, I need help with a withdrawal.' },
+  { id: 'transfer',  emoji: '💰', label: 'Transfer Balance',     msg: 'Hi, I need help with a balance transfer issue.' },
+  { id: 'kyc',       emoji: '🪪', label: 'KYC Verification',     msg: 'Hi, I need help with KYC verification.' },
+  { id: 'trading',   emoji: '📊', label: 'Trading / Markets',    msg: 'Hi, I have a trading or market-related question.' },
+  { id: 'signal',    emoji: '📡', label: 'Signal Issue',         msg: 'Hi, I have a question about signals.' },
+  { id: 'referral',  emoji: '🎁', label: 'Referral / Invite',    msg: 'Hi, I have a question about my referral or invite bonus.' },
+  { id: 'security',  emoji: '🔐', label: 'Security / Password',  msg: 'Hi, I need help with my account security or password.' },
+  { id: 'level',     emoji: '🏅', label: 'Membership Level',     msg: 'Hi, I have a question about membership levels and benefits.' },
+  { id: 'account',   emoji: '👤', label: 'Account Issue',        msg: 'Hi, I have a general account-related issue.' },
+  { id: 'other',     emoji: '❓', label: 'Other Issue',           msg: 'Hi, I need help with something else.' },
 ];
 
 // Happy-face icon for the FAB button
@@ -288,22 +293,50 @@ const LiveChat = () => {
           {/* Welcome / Topic Menu */}
           {showWelcome ? (
             <div style={{ padding: '18px 14px 6px', overflowY: 'auto' }}>
-              <div style={{ display: 'flex', gap: '10px', marginBottom: '18px' }}>
+              {/* Team info card */}
+              <div style={{
+                background: `linear-gradient(135deg, ${theme.primary}18, ${theme.brand || theme.primary}12)`,
+                border: `1px solid ${theme.cardBorder}`,
+                borderRadius: '14px', padding: '12px 14px', marginBottom: '14px',
+                display: 'flex', alignItems: 'center', gap: '12px',
+              }}>
+                <div style={{ display: 'flex', gap: '-6px' }}>
+                  {['K','Y','N'].map((l, i) => (
+                    <div key={l} style={{
+                      width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0,
+                      background: `linear-gradient(135deg, ${theme.primary}, ${theme.brand || theme.primary})`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '11px', fontWeight: '800', color: 'white',
+                      marginLeft: i === 0 ? 0 : '-8px', border: `2px solid ${theme.card}`,
+                    }}>{l}</div>
+                  ))}
+                </div>
+                <div>
+                  <div style={{ fontWeight: '700', fontSize: '13px', color: theme.text }}>KYNEX Support Team</div>
+                  <div style={{ fontSize: '11px', color: theme.up, display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                    <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: theme.up }} />
+                    Available · Replies in minutes
+                  </div>
+                </div>
+              </div>
+
+              {/* Bot greeting bubble */}
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '14px' }}>
                 <div style={{
-                  width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0,
+                  width: '30px', height: '30px', borderRadius: '50%', flexShrink: 0,
                   background: `linear-gradient(135deg, ${theme.primary}, ${theme.brand || theme.primary})`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   <BotFace />
                 </div>
                 <div style={{
-                  background: theme.inputBg, borderRadius: '4px 18px 18px 18px',
-                  padding: '12px 14px', fontSize: '13px', lineHeight: '1.6',
+                  background: theme.inputBg, borderRadius: '4px 16px 16px 16px',
+                  padding: '11px 13px', fontSize: '13px', lineHeight: '1.6',
                   color: theme.text, flex: 1,
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
                 }}>
-                  <span style={{ fontWeight: '700', display: 'block', marginBottom: '3px' }}>👋 Hi! Welcome to KYNEX Support</span>
-                  What's your issue today? Pick a topic or type your message below.
+                  <span style={{ fontWeight: '700', display: 'block', marginBottom: '2px' }}>👋 Hi! Welcome to KYNEX Support</span>
+                  What's your issue today? Select a topic below or type your message.
                 </div>
               </div>
 
