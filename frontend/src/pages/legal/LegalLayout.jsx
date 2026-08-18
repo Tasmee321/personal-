@@ -1,5 +1,6 @@
 import React from 'react';
-import { NavLink, Outlet, Link } from 'react-router-dom';
+import { NavLink, Outlet, Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { useTheme } from '../../ThemeContext';
 
 const navItems = [
@@ -13,17 +14,22 @@ const navItems = [
 
 const LegalLayout = () => {
   const { theme } = useTheme();
+  const navigate = useNavigate();
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: theme.bg, color: theme.text }}>
       {/* Top bar */}
       <div style={{
-        display: 'flex', alignItems: 'center', padding: '16px 24px',
+        display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 20px',
         borderBottom: `1px solid ${theme.cardBorder}`,
         backgroundColor: theme.card,
         backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)',
+        position: 'sticky', top: 0, zIndex: 30,
       }}>
-        <Link to="/" style={{ textDecoration: 'none', color: theme.brand, fontWeight: 'bold', fontSize: '20px' }}>
+        <button onClick={() => navigate('/dashboard', { replace: true })} style={{ background: theme.primarySoft, border: 'none', cursor: 'pointer', color: theme.text, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '34px', height: '34px', borderRadius: '10px', flexShrink: 0 }}>
+          <ArrowLeft size={18} />
+        </button>
+        <Link to="/dashboard" replace style={{ textDecoration: 'none', color: theme.brand, fontWeight: 'bold', fontSize: '19px' }}>
           KYNEX
         </Link>
       </div>
@@ -44,6 +50,7 @@ const LegalLayout = () => {
             <NavLink
               key={item.path}
               to={item.path}
+              replace
               style={({ isActive }) => ({
                 display: 'block', padding: '14px 18px', fontSize: '14px', textDecoration: 'none',
                 color: isActive ? theme.brand : theme.subtext,

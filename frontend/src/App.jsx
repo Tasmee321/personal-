@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Home from './pages/Home';
 import KynexAuth from './KynexAuth';
 import Dashboard from './pages/Dashboard';
@@ -37,6 +37,21 @@ function ProtectedRoute({ children }) {
   return isAuthenticated() ? children : <Navigate to="/auth" replace />;
 }
 
+function AnimatedRoutes({ children }) {
+  const location = useLocation();
+  return (
+    <div key={location.pathname} style={{ animation: 'kynexPageIn 0.22s ease-out' }}>
+      {children}
+      <style>{`
+        @keyframes kynexPageIn {
+          from { opacity: 0; transform: translateY(7px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 function App() {
   const authed = isAuthenticated();
 
@@ -47,7 +62,7 @@ function App() {
   return (
     <ThemeProvider>
       <Router>
-        <Routes>
+        <AnimatedRoutes><Routes>
           <Route path="/" element={authed ? <Navigate to="/dashboard" /> : <Home />} />
           <Route path="/auth" element={authed ? <Navigate to="/dashboard" /> : <KynexAuth />} />
 
@@ -81,10 +96,9 @@ function App() {
             <Route path="contact" element={<ContactUs />} />
             <Route path="member-guide" element={<MemberGuide />} />
           </Route>
-        </Routes>
+        </Routes></AnimatedRoutes>
 
-        {/* Global overlays — UpdateChecker has priority.
-            WhatsNewModal won't render while updatePending is true. */}
+        {/* Global overlays — rendered outside AnimatedRoutes so they don't re-animate on navigation */}
         {isAuthenticated() && <LiveChat />}
         <UpdateChecker onPendingChange={setUpdatePending} />
         <WhatsNewModal updatePending={updatePending} />

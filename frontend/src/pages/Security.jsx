@@ -295,19 +295,19 @@ const Security = () => {
 
               {/* Email */}
               <Row icon="email" label="Email" value={security.email} onClick={() => toggle('email')} theme={theme} />
-              {open === 'email' && <EmailPanel theme={theme} onDone={load} setMsg={setMsg} />}
+              {open === 'email' && <EmailPanel theme={theme} onDone={() => { load(); setOpen(null); }} setMsg={setMsg} />}
 
               <Divider theme={theme} />
 
               {/* Google 2FA */}
               <Row icon="google" label="Google Verification" value={security.twoFactorEnabled ? 'Linked' : 'Not Linked'} onClick={() => toggle('2fa')} theme={theme} />
-              {open === '2fa' && <TwoFactorPanel theme={theme} enabled={security.twoFactorEnabled} onDone={load} setMsg={setMsg} />}
+              {open === '2fa' && <TwoFactorPanel theme={theme} enabled={security.twoFactorEnabled} onDone={() => { load(); setOpen(null); }} setMsg={setMsg} />}
 
               <Divider theme={theme} />
 
               {/* Login Password */}
               <Row icon="password" label="Login Password" value="Change" onClick={() => toggle('password')} theme={theme} />
-              {open === 'password' && <PasswordPanel theme={theme} onDone={() => { load(); logout(); navigate('/auth'); }} setMsg={setMsg} />}
+              {open === 'password' && <PasswordPanel theme={theme} onDone={() => { setOpen(null); load(); logout(); navigate('/auth'); }} setMsg={setMsg} />}
 
               <Divider theme={theme} />
 
@@ -320,10 +320,10 @@ const Security = () => {
                 theme={theme}
               />
               {open === 'fund' && !security.fundPasswordSet && (
-                <FundPasswordPanel theme={theme} onDone={load} setMsg={setMsg} />
+                <FundPasswordPanel theme={theme} onDone={() => { load(); setOpen(null); }} setMsg={setMsg} />
               )}
               {open === 'fund-change' && security.fundPasswordSet && (
-                <ChangeFundPasswordPanel theme={theme} onDone={load} setMsg={setMsg} />
+                <ChangeFundPasswordPanel theme={theme} onDone={() => { load(); setOpen(null); }} setMsg={setMsg} />
               )}
 
               <Divider theme={theme} />

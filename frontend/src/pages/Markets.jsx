@@ -9,6 +9,11 @@ import ALL_COINS, { buildWsStreamUrl } from '../config/coins';
 const COINS = ALL_COINS;
 const FAV_KEY = 'kynex_favorites';
 
+// Module-level cache — survives component unmount/remount (navigation)
+const priceHistoryCache = {};
+const prevPriceCache = {};
+const lastUpdateCache = {};
+
 function loadFavorites() {
   try { return JSON.parse(localStorage.getItem(FAV_KEY)) || []; } catch { return []; }
 }
@@ -21,53 +26,52 @@ function fmtPrice(n) {
   return n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
+function fmtLocalTime(ts) {
+  if (!ts) return '';
+  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
 // Mini sparkline SVG
 function Sparkline({ prices, up, theme }) {
   if (!prices || prices.length < 2) {
-    return <div style={{ width: 56, height: 32 }} />;
+    return <div style={{ width: 76, height: 36 }} />;
   }
   const min = Math.min(...prices);
   const max = Math.max(...prices);
   const range = max - min || 1;
-  const W = 56, H = 32, pad = 2;
+  const W = 76, H = 36, pad = 3;
   const pts = prices.map((p, i) => {
     const x = pad + (i / (prices.length - 1)) * (W - pad * 2);
     const y = pad + ((max - p) / range) * (H - pad * 2);
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   });
   const color = up ? theme.up : theme.down;
-  const fillId = `sf-${up ? 'u' : 'd'}`;
+  const fillId = `sf-${Math.random().toString(36).slice(2, 6)}`;
   return (
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ overflow: 'visible' }}>
       <defs>
         <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.25" />
+          <stop offset="0%" stopColor={color} stopOpacity="0.28" />
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
-      {/* Fill area */}
-      <polygon
-        points={`${pad},${H} ${pts.join(' ')} ${W - pad},${H}`}
-        fill={`url(#${fillId})`}
-      />
-      {/* Line */}
-      <polyline
-        points={pts.join(' ')}
-        fill="none"
-        stroke={color}
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      {/* End dot */}
-      <circle
-        cx={pts[pts.length - 1].split(',')[0]}
-        cy={pts[pts.length - 1].split(',')[1]}
-        r="2.2"
-        fill={color}
-      />
+      <polygon points={`${pad},${H} ${pts.join(' ')} ${W - pad},${H}`} fill={`url(#${fillId})`} />
+      <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={pts[pts.length - 1].split(',')[0]} cy={pts[pts.length - 1].split(',')[1]} r="2.4" fill={color} />
     </svg>
   );
+}
+
+// Fetch initial klines from Binance (1-minute candles, last 60 points)
+async function fetchKlines(symbol) {
+  if (priceHistoryCache[symbol] && priceHistoryCache[symbol].length >= 10) return;
+  try {
+    const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1m&limit=60`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const closes = data.map(k => parseFloat(k[4]));
+    priceHistoryCache[symbol] = closes;
+  } catch { /* network */ }
 }
 
 const Markets = () => {
@@ -77,8 +81,9 @@ const Markets = () => {
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState('All');
   const [favorites, setFavorites] = useState(loadFavorites);
-  const historyRef = useRef({});   // rolling price history per coin (last 30 points)
-  const prevPriceRef = useRef({}); // previous price for direction detection
+  // Use module-level caches so data survives navigation
+  const historyRef = useRef(priceHistoryCache);
+  const prevPriceRef = useRef(prevPriceCache);
 
   const toggleFav = useCallback((symbol) => {
     setFavorites((prev) => {
@@ -86,6 +91,16 @@ const Markets = () => {
       localStorage.setItem(FAV_KEY, JSON.stringify(next));
       return next;
     });
+  }, []);
+
+  // Fetch klines for initial sparkline data on first mount
+  useEffect(() => {
+    const load = async () => {
+      for (const coin of COINS) {
+        await fetchKlines(coin.symbol);
+      }
+    };
+    load();
   }, []);
 
   useEffect(() => {
@@ -96,16 +111,16 @@ const Markets = () => {
       const symbol = data.s;
       const newPrice = parseFloat(data.c);
 
-      // Rolling price history (last 30 points)
-      const prev = historyRef.current[symbol] || [];
-      historyRef.current[symbol] = [...prev.slice(-29), newPrice];
+      // Rolling price history (last 60 points) — persisted in module-level cache
+      const prev = priceHistoryCache[symbol] || [];
+      priceHistoryCache[symbol] = [...prev.slice(-59), newPrice];
+      lastUpdateCache[symbol] = Date.now();
 
-      // Price direction
-      const prevPrice = prevPriceRef.current[symbol];
+      const prevPrice = prevPriceCache[symbol];
       const direction = prevPrice != null
         ? (newPrice > prevPrice ? 'up' : newPrice < prevPrice ? 'down' : null)
         : null;
-      prevPriceRef.current[symbol] = newPrice;
+      prevPriceCache[symbol] = newPrice;
 
       setTickers((prev) => ({
         ...prev,
@@ -115,6 +130,7 @@ const Markets = () => {
           volume: parseFloat(data.q),
           direction,
           flashKey: (prev[symbol]?.flashKey || 0) + 1,
+          updatedAt: Date.now(),
         },
       }));
     };
@@ -169,8 +185,8 @@ const Markets = () => {
       {/* Column headers */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: theme.faint, fontSize: '11px', padding: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
         <span style={{ flex: 1 }}>Pair</span>
-        <span style={{ width: '60px', textAlign: 'center' }}>7D Chart</span>
-        <span style={{ minWidth: '90px', textAlign: 'right' }}>Price / Change</span>
+        <span style={{ width: '76px', textAlign: 'center' }}>Chart</span>
+        <span style={{ minWidth: '90px', textAlign: 'right' }}>Price / 24h</span>
       </div>
 
       <div style={{
@@ -188,15 +204,17 @@ const Markets = () => {
 
         {rows.map((coin, i) => {
           const isUp = coin.live ? coin.live.change >= 0 : true;
-          const prices = historyRef.current[coin.symbol] || [];
+          const prices = priceHistoryCache[coin.symbol] || [];
+          const updAt = lastUpdateCache[coin.symbol];
           return (
             <div
               key={coin.symbol}
               style={{
                 display: 'flex', alignItems: 'center', gap: '8px',
-                padding: '11px 0',
+                padding: '10px 0',
                 borderTop: i === 0 ? 'none' : `1px solid ${theme.cardBorder}`,
                 cursor: 'pointer',
+                transition: 'background 0.15s',
               }}
               onClick={() => navigate('/trade', { state: { pair: coin.pair } })}
             >
@@ -214,7 +232,7 @@ const Markets = () => {
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 'bold', fontSize: '13px', whiteSpace: 'nowrap' }}>{coin.pair}</div>
                   <div style={{ color: theme.faint, fontSize: '10px' }}>
-                    {coin.live ? `Vol ${(coin.live.volume / 1_000_000).toFixed(1)}M` : '—'}
+                    {updAt ? fmtLocalTime(updAt) : (coin.live ? `Vol ${(coin.live.volume / 1_000_000).toFixed(1)}M` : '—')}
                   </div>
                 </div>
               </div>
@@ -226,7 +244,6 @@ const Markets = () => {
 
               {/* Price + change */}
               <div style={{ textAlign: 'right', minWidth: '88px', flexShrink: 0 }}>
-                {/* key trick: remount on each flashKey → restarts flash animation */}
                 <div
                   key={`${coin.symbol}-${coin.live?.flashKey || 0}`}
                   style={{
