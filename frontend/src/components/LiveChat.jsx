@@ -5,6 +5,7 @@ import { getToken } from '../utils/auth';
 import { API_URL } from '../config';
 
 const DRAG_KEY = 'kynex_chat_btn_pos';
+const IDLE_MS = 4000;
 
 const LiveChat = () => {
   const { theme } = useTheme();
@@ -14,11 +15,15 @@ const LiveChat = () => {
   const [sending, setSending] = useState(false);
   const [unread, setUnread] = useState(0);
   const [adminTyping, setAdminTyping] = useState(false);
+  const [isIdle, setIsIdle] = useState(false);
+  const [pressing, setPressing] = useState(false);
   const bottomRef = useRef(null);
   const pollRef = useRef(null);
   const typingPollRef = useRef(null);
   const typingTimerRef = useRef(null);
   const lastTypingSentRef = useRef(0);
+  const idleTimerRef = useRef(null);
+  const hasDraggedRef = useRef(false);
 
   // Draggable button state
   const savedPos = (() => { try { return JSON.parse(localStorage.getItem(DRAG_KEY)); } catch { return null; } })();
@@ -26,6 +31,23 @@ const LiveChat = () => {
   const dragRef = useRef(null);
   const dragging = useRef(false);
   const dragOffset = useRef({ x: 0, y: 0 });
+
+  // Idle peek — restart timer on any interaction
+  const resetIdle = useCallback(() => {
+    setIsIdle(false);
+    clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = setTimeout(() => setIsIdle(true), IDLE_MS);
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      setIsIdle(false);
+      clearTimeout(idleTimerRef.current);
+    } else {
+      resetIdle();
+    }
+    return () => clearTimeout(idleTimerRef.current);
+  }, [open, resetIdle]);
 
   const fetchHistory = useCallback(async () => {
     try {
@@ -44,7 +66,6 @@ const LiveChat = () => {
     } catch { /* network */ }
   }, [open]);
 
-  // Called only when user opens chat — marks admin msgs as read on server
   const markMessagesRead = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/livechat/history?markRead=1`, {
@@ -141,7 +162,10 @@ const LiveChat = () => {
   // Drag logic
   const onMouseDown = (e) => {
     if (open) return;
+    resetIdle();
+    hasDraggedRef.current = false;
     dragging.current = true;
+    setPressing(true);
     dragOffset.current = {
       x: e.clientX - (window.innerWidth - btnPos.right - 56),
       y: e.clientY - (window.innerHeight - btnPos.bottom - 56),
@@ -150,7 +174,10 @@ const LiveChat = () => {
   };
   const onTouchStart = (e) => {
     if (open) return;
+    resetIdle();
+    hasDraggedRef.current = false;
     dragging.current = true;
+    setPressing(true);
     const t = e.touches[0];
     dragOffset.current = {
       x: t.clientX - (window.innerWidth - btnPos.right - 56),
@@ -160,6 +187,8 @@ const LiveChat = () => {
   useEffect(() => {
     const onMove = (e) => {
       if (!dragging.current) return;
+      hasDraggedRef.current = true;
+      setPressing(false);
       const cx = e.touches ? e.touches[0].clientX : e.clientX;
       const cy = e.touches ? e.touches[0].clientY : e.clientY;
       const newRight = Math.max(8, Math.min(window.innerWidth - 64, window.innerWidth - (cx - dragOffset.current.x) - 56));
@@ -169,7 +198,10 @@ const LiveChat = () => {
     const onUp = () => {
       if (dragging.current) {
         dragging.current = false;
+        setPressing(false);
         setBtnPos(pos => { localStorage.setItem(DRAG_KEY, JSON.stringify(pos)); return pos; });
+        clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = setTimeout(() => setIsIdle(true), IDLE_MS);
       }
     };
     window.addEventListener('mousemove', onMove);
@@ -186,6 +218,19 @@ const LiveChat = () => {
 
   const chatBottom = btnPos.bottom + 64;
   const chatRight = btnPos.right;
+
+  // Idle peek — slide half-off toward nearest edge
+  const isOnRightSide = btnPos.right < window.innerWidth / 2;
+  const peekTranslate = isIdle && !open
+    ? `translateX(${isOnRightSide ? '28px' : '-28px'})`
+    : 'translateX(0)';
+
+  // 3D button shadow — raised when normal, pressed when tapped
+  const btnShadow = pressing
+    ? `0 1px 4px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)`
+    : `0 6px 0 rgba(0,0,0,0.28), 0 10px 28px rgba(0,0,0,0.22), 0 4px 18px ${theme.brand || '#F59E0B'}70, inset 0 1px 0 rgba(255,255,255,0.3)`;
+
+  const btnTransform = pressing ? 'translateY(4px) scale(0.94)' : 'scale(1)';
 
   return (
     <>
@@ -294,7 +339,6 @@ const LiveChat = () => {
                 </div>
               </div>
             ))}
-            {/* Typing indicator */}
             {adminTyping && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                 <div style={{
@@ -369,55 +413,89 @@ const LiveChat = () => {
         </div>
       )}
 
-      {/* FAB Button — draggable */}
+      {/* FAB — draggable, 3D, idle-peek */}
       <div
-        ref={dragRef}
-        onMouseDown={onMouseDown}
-        onTouchStart={onTouchStart}
-        onClick={() => { if (!dragging.current) setOpen(o => !o); }}
         style={{
           position: 'fixed',
           bottom: `${btnPos.bottom}px`,
           right: `${btnPos.right}px`,
           zIndex: 999,
-          width: '56px', height: '56px',
-          borderRadius: '50%',
-          background: open
-            ? `linear-gradient(135deg, ${theme.primary}, ${theme.brand || theme.primary})`
-            : `linear-gradient(135deg, ${theme.primary}, ${theme.brand || theme.primary})`,
-          border: 'none', cursor: 'grab',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: `0 6px 24px ${theme.primary}60, 0 2px 8px rgba(0,0,0,0.2)`,
-          transition: 'transform 0.15s, box-shadow 0.15s',
-          userSelect: 'none',
-          touchAction: 'none',
+          width: '56px',
+          height: '56px',
+          transform: peekTranslate,
+          transition: dragging.current ? 'none' : 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
         }}
-        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.08)'; }}
-        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
       >
-        {open
-          ? <X size={22} color="white" />
-          : <MessageCircle size={22} color="white" />
-        }
-        {!open && unread > 0 && (
-          <div style={{
-            position: 'absolute', top: '-3px', right: '-3px',
-            minWidth: '20px', height: '20px', borderRadius: '10px',
-            backgroundColor: '#EF4444',
-            border: '2px solid white',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '10px', color: 'white', fontWeight: '800',
-            padding: '0 4px', boxSizing: 'border-box',
-          }}>
-            {unread > 9 ? '9+' : unread}
-          </div>
+        {/* Pulse rings — only when idle-peeked is off and chat closed */}
+        {!open && !isIdle && (
+          <>
+            <div style={{
+              position: 'absolute', top: '50%', left: '50%',
+              width: '56px', height: '56px', borderRadius: '50%',
+              background: `radial-gradient(circle, ${theme.brand || '#F59E0B'} 0%, ${theme.primary || '#3B82F6'} 100%)`,
+              animation: 'chatPulse 2.4s ease-out infinite',
+              pointerEvents: 'none',
+            }} />
+            <div style={{
+              position: 'absolute', top: '50%', left: '50%',
+              width: '56px', height: '56px', borderRadius: '50%',
+              background: `radial-gradient(circle, ${theme.brand || '#F59E0B'} 0%, ${theme.primary || '#3B82F6'} 100%)`,
+              animation: 'chatPulse 2.4s ease-out infinite 1.2s',
+              pointerEvents: 'none',
+            }} />
+          </>
         )}
+
+        {/* Main 3D button */}
+        <div
+          ref={dragRef}
+          onMouseDown={onMouseDown}
+          onTouchStart={onTouchStart}
+          onClick={() => {
+            if (!hasDraggedRef.current) { setOpen(o => !o); resetIdle(); }
+          }}
+          style={{
+            position: 'relative',
+            width: '56px', height: '56px',
+            borderRadius: '50%',
+            background: open
+              ? `linear-gradient(145deg, ${theme.primary}, #6366F1)`
+              : `linear-gradient(145deg, ${theme.brand || '#F59E0B'}, ${theme.primary || '#3B82F6'})`,
+            border: 'none',
+            cursor: dragging.current ? 'grabbing' : 'grab',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: btnShadow,
+            transform: btnTransform,
+            transition: 'transform 0.12s ease, box-shadow 0.12s ease',
+            userSelect: 'none',
+            touchAction: 'none',
+          }}
+        >
+          {open ? <X size={22} color="white" /> : <MessageCircle size={22} color="white" />}
+          {!open && unread > 0 && (
+            <div style={{
+              position: 'absolute', top: '-3px', right: '-3px',
+              minWidth: '20px', height: '20px', borderRadius: '10px',
+              backgroundColor: '#EF4444',
+              border: '2px solid white',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '10px', color: 'white', fontWeight: '800',
+              padding: '0 4px', boxSizing: 'border-box',
+            }}>
+              {unread > 9 ? '9+' : unread}
+            </div>
+          )}
+        </div>
       </div>
 
       <style>{`
         @keyframes chatBounce {
           0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
           30% { transform: translateY(-5px); opacity: 1; }
+        }
+        @keyframes chatPulse {
+          0%   { transform: translate(-50%, -50%) scale(1);   opacity: 0.65; }
+          100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
         }
       `}</style>
     </>
