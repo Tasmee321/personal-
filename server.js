@@ -12,6 +12,8 @@ import { v2 as cloudinary } from "cloudinary";
 import helmet from "helmet";
 import webpush from "web-push";
 import { initDb, dbRead, dbWrite } from "./db.js";
+import { initializeApp as initFirebaseApp, cert } from 'firebase-admin/app';
+import { getMessaging } from 'firebase-admin/messaging';
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -459,6 +461,19 @@ function calculateLevel(uid, users, accounts) {
 
 const PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,}$/;
 
+// ---- Firebase Admin init ----
+let fcmMessaging = null;
+try {
+  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+  if (serviceAccount.project_id) {
+    initFirebaseApp({ credential: cert(serviceAccount) });
+    fcmMessaging = getMessaging();
+    console.log('Firebase Admin initialized');
+  }
+} catch (e) {
+  console.error('Firebase Admin init failed:', e.message);
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "15mb" })); // KYC document photos are small base64 images
@@ -611,6 +626,7 @@ async function pushMessage(userId, title, body) {
   if (!all[userId]) all[userId] = [];
   all[userId].unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, title, body, read: false, at: Date.now() });
   await writeAllMessages(all);
+  sendFcmNotification(userId, title, body).catch(() => {});
 }
 
 // ---- Web Push helpers ----
@@ -659,6 +675,27 @@ async function sendWebPushAll(title, body) {
       Promise.allSettled(userSubs.map(sub => webpush.sendNotification(sub, JSON.stringify({ title, body, icon: '/icons/icon-192.png', tag: 'kynex-broadcast', renotify: true })).catch(() => {})))
     ));
   } catch { /* ignore */ }
+}
+
+async function sendFcmNotification(userId, title, body) {
+  if (!fcmMessaging) return;
+  try {
+    const users = await readUsers();
+    const user = users.find(u => u.id === userId);
+    const fcmToken = user?.fcmToken;
+    if (!fcmToken) return;
+    await fcmMessaging.send({
+      token: fcmToken,
+      notification: { title, body },
+      android: { priority: 'high', notification: { sound: 'default' } },
+    });
+  } catch (e) {
+    if (e.code === 'messaging/registration-token-not-registered') {
+      const users = await readUsers();
+      const user = users.find(u => u.id === userId);
+      if (user) { user.fcmToken = null; await writeUsers(users); }
+    }
+  }
 }
 
 // ---- Live Chat helpers ----
@@ -1776,6 +1813,7 @@ app.post("/api/admin/livechat/:uid/reply", async (req, res) => {
   chats[uid].messages.push(msg);
   await writeLiveChats(chats);
   sendWebPush(uid, 'KYNEX Support', String(text).trim()).catch(() => {});
+  sendFcmNotification(uid, 'KYNEX Support', String(text).trim()).catch(() => {});
   res.json({ ok: true, message: msg });
 });
 
@@ -3219,6 +3257,17 @@ app.post("/api/admin/livechat/broadcast", async (req, res) => {
   await writeLiveChats(chats);
   sendWebPushAll('📢 KYNEX Announcement', String(text).trim()).catch(() => {});
   res.json({ ok: true, sent });
+});
+
+app.post("/api/fcm-token", authenticate, async (req, res) => {
+  const { token } = req.body || {};
+  if (!token) return res.status(400).json({ error: "FCM token required." });
+  const users = await readUsers();
+  const me = users.find(u => u.id === req.user.sub);
+  if (!me) return res.status(404).json({ error: "User not found." });
+  me.fcmToken = token;
+  await writeUsers(users);
+  res.json({ ok: true });
 });
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
