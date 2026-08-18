@@ -8,9 +8,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <style>
       *, *::before, *::after { box-sizing: border-box; }
+      html, body { background-color: #F0F2F8; }
+      html.kynex-dark, html.kynex-dark body { background-color: #080C18; }
       body { margin: 0; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
     </style>
-    <meta name="theme-color" content="#080C18" />
+    <meta name="theme-color" content="#F0F2F8" />
+    <script>
+      // Runs before first paint: apply the saved theme to the page background and the
+      // browser/status-bar colour so a refresh never flashes the wrong colour under the notch.
+      (function () {
+        try {
+          var dark = localStorage.getItem('kynex_theme_mode') === 'dark';
+          var bg = dark ? '#080C18' : '#F0F2F8';
+          if (dark) document.documentElement.classList.add('kynex-dark');
+          document.documentElement.style.backgroundColor = bg;
+          var m = document.querySelector('meta[name="theme-color"]');
+          if (m) m.setAttribute('content', bg);
+        } catch (e) {}
+      })();
+    </script>
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="KYNEX" />

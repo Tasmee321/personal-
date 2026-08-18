@@ -21,6 +21,7 @@ const TransferPage = () => {
   const [balance, setBalance] = useState(0);
   const [signalBalance, setSignalBalance] = useState(0);
   const [trades, setTrades] = useState([]);
+  const [volumeData, setVolumeData] = useState(null);
   const [penaltyWarning, setPenaltyWarning] = useState(null);
   const [successPopup, setSuccessPopup] = useState(null);
 
@@ -32,6 +33,7 @@ const TransferPage = () => {
         setBalance(data.balance || 0);
         setSignalBalance(data.signalBalance || 0);
         setTrades((data.trades || []).filter(t => t.type === 'transfer'));
+        if (data.volumeData) setVolumeData(data.volumeData);
       }
     } catch {}
   };
@@ -179,6 +181,28 @@ const TransferPage = () => {
               </div>
             </div>
           )}
+
+          {/* Volume progress — shown before the user hits the penalty warning */}
+          {direction === 'toSpot' && volumeData && volumeData.requiredVolume > 0 && (() => {
+            const done = volumeData.tradedVolume >= volumeData.requiredVolume;
+            const pct = Math.min(100, (volumeData.tradedVolume / volumeData.requiredVolume) * 100);
+            const remaining = Math.max(0, volumeData.requiredVolume - volumeData.tradedVolume);
+            return (
+              <div style={{ padding: '10px 14px', borderRadius: '10px', backgroundColor: theme.card, border: `1px solid ${theme.cardBorder}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: theme.subtext, marginBottom: '5px' }}>
+                  <span>Trading volume {done ? '✓ complete' : ''}</span>
+                  <span style={{ fontWeight: 600, color: done ? theme.up : theme.text }}>{Math.round(pct)}%</span>
+                </div>
+                <div style={{ height: '6px', borderRadius: '3px', backgroundColor: theme.inputBg || theme.cardBorder, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', borderRadius: '3px', background: done ? theme.upGradient : theme.brandGradient, width: `${pct}%`, transition: 'width 0.4s ease' }} />
+                </div>
+                <div style={{ fontSize: '10px', color: theme.faint, marginTop: '5px' }}>
+                  {fmt(volumeData.tradedVolume)} / {fmt(volumeData.requiredVolume)} USDT
+                  {done ? ' · this transfer is penalty-free' : ` · ${fmt(remaining)} USDT more to avoid the 20% penalty`}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Notice */}
           <div style={{ padding: '10px 14px', borderRadius: '10px', backgroundColor: direction === 'toSpot' ? 'rgba(245,158,11,0.06)' : 'rgba(99,102,241,0.06)', border: `1px solid ${direction === 'toSpot' ? 'rgba(245,158,11,0.18)' : 'rgba(99,102,241,0.12)'}` }}>

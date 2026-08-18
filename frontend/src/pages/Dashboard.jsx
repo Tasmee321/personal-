@@ -259,21 +259,21 @@ const Dashboard = () => {
       }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-            <p style={{ color: theme.subtext, fontSize: '13px', margin: 0 }}>Total Balance</p>
-            <button onClick={() => { const next = !hideBalance; setHideBalance(next); localStorage.setItem('kynex_hide_balance', next ? '1' : '0'); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', color: theme.subtext }}>
+            <p style={{ color: 'rgba(26,19,5,0.72)', fontSize: '13px', margin: 0 }}>Total Balance</p>
+            <button onClick={() => { const next = !hideBalance; setHideBalance(next); localStorage.setItem('kynex_hide_balance', next ? '1' : '0'); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', color: 'rgba(26,19,5,0.72)' }}>
               {hideBalance ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
-          <h2 style={{ margin: 0, fontSize: '26px', color: theme.text }}>
+          <h2 style={{ margin: 0, fontSize: '26px', color: '#1A1305' }}>
             {hideBalance ? '••••••' : (balance === null ? '...' : totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}
-            <span style={{ fontSize: '14px', color: theme.subtext, marginLeft: '6px' }}>{hideBalance ? '' : 'USDT'}</span>
+            <span style={{ fontSize: '14px', color: 'rgba(26,19,5,0.72)', marginLeft: '6px' }}>{hideBalance ? '' : 'USDT'}</span>
           </h2>
           {!hideBalance && balance !== null && (
             <div style={{ display: 'flex', gap: '12px', marginTop: '6px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '11px', color: theme.subtext }}>Spot <span style={{ color: theme.text, fontWeight: '600' }}>{balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
-              {signalBalance > 0 && <span style={{ fontSize: '11px', color: theme.subtext }}>Signal <span style={{ color: theme.text, fontWeight: '600' }}>{signalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>}
-              {spotValue > 0 && <span style={{ fontSize: '11px', color: theme.subtext }}>Holdings <span style={{ color: theme.text, fontWeight: '600' }}>{spotValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>}
-              {(signalsLocked + futuresLocked) > 0 && <span style={{ fontSize: '11px', color: theme.subtext }}>In trades <span style={{ color: theme.text, fontWeight: '600' }}>{(signalsLocked + futuresLocked).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>}
+              <span style={{ fontSize: '11px', color: 'rgba(26,19,5,0.72)' }}>Spot <span style={{ color: '#1A1305', fontWeight: '600' }}>{balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
+              {signalBalance > 0 && <span style={{ fontSize: '11px', color: 'rgba(26,19,5,0.72)' }}>Signal <span style={{ color: '#1A1305', fontWeight: '600' }}>{signalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>}
+              {spotValue > 0 && <span style={{ fontSize: '11px', color: 'rgba(26,19,5,0.72)' }}>Holdings <span style={{ color: '#1A1305', fontWeight: '600' }}>{spotValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>}
+              {(signalsLocked + futuresLocked) > 0 && <span style={{ fontSize: '11px', color: 'rgba(26,19,5,0.72)' }}>In trades <span style={{ color: '#1A1305', fontWeight: '600' }}>{(signalsLocked + futuresLocked).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>}
             </div>
           )}
         </div>

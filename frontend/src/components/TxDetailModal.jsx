@@ -13,11 +13,11 @@ function glassCard(theme) {
 
 const NETWORK_NAMES = { trc20: 'Tron (TRC20)', erc20: 'Ethereum (ERC20)', bep20: 'BNB Smart Chain (BEP20)' };
 
-function statusColor(status) {
-  if (['done', 'completed', 'approved', 'confirmed'].includes(status)) return '#10B981';
-  if (status === 'pending') return '#F59E0B';
-  if (status === 'rejected') return '#EF4444';
-  return '#9CA3AF';
+function statusColor(status, theme) {
+  if (['done', 'completed', 'approved', 'confirmed'].includes(status)) return theme.up;
+  if (status === 'pending') return theme.brand;
+  if (status === 'rejected') return theme.down;
+  return theme.faint;
 }
 function statusLabel(status) {
   if (['done', 'completed', 'approved'].includes(status)) return 'Completed';
@@ -42,9 +42,9 @@ export default function TxDetailModal({ item, type, onClose, theme }) {
 
   const rows = isDeposit ? [
     { label: 'Type',         value: 'Deposit' },
-    { label: 'Amount',       value: `+${fmt(item.amount)} USDT`, color: '#10B981' },
+    { label: 'Amount',       value: `+${fmt(item.amount)} USDT`, color: theme.up },
     { label: 'Network',      value: networkName },
-    { label: 'Status',       value: statusLabel(item.status), color: statusColor(item.status) },
+    { label: 'Status',       value: statusLabel(item.status), color: statusColor(item.status, theme) },
     { label: 'Submitted',    value: fmtDate(item.createdAt) },
     { label: 'Confirmed',    value: fmtDate(item.processedAt) },
     { label: 'TX Hash',      value: item.txHash || '—', copyable: !!item.txHash },
@@ -52,11 +52,11 @@ export default function TxDetailModal({ item, type, onClose, theme }) {
   ] : [
     { label: 'Type',         value: 'Withdrawal' },
     { label: 'Requested',    value: `${fmt(item.amount)} USDT` },
-    { label: 'Fee',          value: `-${fmt(fee)} USDT`, color: '#EF4444' },
-    { label: 'You Receive',  value: `${fmt(netPayout)} USDT`, color: '#10B981' },
+    { label: 'Fee',          value: `-${fmt(fee)} USDT`, color: theme.down },
+    { label: 'You Receive',  value: `${fmt(netPayout)} USDT`, color: theme.up },
     { label: 'Network',      value: networkName },
     { label: 'Wallet',       value: item.walletAddress || item.address || '—', copyable: !!(item.walletAddress || item.address) },
-    { label: 'Status',       value: statusLabel(item.status), color: statusColor(item.status) },
+    { label: 'Status',       value: statusLabel(item.status), color: statusColor(item.status, theme) },
     { label: 'Submitted',    value: fmtDate(item.createdAt || item.requestedAt) },
   ];
 
@@ -71,7 +71,7 @@ export default function TxDetailModal({ item, type, onClose, theme }) {
             <span style={{ fontSize: '15px', fontWeight: '700', color: theme.text }}>Transaction Detail</span>
             <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
               <span style={{ fontSize: '10px', fontWeight: '700', color: theme.primary, backgroundColor: theme.primarySoft, padding: '2px 8px', borderRadius: '6px' }}>{isDeposit ? 'Deposit' : 'Withdraw'}</span>
-              <span style={{ fontSize: '10px', fontWeight: '700', color: statusColor(item.status), backgroundColor: statusColor(item.status) + '1A', padding: '2px 8px', borderRadius: '6px' }}>{statusLabel(item.status)}</span>
+              <span style={{ fontSize: '10px', fontWeight: '700', color: statusColor(item.status, theme), backgroundColor: statusColor(item.status, theme) + '1A', padding: '2px 8px', borderRadius: '6px' }}>{statusLabel(item.status)}</span>
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.subtext, display: 'flex', padding: '4px' }}>
@@ -80,8 +80,8 @@ export default function TxDetailModal({ item, type, onClose, theme }) {
         </div>
 
         {/* Amount hero */}
-        <div style={{ background: isDeposit ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)', borderRadius: '14px', padding: '16px', textAlign: 'center', marginBottom: '16px', border: isDeposit ? '1px solid rgba(16,185,129,0.15)' : '1px solid rgba(239,68,68,0.15)' }}>
-          <div style={{ fontSize: '26px', fontWeight: '800', color: isDeposit ? '#10B981' : '#EF4444' }}>
+        <div style={{ background: isDeposit ? theme.upSoft : theme.downSoft, borderRadius: '14px', padding: '16px', textAlign: 'center', marginBottom: '16px', border: `1px solid ${(isDeposit ? theme.up : theme.down)}26` }}>
+          <div style={{ fontSize: '26px', fontWeight: '800', color: isDeposit ? theme.up : theme.down }}>
             {isDeposit ? '+' : '-'}{fmt(item.amount)} USDT
           </div>
           <div style={{ fontSize: '11px', color: theme.subtext, marginTop: '4px' }}>{isDeposit ? 'Deposited amount' : 'Requested amount (before fee)'}</div>
@@ -96,7 +96,7 @@ export default function TxDetailModal({ item, type, onClose, theme }) {
                 <span style={{ fontSize: '12px', fontWeight: '600', color: row.color || theme.text, wordBreak: 'break-all', textAlign: 'right', maxWidth: '220px', overflow: 'hidden', whiteSpace: row.copyable ? 'normal' : 'nowrap', textOverflow: 'ellipsis' }}>{row.value}</span>
                 {row.copyable && row.value !== '—' && (
                   <button onClick={() => copy(row.value)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.primary, flexShrink: 0, padding: '2px' }}>
-                    {copied ? <CheckCheck size={14} color="#10B981" /> : <Copy size={14} />}
+                    {copied ? <CheckCheck size={14} color={theme.up} /> : <Copy size={14} />}
                   </button>
                 )}
               </div>

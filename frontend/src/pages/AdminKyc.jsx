@@ -671,6 +671,7 @@ This cannot be undone!`)) return;
   const filteredUsers = users.filter(u => {
     if (userFilter === 'deposited' && u.totalDeposited <= 0) return false;
     if (userFilter === 'kyc' && u.kycStatus !== 'certified') return false;
+    if (userFilter === 'flagged' && !(u.flags || []).length) return false;
     if (!userSearch.trim()) return true;
     const q = userSearch.toLowerCase();
     return u.name?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q) || String(u.uid).includes(q);
@@ -897,12 +898,12 @@ This cannot be undone!`)) return;
             <div style={{ marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
               <input type="text" placeholder="Search by name, email, or UID..." value={userSearch}
                 onChange={(e) => setUserSearch(e.target.value)} style={{ ...inputStyle, maxWidth: '300px' }} />
-              {['all', 'deposited', 'kyc'].map(f => (
+              {['all', 'deposited', 'kyc', 'flagged'].map(f => (
                 <button key={f} onClick={() => setUserFilter(f)} style={{
                   padding: '8px 16px', borderRadius: '8px', border: 'none', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer',
                   backgroundColor: userFilter === f ? theme.primary : theme.card, color: userFilter === f ? 'white' : theme.subtext,
                   border: `1px solid ${userFilter === f ? theme.primary : theme.cardBorder}`,
-                }}>{f === 'all' ? 'All Users' : f === 'deposited' ? 'Deposited' : 'KYC Verified'}</button>
+                }}>{f === 'all' ? 'All Users' : f === 'deposited' ? 'Deposited' : f === 'kyc' ? 'KYC Verified' : `⚠ Flagged (${users.filter(x => (x.flags || []).length).length})`}</button>
               ))}
               <button onClick={exportUsersCsv} title="Download the currently filtered list as CSV" style={{
                 marginLeft: 'auto', padding: '8px 14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer',
@@ -923,7 +924,12 @@ This cannot be undone!`)) return;
                     <tr key={u.id} style={{ borderBottom: `1px solid ${theme.cardBorder}`, cursor: 'pointer' }}
                       onClick={() => { setSelectedUser(u); setNewLevel(String(u.level || 0)); setNewLimit(String(u.dailySignalLimit || 3)); setUserDetailTab('info'); setUserDeposits([]); setUserWithdrawals([]); setUserSignals([]); setTeamTree(null); setTeamData(null); setTeamUser(null); }}>
                       <td style={{ padding: '10px 8px', fontFamily: 'monospace', fontSize: '12px' }}>{u.uid}</td>
-                      <td style={{ padding: '10px 8px', fontWeight: '600' }}>{u.name}</td>
+                      <td style={{ padding: '10px 8px', fontWeight: '600' }}>
+                        {u.name}
+                        {(u.flags || []).length > 0 && (
+                          <span title={u.flags.join('\n')} style={{ marginLeft: '6px', fontSize: '10px', fontWeight: 'bold', padding: '1px 6px', borderRadius: '6px', backgroundColor: theme.downSoft, color: theme.down, cursor: 'help' }}>⚠ {u.flags.length}</span>
+                        )}
+                      </td>
                       <td style={{ padding: '10px 8px', color: theme.subtext }}>{u.email}</td>
                       <td style={{ padding: '10px 8px' }}>
                         <span style={{
@@ -1030,7 +1036,14 @@ This cannot be undone!`)) return;
             {userDetailTab === 'info' && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
               <div style={card}>
                 <div style={{ fontWeight: 'bold', fontSize: '16px', marginBottom: '4px' }}>{selectedUser.name}</div>
-                <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '16px' }}>{selectedUser.email} · UID {selectedUser.uid}</div>
+                <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: (selectedUser.flags || []).length ? '8px' : '16px' }}>{selectedUser.email} · UID {selectedUser.uid}</div>
+                {(selectedUser.flags || []).length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '16px' }}>
+                    {selectedUser.flags.map(f => (
+                      <span key={f} style={{ fontSize: '10px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '6px', backgroundColor: theme.downSoft, color: theme.down }}>⚠ {f}</span>
+                    ))}
+                  </div>
+                )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
                   <div style={{ padding: '10px', borderRadius: '8px', backgroundColor: theme.bg }}>
                     <div style={{ fontSize: '11px', color: theme.subtext }}>Spot Balance</div>

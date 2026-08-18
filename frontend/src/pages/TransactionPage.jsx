@@ -89,7 +89,7 @@ function DetailModal({ item, onClose, theme }) {
         {/* Amount hero */}
         {(item.category === 'Deposit' || item.category === 'Withdraw') && (
           <div style={{
-            background: item.category === 'Deposit' ? theme.upGradient || theme.upSoft : theme.downGradient || theme.downSoft,
+            background: item.category === 'Deposit' ? theme.upSoft : theme.downSoft,
             borderRadius: '14px', padding: '16px', textAlign: 'center', marginBottom: '16px',
           }}>
             <div style={{ fontSize: '26px', fontWeight: '800', color: item.category === 'Deposit' ? theme.up : theme.down }}>

@@ -1018,8 +1018,22 @@ async function getLivePrice(pair) {
 // Settles any demo position whose window has passed.
 // Checks active candle overrides — if override matches pair at settle time,
 // forces win/loss based on override direction vs user direction.
-async function settleDuePositions(account) {
+// Human label for a settled signal — used in the push notification
+function describeSignalResult(pos) {
+  const pair = (pos.pair || '').replace('/USDT', '');
+  const dir = pos.direction === 'up' ? 'UP ▲' : 'DOWN ▼';
+  const kind = pos.isReferralBonus ? 'Referral bonus signal' : 'Signal';
+  if (pos.won) {
+    return { title: `✅ ${kind} won — +$${(pos.profit || 0).toFixed(2)}`, body: `${pair} ${dir} settled in your favour. Profit $${(pos.profit || 0).toFixed(2)} USDT added to your Signal balance.` };
+  }
+  return { title: `❌ ${kind} lost`, body: `${pair} ${dir} did not settle in your favour. Your stake was returned to your Signal balance. Better luck next time!` };
+}
+
+// Settles due positions on `account`. When userId is given, the user gets one push notification
+// per settled signal (fire-and-forget, after the balance math — never blocks settlement).
+async function settleDuePositions(account, userId = null) {
   const now = Date.now();
+  const settledNow = [];
   // candle_overrides is stored as a plain array (see /api/admin/candle-override). Accept both the
   // array shape and a legacy { items: [] } wrapper so admin overrides actually apply at settlement.
   let overrideData;
@@ -1031,6 +1045,7 @@ async function settleDuePositions(account) {
     if (pos.settled || pos.settleAt > now) continue;
     pos.settled = true;
     pos.settledAt = now;
+    settledNow.push(pos);
 
     // Referral bonus signals always win — exempt from candle override
     if (pos.isReferralBonus) {
@@ -1071,6 +1086,16 @@ async function settleDuePositions(account) {
         ? +(pos.entryPrice - nudge).toFixed(8)
         : +(pos.entryPrice + nudge).toFixed(8);
       pos.profit = 0;
+    }
+  }
+
+  // Notify (after the loop so a notification failure can never affect balances)
+  if (userId && settledNow.length) {
+    for (const pos of settledNow) {
+      if (pos.cancelled || pos.timedOut || pos.notified) continue;
+      pos.notified = true;
+      const { title, body } = describeSignalResult(pos);
+      pushMessage(userId, title, body).catch(() => {});
     }
   }
 }
@@ -2028,7 +2053,7 @@ app.get("/api/admin/livechat/:uid/typing-status", requireAdmin, async (req, res)
 app.get("/api/demo/account", authenticate, userLock, async (req, res) => {
   const accounts = await readDemoAccounts();
   const account = getDemoAccount(accounts, req.user.sub);
-  await settleDuePositions(account);
+  await settleDuePositions(account, req.user.sub);
   await writeDemoAccounts(accounts);
   res.json({
     ok: true,
@@ -2887,13 +2912,50 @@ app.post("/api/admin/referral-bonus", requireAdmin, async (req, res) => {
   res.json({ ok: true, referralBonusSignals: account.referralBonusSignals });
 });
 
+// Read-only abuse signals for the admin Users list. Nothing is enforced — these only draw the
+// admin's eye to accounts worth a closer look (multi-accounting, deposit-and-run, shared wallets).
+function computeUserFlags(users, accounts) {
+  const DAY = 24 * 3600 * 1000;
+  const ipUsers = new Map();      // ip -> Set(userId)
+  const walletUsers = new Map();  // wallet(lower) -> Set(userId)
+  const add = (map, key, id) => { if (!key) return; if (!map.has(key)) map.set(key, new Set()); map.get(key).add(id); };
+  for (const u of users) {
+    add(ipUsers, u.lastLoginIp, u.id);
+    for (const h of (u.loginHistory || []).slice(0, 10)) add(ipUsers, h.ip, u.id);
+  }
+  for (const [id, a] of Object.entries(accounts)) {
+    for (const w of a.withdrawalRequests || []) add(walletUsers, String(w.walletAddress || '').trim().toLowerCase(), id);
+  }
+  const flagsFor = (u, acct) => {
+    const flags = [];
+    const ips = new Set([u.lastLoginIp, ...(u.loginHistory || []).slice(0, 10).map(h => h.ip)].filter(Boolean));
+    let sharedIp = 0;
+    for (const ip of ips) { const set = ipUsers.get(ip); if (set && set.size > 1) sharedIp = Math.max(sharedIp, set.size - 1); }
+    if (sharedIp >= 2) flags.push(`IP shared with ${sharedIp} accounts`);
+    const wallets = new Set((acct.withdrawalRequests || []).map(w => String(w.walletAddress || '').trim().toLowerCase()).filter(Boolean));
+    let sharedWallet = 0;
+    for (const w of wallets) { const set = walletUsers.get(w); if (set && set.size > 1) sharedWallet = Math.max(sharedWallet, set.size - 1); }
+    if (sharedWallet >= 1) flags.push(`Wallet shared with ${sharedWallet} account(s)`);
+    // Deposit-and-run: withdrawal requested within 48h of the first credited deposit
+    const firstDep = (acct.depositRequests || []).filter(d => d.status === 'done').map(d => d.processedAt || d.createdAt).sort((x, y) => x - y)[0];
+    const firstWd = (acct.withdrawalRequests || []).map(w => w.createdAt).sort((x, y) => x - y)[0];
+    if (firstDep && firstWd && firstWd - firstDep < 2 * DAY) flags.push('Withdrew within 48h of first deposit');
+    const totalWd = (acct.withdrawalRequests || []).filter(w => w.status === 'completed').reduce((s, w) => s + (w.netPayout || 0), 0);
+    if ((acct.totalDeposited || 0) > 0 && totalWd > (acct.totalDeposited || 0) * 3) flags.push('Withdrawn > 3× deposited');
+    return flags;
+  };
+  return flagsFor;
+}
+
 app.get("/api/admin/users", requireAdmin, async (req, res) => {
   const users = await readUsers();
   const accounts = await readDemoAccounts();
+  const flagsFor = computeUserFlags(users, accounts);
   const list = users.map(u => {
     const acct = accounts[u.id] || {};
     const lvlInfo = calculateLevel(u.uid, users, accounts);
     return {
+      flags: flagsFor(u, acct),
       id: u.id, uid: u.uid, name: u.name, email: u.email,
       verified: !!u.verified, closed: !!u.closed,
       level: lvlInfo.level,
@@ -3142,13 +3204,20 @@ app.get("/api/signal-status", authenticate, userLock, async (req, res) => {
     referralWindowOpen = now >= start && now < end;
   }
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-  const bonusUsedToday = (account.positions || []).filter(p => p.openedAt >= todayStart.getTime() && p.isReferralBonus).length;
+  const todayPositions = (account.positions || []).filter(p => p.openedAt >= todayStart.getTime());
+  const bonusUsedToday = todayPositions.filter(p => p.isReferralBonus).length;
+  // Daily limit info (same computation as /api/demo/predict) — display only
+  const dailySignalLimit = account.dailySignalLimit || cfg.globalDailyLimit || DEFAULT_DAILY_SIGNAL_LIMIT;
+  const signalsUsedToday = todayPositions.filter(p => !p.cancelled).length;
   res.json({
     ok: true,
     signalActive: !!cfg.signalActive,
     bonusSignals,
     daysRemaining,
     bonusUsedToday,
+    dailySignalLimit,
+    signalsUsedToday,
+    signalsLeftToday: Math.max(0, dailySignalLimit + (bonusSignals > 0 && bonusUsedToday < 1 ? 1 : 0) - signalsUsedToday),
     referralWindowOpen,
     referralSignalTime: "20:00",
     referralSignalWindow: 20,
@@ -3176,7 +3245,7 @@ app.post("/api/demo/referral-signal", authenticate, financialRateLimit, userLock
 
     const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
-    await settleDuePositions(account);
+    await settleDuePositions(account, req.user.sub);
 
     const bonusSignals = account.referralBonusSignals || 0;
     if (bonusSignals <= 0) {
@@ -3250,7 +3319,7 @@ app.post("/api/demo/predict", authenticate, financialRateLimit, userLock, async 
 
     const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
-    await settleDuePositions(account);
+    await settleDuePositions(account, req.user.sub);
 
     // BLOCK: Only one active (unsettled, uncancelled) signal allowed at a time
     const activeSignal = (account.positions || []).find(p => !p.settled && !p.cancelled);
@@ -3382,7 +3451,7 @@ app.post("/api/demo/spot/buy", authenticate, financialRateLimit, userLock, async
 
     const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
-    await settleDuePositions(account);
+    await settleDuePositions(account, req.user.sub);
     // Balance must cover the spend PLUS the risk fee — otherwise the fee was silently waived
     const riskFee = Math.round(spend * NON_SIGNAL_CUT_RATE * 100) / 100;
     if (spend + riskFee > account.balance + 1e-9) {
@@ -3414,7 +3483,7 @@ app.post("/api/demo/spot/sell", authenticate, financialRateLimit, userLock, asyn
 
     const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
-    await settleDuePositions(account);
+    await settleDuePositions(account, req.user.sub);
     const held = account.holdings[pair] || 0;
     if (qty > held) {
       await writeDemoAccounts(accounts);
@@ -3454,7 +3523,7 @@ app.post("/api/demo/futures/open", authenticate, financialRateLimit, userLock, a
 
     const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
-    await settleDuePositions(account);
+    await settleDuePositions(account, req.user.sub);
     // Balance must cover margin PLUS the risk fee
     const riskFee = Math.round(marginAmount * NON_SIGNAL_CUT_RATE * 100) / 100;
     if (marginAmount + riskFee > account.balance + 1e-9) {
@@ -3680,6 +3749,133 @@ async function recheckPendingDeposits() {
   }
 }
 
+// ---- Background settlement + signal-result notifications ----
+// Positions normally settle lazily when the user next loads their account. This job settles due
+// positions every minute for everyone, so "Signal won/lost" push notifications go out on time even
+// when the app is closed. Same settleDuePositions() — no change to win/loss logic.
+let _settleJobRunning = false;
+async function settleAllDuePositions() {
+  if (_settleJobRunning) return;
+  _settleJobRunning = true;
+  try {
+    const now = Date.now();
+    const accounts = await readDemoAccounts();
+    const dueUsers = Object.entries(accounts)
+      .filter(([, a]) => (a.positions || []).some(p => !p.settled && !p.cancelled && !p.timedOut && p.settleAt <= now))
+      .map(([userId]) => userId);
+    for (const userId of dueUsers) {
+      const unlock = await acquireTransferLock(userId);
+      try {
+        const fresh = await readDemoAccounts();          // re-read under the lock
+        const account = fresh[userId];
+        if (!account) continue;
+        const before = (account.positions || []).filter(p => !p.settled).length;
+        await settleDuePositions(account, userId);
+        const after = (account.positions || []).filter(p => !p.settled).length;
+        if (after !== before) await writeDemoAccounts(fresh);
+      } finally { unlock(); }
+    }
+  } catch (e) {
+    console.error('[SettleJob] failed:', e?.message || e);
+  } finally { _settleJobRunning = false; }
+}
+
+// ---- Referral-window reminder (19:50 PKT daily) ----
+// Users holding unused referral bonus signals get a heads-up 10 minutes before the 20:00–20:20 PKT
+// window opens, so bonus signals aren't forfeited by forgetting. One reminder per user per day.
+const REFERRAL_REMINDER_PKT = "19:50";
+let _referralReminderLastDay = null;
+async function sendReferralWindowReminder() {
+  try {
+    const now = new Date();
+    const target = pktTimeToDate(REFERRAL_REMINDER_PKT);
+    const diff = now.getTime() - target.getTime();
+    if (diff < 0 || diff > 90 * 1000) return;                 // only within the minute after 19:50 PKT
+    const dayKey = new Date(now.getTime() + 5 * 3600 * 1000).toISOString().slice(0, 10); // PKT date
+    if (_referralReminderLastDay === dayKey) return;
+    _referralReminderLastDay = dayKey;
+
+    const accounts = await readDemoAccounts();
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    let sent = 0;
+    for (const [userId, acct] of Object.entries(accounts)) {
+      const bonus = acct.referralBonusSignals || 0;
+      if (bonus <= 0) continue;
+      if (acct.referralBonusExpireAt && acct.referralBonusExpireAt < Date.now()) continue;
+      const usedToday = (acct.positions || []).some(p => p.isReferralBonus && p.openedAt >= todayStart.getTime());
+      if (usedToday) continue;
+      pushMessage(userId, "⏰ Referral signal window opens in 10 minutes",
+        `You have ${bonus} referral bonus signal${bonus === 1 ? '' : 's'} available. The daily window is 8:00–8:20 PM (PKT) — place your bonus signal then. Unused days are forfeited.`).catch(() => {});
+      sent++;
+    }
+    if (sent) console.log(`[ReferralReminder] sent to ${sent} user(s)`);
+  } catch (e) {
+    console.error('[ReferralReminder] failed:', e?.message || e);
+  }
+}
+
+// ---- Daily admin summary (09:00 PKT) ----
+// Yesterday's numbers in one place: written to the admin log (visible in the Logs tab) and, if
+// ADMIN_SUMMARY_EMAIL is set, also emailed.
+const ADMIN_SUMMARY_PKT = "09:00";
+const ADMIN_SUMMARY_EMAIL = process.env.ADMIN_SUMMARY_EMAIL || "";
+let _adminSummaryLastDay = null;
+async function sendDailyAdminSummary() {
+  try {
+    const now = new Date();
+    const target = pktTimeToDate(ADMIN_SUMMARY_PKT);
+    const diff = now.getTime() - target.getTime();
+    if (diff < 0 || diff > 90 * 1000) return;
+    const dayKey = new Date(now.getTime() + 5 * 3600 * 1000).toISOString().slice(0, 10);
+    if (_adminSummaryLastDay === dayKey) return;
+    _adminSummaryLastDay = dayKey;
+
+    const DAY = 24 * 3600 * 1000;
+    const since = Date.now() - DAY;
+    const users = await readUsers();
+    const accounts = await readDemoAccounts();
+    let newUsers = 0, kycPending = 0, depDone = 0, depDoneAmt = 0, depPending = 0, wdPending = 0, wdPendingAmt = 0, wdDone = 0, wdDoneAmt = 0, signals = 0, totalBalance = 0;
+    for (const u of users) {
+      const c = u.createdAt ? new Date(u.createdAt).getTime() : 0;
+      if (c >= since) newUsers++;
+      if (u.kyc?.status === 'pending') kycPending++;
+    }
+    for (const a of Object.values(accounts)) {
+      totalBalance += (a.balance || 0) + (a.signalBalance || 0);
+      for (const d of a.depositRequests || []) {
+        if (d.status === 'pending') depPending++;
+        else if (d.status === 'done' && (d.processedAt || d.createdAt) >= since) { depDone++; depDoneAmt += d.amount || 0; }
+      }
+      for (const w of a.withdrawalRequests || []) {
+        if (w.status === 'pending') { wdPending++; wdPendingAmt += w.netPayout || w.amount || 0; }
+        else if (w.status === 'completed' && (w.reviewedAt || w.createdAt) >= since) { wdDone++; wdDoneAmt += w.netPayout || 0; }
+      }
+      signals += (a.positions || []).filter(p => p.openedAt >= since && !p.cancelled).length;
+    }
+    const summary = {
+      date: dayKey, newUsers, kycPending,
+      depositsCredited: depDone, depositsCreditedUsd: Math.round(depDoneAmt * 100) / 100, depositsPending: depPending,
+      withdrawalsCompleted: wdDone, withdrawalsCompletedUsd: Math.round(wdDoneAmt * 100) / 100,
+      withdrawalsPending: wdPending, withdrawalsPendingUsd: Math.round(wdPendingAmt * 100) / 100,
+      signalsPlaced: signals, totalUsers: users.length, totalBalancesUsd: Math.round(totalBalance * 100) / 100,
+    };
+    await adminLog({ ip: 'system' }, 'daily.summary', summary);
+    if (ADMIN_SUMMARY_EMAIL) {
+      const row = (k, v) => `<tr><td style="padding:4px 10px;color:#555">${k}</td><td style="padding:4px 10px;font-weight:bold">${v}</td></tr>`;
+      const html = `<h2>KYNEX daily summary — ${dayKey}</h2><table>${
+        row('New users (24h)', newUsers) + row('KYC pending', kycPending) +
+        row('Deposits credited (24h)', `${depDone} · $${summary.depositsCreditedUsd}`) + row('Deposits pending', depPending) +
+        row('Withdrawals completed (24h)', `${wdDone} · $${summary.withdrawalsCompletedUsd}`) + row('Withdrawals pending', `${wdPending} · $${summary.withdrawalsPendingUsd}`) +
+        row('Signals placed (24h)', signals) + row('Total users', users.length) + row('Total user balances', `$${summary.totalBalancesUsd}`)
+      }</table>`;
+      sendEmail({ to: ADMIN_SUMMARY_EMAIL, subject: `KYNEX daily summary — ${dayKey}`, text: JSON.stringify(summary, null, 2), html }).catch(() => {});
+    }
+    console.log('[DailySummary]', JSON.stringify(summary));
+  } catch (e) {
+    console.error('[DailySummary] failed:', e?.message || e);
+  }
+}
+
 // Admin: re-verify all pending deposits right now (same logic as the background job)
 app.post("/api/admin/deposits/recheck", requireAdmin, async (req, res) => {
   const before = await countPendingDeposits();
@@ -3705,6 +3901,10 @@ initDb().then(() => initVapid()).then(() => {
     // Auto re-verify pending deposits (first pass 30s after boot, then every 3 min)
     setTimeout(() => recheckPendingDeposits().catch(() => {}), 30 * 1000);
     setInterval(() => recheckPendingDeposits().catch(() => {}), DEPOSIT_RECHECK_INTERVAL_MS);
+    // Settle due signals for everyone every minute (timely won/lost notifications)
+    setInterval(() => settleAllDuePositions().catch(() => {}), 60 * 1000);
+    // Time-of-day jobs (checked every minute; each fires once per PKT day)
+    setInterval(() => { sendReferralWindowReminder(); sendDailyAdminSummary(); }, 60 * 1000);
   });
 }).catch(err => {
   console.error("Database init failed:", err);

@@ -64,7 +64,7 @@ function fileToDataUrl(file) {
 
 function StatusBadge({ status, theme, iconBadges }) {
   const map = {
-    not_started: { label: 'Not Verified', color: theme.faint, Icon: ShieldAlert, badge: iconBadges.amber },
+    not_started: { label: 'Not Verified', color: theme.subtext, Icon: ShieldAlert, badge: iconBadges.amber },
     pending: { label: 'Pending Review', color: theme.brand, Icon: Clock, badge: iconBadges.amber },
     certified: { label: 'Certified', color: theme.up, Icon: ShieldCheck, badge: iconBadges.green },
     rejected: { label: 'Rejected', color: theme.down, Icon: XCircle, badge: iconBadges.pink },
@@ -140,7 +140,7 @@ const inputStyle = (theme) => ({
 });
 
 const Verification = () => {
-  const { theme, iconBadges } = useTheme();
+  const { theme, iconBadges, mode } = useTheme();
   const [kyc, setKyc] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -221,14 +221,14 @@ const Verification = () => {
             {error && <div style={{ color: theme.down, fontSize: '13px', marginBottom: '14px', padding: '10px', backgroundColor: theme.downSoft, borderRadius: '8px' }}>{error}</div>}
 
             <div style={{ fontSize: '13px', fontWeight: 'bold', color: theme.subtext, margin: '0 0 8px' }}>Personal details</div>
-            <select value={country} onChange={(e) => setCountry(e.target.value)} required style={inputStyle(theme)}>
+            <select value={country} onChange={(e) => setCountry(e.target.value)} required style={{ ...inputStyle(theme), colorScheme: mode }}>
               <option value="" disabled>Country / Region</option>
               {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
             <input type="text" placeholder="First Name" value={firstName} onChange={(e) => setFirstName(e.target.value)} required style={inputStyle(theme)} />
             <input type="text" placeholder="Last Name" value={lastName} onChange={(e) => setLastName(e.target.value)} required style={inputStyle(theme)} />
             <label style={{ fontSize: '12px', color: theme.subtext, marginBottom: '6px', display: 'block' }}>Date of Birth</label>
-            <input type="date" value={dob} onChange={(e) => setDob(e.target.value)} required style={{ ...inputStyle(theme), marginBottom: '18px' }} />
+            <input type="date" value={dob} onChange={(e) => setDob(e.target.value)} required style={{ ...inputStyle(theme), marginBottom: '18px', colorScheme: mode }} />
 
             <div style={{ fontSize: '13px', fontWeight: 'bold', color: theme.subtext, margin: '0 0 8px' }}>Document</div>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useTheme } from '../ThemeContext';
 
 const LOCK_KEY  = 'kynex_app_lock';
 const CRED_KEY  = 'kynex_lock_cred_id';
@@ -66,6 +67,7 @@ export function clearBiometric() {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 const AppLock = () => {
+  const { theme } = useTheme();
   const [locked, setLocked]       = useState(false);
   const [authing, setAuthing]     = useState(false);
   const [error,   setError]       = useState('');
@@ -144,13 +146,13 @@ const AppLock = () => {
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 99999,
-      backgroundColor: '#0A0F1E',
+      backgroundColor: theme.bg,
       display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
       gap: '20px', padding: '32px',
     }}>
       {/* Branding */}
-      <div style={{ fontWeight: '900', fontSize: '36px', letterSpacing: '-1px', color: '#F59E0B' }}>
+      <div style={{ fontWeight: '900', fontSize: '36px', letterSpacing: '-1px', color: theme.brand }}>
         KYNEX
       </div>
 
@@ -166,19 +168,19 @@ const AppLock = () => {
       </div>
 
       <div style={{ textAlign: 'center' }}>
-        <div style={{ fontWeight: '700', fontSize: '17px', color: '#F1F5F9', marginBottom: '6px' }}>
+        <div style={{ fontWeight: '700', fontSize: '17px', color: theme.text, marginBottom: '6px' }}>
           App Locked
         </div>
-        <div style={{ fontSize: '13px', color: '#94A3B8', lineHeight: '1.6' }}>
+        <div style={{ fontSize: '13px', color: theme.subtext, lineHeight: '1.6' }}>
           Verify your identity to continue
         </div>
       </div>
 
       {error && (
         <div style={{
-          fontSize: '12px', color: '#FCA5A5', textAlign: 'center',
-          backgroundColor: 'rgba(239,68,68,0.15)', padding: '8px 16px', borderRadius: '10px',
-          border: '1px solid rgba(239,68,68,0.25)',
+          fontSize: '12px', color: theme.down, textAlign: 'center',
+          backgroundColor: theme.downSoft, padding: '8px 16px', borderRadius: '10px',
+          border: `1px solid ${theme.down}40`,
         }}>
           {error}
         </div>
@@ -189,8 +191,8 @@ const AppLock = () => {
         disabled={authing}
         style={{
           padding: '14px 36px', borderRadius: '16px', border: 'none',
-          background: authing ? '#1E293B' : 'linear-gradient(135deg, #F59E0B, #3B82F6)',
-          color: 'white', fontWeight: '700', fontSize: '15px',
+          background: authing ? theme.inputBg : 'linear-gradient(135deg, #F59E0B, #3B82F6)',
+          color: authing ? theme.subtext : 'white', fontWeight: '700', fontSize: '15px',
           cursor: authing ? 'not-allowed' : 'pointer',
           boxShadow: authing ? 'none' : '0 6px 20px rgba(245,158,11,0.35)',
           transition: 'all 0.2s',
@@ -208,22 +210,22 @@ const AppLock = () => {
         )}
       </button>
 
-      <div style={{ fontSize: '11px', color: '#475569', textAlign: 'center' }}>
+      <div style={{ fontSize: '11px', color: theme.subtext, textAlign: 'center' }}>
         Face ID · Touch ID · Fingerprint · Device PIN
       </div>
 
       {/* Emergency disable — shown after 2 failed attempts */}
       {showEmergency && (
         <div style={{ textAlign: 'center', marginTop: '8px' }}>
-          <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '8px' }}>
+          <div style={{ fontSize: '12px', color: theme.faint, marginBottom: '8px' }}>
             Biometric not working?
           </div>
           <button
             onClick={disableAndUnlock}
             style={{
               background: 'transparent',
-              border: '1px solid rgba(239,68,68,0.4)',
-              color: '#FCA5A5',
+              border: `1px solid ${theme.down}66`,
+              color: theme.down,
               padding: '8px 20px',
               borderRadius: '10px',
               fontSize: '12px',

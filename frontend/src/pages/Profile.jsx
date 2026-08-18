@@ -93,7 +93,7 @@ const Profile = () => {
   const kycBadge = (status) => {
     if (status === 'certified') return { label: 'Certified', color: theme.up, bg: theme.upSoft, Icon: BadgeCheck };
     if (status === 'pending') return { label: 'Pending', color: theme.brand, bg: theme.brandSoft, Icon: Clock };
-    return { label: 'Not Verified', color: theme.faint, bg: theme.primarySoft, Icon: ShieldAlert };
+    return { label: 'Not Verified', color: theme.subtext, bg: `${theme.faint}26`, Icon: ShieldAlert };
   };
 
   return (

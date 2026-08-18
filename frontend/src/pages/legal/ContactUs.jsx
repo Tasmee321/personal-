@@ -1,7 +1,10 @@
 import React from 'react';
 import LegalPageShell, { Section } from './LegalPageShell';
+import { useTheme } from '../../ThemeContext';
 
-const ContactUs = () => (
+const ContactUs = () => {
+  const { theme } = useTheme();
+  return (
   <LegalPageShell title="Contact Us" updated="August 2026">
     <Section>
       <p>
@@ -29,17 +32,17 @@ const ContactUs = () => (
         </li>
         <li>
           <b>Session (Private & Encrypted):</b> For confidential support with maximum privacy, contact our admin on Session.
-          <div style={{ margin: '10px 0 6px', padding: '14px 16px', borderRadius: '10px', background: 'rgba(128,128,128,0.08)', border: '1px solid rgba(128,128,128,0.18)' }}>
+          <div style={{ margin: '10px 0 6px', padding: '14px 16px', borderRadius: '12px', background: theme.inputBg, border: `1px solid ${theme.cardBorder}` }}>
             <div style={{ fontSize: '13px', marginBottom: '6px' }}><b>Admin:</b> Michael</div>
-            <div style={{ fontSize: '12px', marginBottom: '8px', color: 'inherit', opacity: 0.7 }}>Session Account ID:</div>
+            <div style={{ fontSize: '12px', marginBottom: '8px' }}>Session Account ID:</div>
             <div style={{
               fontFamily: 'monospace', fontSize: '11px', wordBreak: 'break-all',
-              padding: '8px 10px', borderRadius: '6px', background: 'rgba(128,128,128,0.12)',
+              padding: '8px 10px', borderRadius: '8px', background: theme.bg, border: `1px solid ${theme.cardBorder}`, color: theme.text,
               letterSpacing: '0.5px', lineHeight: '1.6',
             }}>
               05f49b2de9b8455d25d359846ed4cdf2c5ccafd990c991cbaa2847734feba5d375
             </div>
-            <div style={{ marginTop: '10px', fontSize: '12px', opacity: 0.75 }}>
+            <div style={{ marginTop: '10px', fontSize: '12px' }}>
               <b>How to reach us on Session:</b>
               <ol style={{ margin: '6px 0 0 0', paddingLeft: '18px', lineHeight: '1.8' }}>
                 <li>Download Session app: <a href="https://getsession.org/download" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>getsession.org/download</a></li>
@@ -163,6 +166,7 @@ const ContactUs = () => (
       </ul>
     </Section>
   </LegalPageShell>
-);
+  );
+};
 
 export default ContactUs;

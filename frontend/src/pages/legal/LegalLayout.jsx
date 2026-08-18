@@ -42,7 +42,7 @@ const LegalLayout = () => {
         <div className="legal-sidebar" style={{
           width: '220px', flexShrink: 0,
           backgroundColor: theme.card, border: `1px solid ${theme.cardBorder}`,
-          borderRadius: '12px', overflow: 'hidden',
+          borderRadius: '16px', overflow: 'hidden',
           boxShadow: theme.shadow,
           backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)',
         }}>
@@ -86,7 +86,7 @@ const LegalLayout = () => {
             width: 100% !important;
             display: flex !important;
             overflow-x: auto !important;
-            border-radius: 12px !important;
+            border-radius: 16px !important;
             flex-shrink: 0 !important;
           }
           .legal-sidebar a {

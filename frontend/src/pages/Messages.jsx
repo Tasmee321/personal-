@@ -106,6 +106,7 @@ const Messages = () => {
             style={{
               width: '100%', display: 'flex', gap: '12px', padding: '16px', textAlign: 'left',
               cursor: 'pointer', marginBottom: '10px', boxSizing: 'border-box', overflow: 'hidden',
+              color: theme.text, fontFamily: 'inherit',
               ...glassCard(theme),
             }}
           >

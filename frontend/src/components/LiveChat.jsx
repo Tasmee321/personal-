@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Send, ChevronDown, ChevronRight, ArrowLeft, RefreshCw, MessageSquare } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from '../ThemeContext';
 import { getToken } from '../utils/auth';
 import { API_URL } from '../config';
@@ -8,6 +8,35 @@ import { registerFcmToken } from '../firebase';
 
 const DRAG_KEY = 'kynex_chat_btn_pos';
 const IDLE_MS = 4000;
+const CHAT_BTN = 50; // floating button size (px) — compact, not oversized
+
+// Device safe-area insets (notch / home indicator) measured from CSS env() — JS can't read env() directly
+function getSafeInsets() {
+  try {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;top:0;left:0;visibility:hidden;pointer-events:none;height:env(safe-area-inset-top,0px);width:env(safe-area-inset-bottom,0px)';
+    document.body.appendChild(el);
+    const r = el.getBoundingClientRect();
+    document.body.removeChild(el);
+    return { top: r.height || 0, bottom: r.width || 0 };
+  } catch { return { top: 0, bottom: 0 }; }
+}
+
+// Keep the floating button fully visible: never under the bottom nav, never under the notch,
+// never past the screen edges. Applied while dragging, on load, on resize and on route change.
+function clampBtnPos(pos) {
+  const nav = document.querySelector('[data-kynex-bottomnav]');
+  const navH = nav ? nav.getBoundingClientRect().height : 0;
+  const safe = getSafeInsets();
+  const minBottom = (navH > 0 ? navH : safe.bottom) + 10;
+  const maxBottom = Math.max(minBottom, window.innerHeight - CHAT_BTN - safe.top - 8);
+  const minRight = 8;
+  const maxRight = Math.max(minRight, window.innerWidth - CHAT_BTN - 8);
+  return {
+    right: Math.min(maxRight, Math.max(minRight, Number(pos?.right) || 16)),
+    bottom: Math.min(maxBottom, Math.max(minBottom, Number(pos?.bottom) || 88)),
+  };
+}
 
 // ── Keyword → topic detection ──────────────────────────────────────────────
 const TOPIC_KEYWORDS = {
@@ -319,13 +348,45 @@ const GUIDES = {
 };
 
 // ── BotFace ────────────────────────────────────────────────────────────────
-const BotFace = ({ size = 28, blink = false }) => (
-  <svg viewBox="0 0 28 28" width={size} height={size} fill="none">
-    <circle cx="10" cy="11" r="2.2" fill="white"
-      style={blink ? { transformOrigin: '10px 11px', animation: 'eyeBlink 3.5s ease-in-out infinite' } : {}} />
-    <circle cx="18" cy="11" r="2.2" fill="white"
-      style={blink ? { transformOrigin: '18px 11px', animation: 'eyeBlink 3.5s ease-in-out infinite 0.2s' } : {}} />
-    <path d="M8 17.5 Q14 22.5 20 17.5" stroke="white" strokeWidth="2.2" strokeLinecap="round" fill="none" />
+// Assistant face: soft rounded-square head with a small antenna, expressive eyes that blink and
+// glance around (pupils drift to different sides), a subtle smile that responds to attention.
+// `blink=false` while pressed → eyes go "focused" (no blink, pupils centre).
+const BotFace = ({ size = 30, blink = false }) => (
+  <svg viewBox="0 0 32 32" width={size} height={size} fill="none" style={{ display: 'block' }}>
+    <defs>
+      <linearGradient id="kxHead" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.98" />
+        <stop offset="1" stopColor="#E8EEFF" stopOpacity="0.98" />
+      </linearGradient>
+      <radialGradient id="kxEye" cx="0.35" cy="0.35" r="0.8">
+        <stop offset="0" stopColor="#3B4A6B" />
+        <stop offset="1" stopColor="#0B1226" />
+      </radialGradient>
+    </defs>
+    {/* antenna */}
+    <line x1="16" y1="5.2" x2="16" y2="2.8" stroke="white" strokeWidth="1.6" strokeLinecap="round" />
+    <circle cx="16" cy="2.4" r="1.5" fill="#FDE68A" style={{ animation: blink ? 'kxAntenna 2.4s ease-in-out infinite' : 'none' }} />
+    {/* head — rounded square, not a circle */}
+    <rect x="5" y="5.5" width="22" height="20" rx="8" ry="8" fill="url(#kxHead)" />
+    <rect x="5" y="5.5" width="22" height="20" rx="8" ry="8" fill="none" stroke="rgba(15,23,42,0.08)" strokeWidth="0.8" />
+    {/* eye sockets */}
+    <g style={{ transformOrigin: '16px 14.5px', animation: blink ? 'kxLook 7s ease-in-out infinite' : 'none' }}>
+      {/* left eye */}
+      <g style={blink ? { transformOrigin: '11.5px 14.5px', animation: 'eyeBlink 4.2s ease-in-out infinite' } : {}}>
+        <ellipse cx="11.5" cy="14.5" rx="2.6" ry="3" fill="url(#kxEye)" />
+        <circle cx="12.4" cy="13.4" r="0.8" fill="white" />
+      </g>
+      {/* right eye */}
+      <g style={blink ? { transformOrigin: '20.5px 14.5px', animation: 'eyeBlink 4.2s ease-in-out infinite 0.12s' } : {}}>
+        <ellipse cx="20.5" cy="14.5" rx="2.6" ry="3" fill="url(#kxEye)" />
+        <circle cx="21.4" cy="13.4" r="0.8" fill="white" />
+      </g>
+    </g>
+    {/* cheeks */}
+    <circle cx="8.6" cy="19.2" r="1.3" fill="#FCA5A5" opacity="0.55" />
+    <circle cx="23.4" cy="19.2" r="1.3" fill="#FCA5A5" opacity="0.55" />
+    {/* smile */}
+    <path d={blink ? 'M12 20.6 Q16 23.4 20 20.6' : 'M12.5 21 Q16 22 19.5 21'} stroke="#0B1226" strokeWidth="1.5" strokeLinecap="round" fill="none" style={{ transition: 'd 0.2s' }} />
   </svg>
 );
 
@@ -333,16 +394,16 @@ const BotFace = ({ size = 28, blink = false }) => (
 function BotGuide({ guide, theme, time }) {
   return (
     <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-      <div style={{ width: '26px', height: '26px', borderRadius: '50%', flexShrink: 0, background: 'linear-gradient(135deg,#3B82F6,#F59E0B)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '2px' }}>
-        <BotFace size={18} />
+      <div style={{ width: '26px', height: '26px', borderRadius: '9px', flexShrink: 0, background: 'linear-gradient(135deg,#3B82F6,#F59E0B)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '2px' }}>
+        <BotFace size={19} />
       </div>
-      <div style={{ maxWidth: '92%', background: theme.inputBg, borderRadius: '4px 16px 16px 16px', padding: '12px 14px', fontSize: '12.5px', boxShadow: '0 2px 10px rgba(0,0,0,0.07)', animation: 'chatSlideIn 0.22s ease-out', flex: 1 }}>
+      <div style={{ maxWidth: '92%', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '4px 16px 16px 16px', padding: '12px 14px', fontSize: '12.5px', boxShadow: '0 2px 10px rgba(0,0,0,0.07)', animation: 'chatSlideIn 0.22s ease-out', flex: 1 }}>
         <div style={{ fontWeight: '800', color: theme.text, marginBottom: '10px', fontSize: '13.5px' }}>{guide.title}</div>
 
         {guide.steps.map((step, i) => {
           if (step.startsWith('—')) {
             return (
-              <div key={i} style={{ fontSize: '10px', fontWeight: '800', color: '#F59E0B', textTransform: 'uppercase', letterSpacing: '0.6px', marginTop: i === 0 ? 0 : '10px', marginBottom: '4px' }}>
+              <div key={i} style={{ fontSize: '10px', fontWeight: '800', color: theme.brand, textTransform: 'uppercase', letterSpacing: '0.6px', marginTop: i === 0 ? 0 : '10px', marginBottom: '4px' }}>
                 {step.replace(/—/g, '').trim()}
               </div>
             );
@@ -360,7 +421,7 @@ function BotGuide({ guide, theme, time }) {
             <div style={{ fontSize: '11px', fontWeight: '700', color: theme.primary, marginBottom: '6px' }}>{guide.extra.title}</div>
             {guide.extra.items.map((item, i) => (
               <div key={i} style={{ display: 'flex', gap: '6px', marginBottom: '3px' }}>
-                <span style={{ color: '#F59E0B', flexShrink: 0 }}>•</span>
+                <span style={{ color: theme.brand, flexShrink: 0 }}>•</span>
                 <span style={{ fontSize: '11px', color: theme.subtext, lineHeight: '1.5' }}>{item}</span>
               </div>
             ))}
@@ -375,7 +436,7 @@ function BotGuide({ guide, theme, time }) {
             {guide.timing.map((row, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', padding: '3px 0', borderBottom: i < guide.timing.length - 1 ? `1px solid ${theme.cardBorder}` : 'none' }}>
                 <span style={{ color: theme.text, fontWeight: '600' }}>{row.flag} {row.country}</span>
-                <span style={{ color: '#F59E0B', fontWeight: '700' }}>{row.t1} · {row.t2} · {row.t3}</span>
+                <span style={{ color: theme.brand, fontWeight: '700' }}>{row.t1} · {row.t2} · {row.t3}</span>
               </div>
             ))}
           </div>
@@ -807,7 +868,7 @@ const LiveChat = () => {
     resetIdle(); hasDraggedRef.current = false; dragging.current = true; setPressing(true);
     const cx = isTouch ? e.touches[0].clientX : e.clientX;
     const cy = isTouch ? e.touches[0].clientY : e.clientY;
-    dragOffset.current = { x: cx - (window.innerWidth - btnPos.right - 56), y: cy - (window.innerHeight - btnPos.bottom - 56) };
+    dragOffset.current = { x: cx - (window.innerWidth - btnPos.right - CHAT_BTN), y: cy - (window.innerHeight - btnPos.bottom - CHAT_BTN) };
     if (!isTouch) e.preventDefault();
   };
 
@@ -817,15 +878,15 @@ const LiveChat = () => {
       hasDraggedRef.current = true; setPressing(false);
       const cx = e.touches ? e.touches[0].clientX : e.clientX;
       const cy = e.touches ? e.touches[0].clientY : e.clientY;
-      setBtnPos({
-        right: Math.max(8, Math.min(window.innerWidth - 64, window.innerWidth - (cx - dragOffset.current.x) - 56)),
-        bottom: Math.max(8, Math.min(window.innerHeight - 64, window.innerHeight - (cy - dragOffset.current.y) - 56)),
-      });
+      setBtnPos(clampBtnPos({
+        right: window.innerWidth - (cx - dragOffset.current.x) - CHAT_BTN,
+        bottom: window.innerHeight - (cy - dragOffset.current.y) - CHAT_BTN,
+      }));
     };
     const onUp = () => {
       if (!dragging.current) return;
       dragging.current = false; setPressing(false);
-      setBtnPos(pos => { localStorage.setItem(DRAG_KEY, JSON.stringify(pos)); return pos; });
+      setBtnPos(pos => { const c = clampBtnPos(pos); localStorage.setItem(DRAG_KEY, JSON.stringify(c)); return c; });
       clearTimeout(idleTimerRef.current);
       idleTimerRef.current = setTimeout(() => setIsIdle(true), IDLE_MS);
     };
@@ -837,11 +898,25 @@ const LiveChat = () => {
     };
   }, []);
 
+  // Re-clamp whenever the visible area changes (load, rotate, keyboard, page with/without bottom nav)
+  const location = useLocation();
+  useEffect(() => {
+    const fix = () => setBtnPos(pos => {
+      const c = clampBtnPos(pos);
+      if (c.right !== pos.right || c.bottom !== pos.bottom) { try { localStorage.setItem(DRAG_KEY, JSON.stringify(c)); } catch { /* ignore */ } return c; }
+      return pos;
+    });
+    const t = setTimeout(fix, 50); // after the page (and its bottom nav) has rendered
+    window.addEventListener('resize', fix);
+    window.addEventListener('orientationchange', fix);
+    return () => { clearTimeout(t); window.removeEventListener('resize', fix); window.removeEventListener('orientationchange', fix); };
+  }, [location.pathname]);
+
   // ── Layout helpers ─────────────────────────────────────────────────────
-  const chatBottom = btnPos.bottom + 64;
+  const chatBottom = btnPos.bottom + CHAT_BTN + 8;
   const chatRight = Math.max(8, Math.min(btnPos.right, window.innerWidth - 360));
   const isOnRight = btnPos.right < window.innerWidth / 2;
-  const peekTranslate = isIdle && !open ? `translateX(${isOnRight ? '28px' : '-28px'})` : 'translateX(0)';
+  const peekTranslate = isIdle && !open ? `translateX(${isOnRight ? '24px' : '-24px'})` : 'translateX(0)';
   const btnShadow = pressing
     ? '0 2px 6px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.12)'
     : '0 6px 0 rgba(0,0,0,0.22), 0 10px 28px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.28)';
@@ -860,7 +935,7 @@ const LiveChat = () => {
           height: view === 'resolved' ? 'auto' : 'min(560px, calc(100vh - 150px))',
           maxHeight: 'calc(100vh - 130px)',
           backgroundColor: theme.card, border: `1px solid ${theme.cardBorder}`,
-          borderRadius: '22px', boxShadow: '0 20px 60px rgba(0,0,0,0.35)',
+          borderRadius: '22px', boxShadow: theme.shadowElevated || theme.shadow,
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
           backdropFilter: theme.cardGlass || 'blur(18px)',
           WebkitBackdropFilter: theme.cardGlass || 'blur(18px)',
@@ -889,7 +964,7 @@ const LiveChat = () => {
             )}
 
             {/* Center: avatar + title */}
-            <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: 'rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <div style={{ width: '34px', height: '34px', borderRadius: '11px', background: 'rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <BotFace blink />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -950,7 +1025,7 @@ const LiveChat = () => {
               {messages.length > 0 && (
                 <button onClick={() => setView('agent')}
                   style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '14px', border: `1.5px solid ${theme.primary}`, backgroundColor: theme.primarySoft, cursor: 'pointer', textAlign: 'left', marginBottom: '12px', boxSizing: 'border-box' }}>
-                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg,#3B82F6,#F59E0B)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ width: '32px', height: '32px', borderRadius: '11px', background: 'linear-gradient(135deg,#3B82F6,#F59E0B)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <MessageSquare size={15} color="white" />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -984,7 +1059,7 @@ const LiveChat = () => {
                 <div style={{ width:'28px',height:'28px',borderRadius:'50%',flexShrink:0,background:'linear-gradient(135deg,#3B82F6,#F59E0B)',display:'flex',alignItems:'center',justifyContent:'center' }}>
                   <BotFace size={20} blink />
                 </div>
-                <div style={{ background:theme.inputBg, borderRadius:'4px 16px 16px 16px', padding:'10px 12px', fontSize:'13px', lineHeight:'1.6', color:theme.text, flex:1, boxShadow:'0 2px 6px rgba(0,0,0,0.05)' }}>
+                <div style={{ background:theme.inputBg, border:`1px solid ${theme.cardBorder}`, borderRadius:'4px 16px 16px 16px', padding:'10px 12px', fontSize:'13px', lineHeight:'1.6', color:theme.text, flex:1, boxShadow:'0 2px 6px rgba(0,0,0,0.05)' }}>
                   <span style={{ fontWeight:'800', display:'block', marginBottom:'2px' }}>👋 Hi! Welcome to KYNEX Support</span>
                   Select a topic below to get an instant guide, or talk to a live agent.
                 </div>
@@ -995,7 +1070,7 @@ const LiveChat = () => {
                 {TOPICS.map(t => (
                   <button key={t.id} onClick={() => selectTopic(t)}
                     style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'12px', border:`1.5px solid ${theme.cardBorder}`, backgroundColor:theme.inputBg, cursor:'pointer', textAlign:'left', width:'100%', transition:'all 0.14s', boxSizing:'border-box' }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor='#3B82F6'; e.currentTarget.style.transform='translateX(3px)'; }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor=theme.primary; e.currentTarget.style.transform='translateX(3px)'; }}
                     onMouseLeave={e => { e.currentTarget.style.borderColor=theme.cardBorder; e.currentTarget.style.transform='translateX(0)'; }}>
                     <span style={{ width:'30px',height:'30px',borderRadius:'9px',flexShrink:0,background:theme.primarySoft,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px' }}>{t.emoji}</span>
                     <span style={{ flex:1, fontSize:'13px', fontWeight:'600', color:theme.text }}>{t.label}</span>
@@ -1063,7 +1138,7 @@ const LiveChat = () => {
                     <div style={{ width:'26px',height:'26px',borderRadius:'50%',flexShrink:0,background:'linear-gradient(135deg,#3B82F6,#F59E0B)',display:'flex',alignItems:'center',justifyContent:'center' }}>
                       <BotFace size={18} />
                     </div>
-                    <div style={{ padding:'10px 14px', borderRadius:'4px 18px 18px 18px', backgroundColor:theme.inputBg, display:'flex', gap:'4px', alignItems:'center', boxShadow:'0 2px 8px rgba(0,0,0,0.07)' }}>
+                    <div style={{ padding:'10px 14px', borderRadius:'4px 18px 18px 18px', backgroundColor:theme.inputBg, border:`1px solid ${theme.cardBorder}`, display:'flex', gap:'4px', alignItems:'center', boxShadow:'0 2px 8px rgba(0,0,0,0.07)' }}>
                       {[0,1,2].map(i=>(
                         <div key={i} style={{ width:'6px',height:'6px',borderRadius:'50%',backgroundColor:theme.faint,animation:'chatBounce 1.2s infinite',animationDelay:`${i*0.2}s` }} />
                       ))}
@@ -1098,8 +1173,8 @@ const LiveChat = () => {
                   );
                   if (msg.broadcast) return (
                     <div key={msg.id || msg.at} style={{ display:'flex', justifyContent:'flex-start', animation:'chatSlideIn 0.18s ease-out' }}>
-                      <div style={{ maxWidth:'85%', padding:'9px 13px', borderRadius:'4px 18px 18px 18px', backgroundColor:'rgba(245,158,11,0.12)', border:'1.5px solid rgba(245,158,11,0.4)', color:theme.text, fontSize:'13px', lineHeight:'1.5', wordBreak:'break-word', boxShadow:'0 2px 8px rgba(0,0,0,0.07)' }}>
-                        <div style={{ fontSize:'10px', fontWeight:'800', color:'#F59E0B', textTransform:'uppercase', letterSpacing:'0.7px', marginBottom:'4px' }}>📢 Admin Announcement</div>
+                      <div style={{ maxWidth:'85%', padding:'9px 13px', borderRadius:'4px 18px 18px 18px', backgroundColor:theme.brandSoft, border:`1.5px solid ${theme.brand}66`, color:theme.text, fontSize:'13px', lineHeight:'1.5', wordBreak:'break-word', boxShadow:'0 2px 8px rgba(0,0,0,0.07)' }}>
+                        <div style={{ fontSize:'10px', fontWeight:'800', color:theme.brand, textTransform:'uppercase', letterSpacing:'0.7px', marginBottom:'4px' }}>📢 Admin Announcement</div>
                         <div>{msg.text}</div>
                         <div style={{ fontSize:'10px', marginTop:'4px', color:theme.faint, textAlign:'right' }}>{fmtTime(msg.at)}</div>
                       </div>
@@ -1112,11 +1187,11 @@ const LiveChat = () => {
                           <BotFace size={18} />
                         </div>
                       )}
-                      <div style={{ maxWidth:'75%', padding:'9px 13px', borderRadius:msg.from==='user'?'18px 18px 4px 18px':'4px 18px 18px 18px', backgroundColor:msg.from==='user'?theme.primary:(theme.inputBg||'#F3F4F6'), color:msg.from==='user'?'white':theme.text, fontSize:'13px', lineHeight:'1.5', wordBreak:'break-word', boxShadow:'0 2px 8px rgba(0,0,0,0.07)', animation:'chatSlideIn 0.18s ease-out' }}>
+                      <div style={{ maxWidth:'75%', padding:'9px 13px', borderRadius:msg.from==='user'?'18px 18px 4px 18px':'4px 18px 18px 18px', backgroundColor:msg.from==='user'?theme.primary:theme.inputBg, border:msg.from==='user'?'none':`1px solid ${theme.cardBorder}`, color:msg.from==='user'?'white':theme.text, fontSize:'13px', lineHeight:'1.5', wordBreak:'break-word', boxShadow:'0 2px 8px rgba(0,0,0,0.07)', animation:'chatSlideIn 0.18s ease-out' }}>
                         <div>{msg.text}</div>
                         <div style={{ fontSize:'10px', marginTop:'4px', color:msg.from==='user'?'rgba(255,255,255,0.7)':theme.faint, textAlign:'right', display:'flex', alignItems:'center', justifyContent:'flex-end', gap:'3px' }}>
                           {fmtTime(msg.at)}
-                          {msg.from==='user' && <span style={{ color:msg.read?'#60A5FA':'rgba(255,255,255,0.6)' }}>{msg.read?'✓✓':'✓'}</span>}
+                          {msg.from==='user' && <span style={{ color:msg.read?'#FFFFFF':'rgba(255,255,255,0.6)' }}>{msg.read?'✓✓':'✓'}</span>}
                         </div>
                       </div>
                     </div>
@@ -1128,7 +1203,7 @@ const LiveChat = () => {
                     <div style={{ width:'26px',height:'26px',borderRadius:'50%',flexShrink:0,background:'linear-gradient(135deg,#3B82F6,#F59E0B)',display:'flex',alignItems:'center',justifyContent:'center' }}>
                       <BotFace size={18} />
                     </div>
-                    <div style={{ padding:'10px 14px', borderRadius:'4px 18px 18px 18px', backgroundColor:theme.inputBg, display:'flex', gap:'4px', alignItems:'center', boxShadow:'0 2px 8px rgba(0,0,0,0.07)' }}>
+                    <div style={{ padding:'10px 14px', borderRadius:'4px 18px 18px 18px', backgroundColor:theme.inputBg, border:`1px solid ${theme.cardBorder}`, display:'flex', gap:'4px', alignItems:'center', boxShadow:'0 2px 8px rgba(0,0,0,0.07)' }}>
                       {[0,1,2].map(i=>(
                         <div key={i} style={{ width:'6px',height:'6px',borderRadius:'50%',backgroundColor:theme.faint,animation:'chatBounce 1.2s infinite',animationDelay:`${i*0.2}s` }} />
                       ))}
@@ -1147,13 +1222,13 @@ const LiveChat = () => {
               {suggestedTopic && view === 'welcome' && (
                 <div style={{ padding:'6px 12px 0' }}>
                   <button onClick={() => { setSuggestedTopic(null); setInput(''); selectTopic(suggestedTopic); }}
-                    style={{ display:'flex', alignItems:'center', gap:'8px', padding:'7px 12px', borderRadius:'12px', border:`1.5px solid #3B82F6`, background:'rgba(59,130,246,0.08)', cursor:'pointer', width:'100%', textAlign:'left', animation:'chatSlideIn 0.18s ease-out' }}>
+                    style={{ display:'flex', alignItems:'center', gap:'8px', padding:'7px 12px', borderRadius:'12px', border:`1.5px solid ${theme.primary}`, background:theme.primarySoft, cursor:'pointer', width:'100%', textAlign:'left', animation:'chatSlideIn 0.18s ease-out' }}>
                     <span style={{ fontSize:'16px' }}>{suggestedTopic.emoji}</span>
                     <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:'11px', color:'#3B82F6', fontWeight:'700' }}>💡 Detected topic</div>
+                      <div style={{ fontSize:'11px', color:theme.primary, fontWeight:'700' }}>💡 Detected topic</div>
                       <div style={{ fontSize:'12px', color:theme.text, fontWeight:'600' }}>{suggestedTopic.label} — Tap for instant guide</div>
                     </div>
-                    <ChevronRight size={14} color="#3B82F6" />
+                    <ChevronRight size={14} color={theme.primary} />
                   </button>
                 </div>
               )}
@@ -1162,7 +1237,7 @@ const LiveChat = () => {
                   placeholder={view === 'welcome' ? 'Or type your question…' : view === 'bot' ? 'Type for live agent…' : 'Type a message…'}
                   rows={1}
                   style={{ flex:1, resize:'none', padding:'10px 12px', borderRadius:'14px', border:`1.5px solid ${theme.cardBorder}`, backgroundColor:theme.inputBg||theme.bg, color:theme.text, fontSize:'13px', outline:'none', fontFamily:'inherit', maxHeight:'80px', overflowY:'auto', transition:'border-color 0.15s' }}
-                  onFocus={e => e.target.style.borderColor='#3B82F6'}
+                  onFocus={e => e.target.style.borderColor=theme.primary}
                   onBlur={e => e.target.style.borderColor=theme.cardBorder}
                 />
                 <button onClick={send} disabled={!input.trim()||sending} style={{ width:'42px', height:'42px', borderRadius:'14px', border:'none', cursor:input.trim()&&!sending?'pointer':'not-allowed', background:input.trim()&&!sending?'linear-gradient(135deg,#3B82F6,#F59E0B)':theme.cardBorder, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'all 0.15s', boxShadow:input.trim()&&!sending?'0 4px 12px rgba(59,130,246,0.4)':'none' }}>
@@ -1178,12 +1253,12 @@ const LiveChat = () => {
       {toast && !open && (
         <div
           onClick={() => { setToast(null); clearTimeout(toastTimerRef.current); setOpen(true); setView('agent'); }}
-          style={{ position:'fixed', bottom:`${btnPos.bottom + 74}px`, right:`${btnPos.right}px`, zIndex:1001, width:'min(300px, calc(100vw - 32px))', backgroundColor:theme.card, border:`1.5px solid ${toast.broadcast ? 'rgba(245,158,11,0.6)' : 'rgba(59,130,246,0.5)'}`, borderRadius:'16px', padding:'12px 14px 14px', boxShadow:toast.broadcast ? '0 8px 32px rgba(245,158,11,0.2)' : '0 8px 32px rgba(59,130,246,0.2)', animation:'chatSlideIn 0.28s cubic-bezier(0.4,0,0.2,1)', cursor:'pointer', overflow:'hidden' }}
+          style={{ position:'fixed', bottom:`${btnPos.bottom + CHAT_BTN + 16}px`, right:`${btnPos.right}px`, zIndex:1001, width:'min(300px, calc(100vw - 32px))', backgroundColor:theme.card, border:`1.5px solid ${toast.broadcast ? 'rgba(245,158,11,0.6)' : 'rgba(59,130,246,0.5)'}`, borderRadius:'16px', padding:'12px 14px 14px', boxShadow:toast.broadcast ? '0 8px 32px rgba(245,158,11,0.2)' : '0 8px 32px rgba(59,130,246,0.2)', animation:'chatSlideIn 0.28s cubic-bezier(0.4,0,0.2,1)', cursor:'pointer', overflow:'hidden' }}
         >
           <div style={{ display:'flex', alignItems:'flex-start', gap:'10px' }}>
             <div style={{ fontSize:'20px', flexShrink:0 }}>{toast.broadcast ? '📢' : '💬'}</div>
             <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:'10px', fontWeight:'800', color:toast.broadcast ? '#F59E0B' : theme.primary, textTransform:'uppercase', letterSpacing:'0.7px', marginBottom:'3px' }}>
+              <div style={{ fontSize:'10px', fontWeight:'800', color:toast.broadcast ? theme.brand : theme.primary, textTransform:'uppercase', letterSpacing:'0.7px', marginBottom:'3px' }}>
                 {toast.broadcast ? 'Admin Announcement · KYNEX' : 'New Message · KYNEX'}
               </div>
               <div style={{ fontSize:'13px', color:theme.text, lineHeight:'1.5', fontWeight:'500', overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>
@@ -1200,14 +1275,14 @@ const LiveChat = () => {
       )}
 
       {/* ── FAB ─────────────────────────────────────────────────────── */}
-      <div style={{ position:'fixed', bottom:`${btnPos.bottom}px`, right:`${btnPos.right}px`, zIndex:999, width:'58px', height:'58px', borderRadius:'50%', transform:peekTranslate, transition:dragging.current?'none':'transform 0.45s cubic-bezier(0.34,1.2,0.64,1)', animation:!open&&!isIdle&&!pressing?'chatRing 2.8s ease-out infinite':'none' }}>
+      <div style={{ position:'fixed', bottom:`${btnPos.bottom}px`, right:`${btnPos.right}px`, zIndex:999, width:`${CHAT_BTN}px`, height:`${CHAT_BTN}px`, borderRadius:'16px', transform:peekTranslate, transition:dragging.current?'none':'transform 0.45s cubic-bezier(0.34,1.2,0.64,1)', animation:!open&&!isIdle&&!pressing?'chatRing 2.8s ease-out infinite':'none' }}>
         <div
           onMouseDown={(e)=>onDown(e,false)}
           onTouchStart={(e)=>onDown(e,true)}
           onClick={()=>{ if(!hasDraggedRef.current){ setOpen(o=>!o); resetIdle(); } }}
-          style={{ position:'relative', width:'58px', height:'58px', borderRadius:'50%', background:open?'linear-gradient(145deg,#3B82F6,#6366F1)':'linear-gradient(145deg,#F59E0B 0%,#3B82F6 100%)', border:'none', cursor:dragging.current?'grabbing':'pointer', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:btnShadow, transform:pressing?'translateY(4px) scale(0.93)':'scale(1)', transition:'transform 0.1s ease, box-shadow 0.1s ease', userSelect:'none', touchAction:'none' }}
+          style={{ position:'relative', width:`${CHAT_BTN}px`, height:`${CHAT_BTN}px`, borderRadius:'16px', background:open?'linear-gradient(145deg,#3B82F6,#6366F1)':'linear-gradient(145deg,#F59E0B 0%,#3B82F6 100%)', border:'none', cursor:dragging.current?'grabbing':'pointer', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:btnShadow, transform:pressing?'translateY(4px) scale(0.93)':'scale(1)', transition:'transform 0.1s ease, box-shadow 0.1s ease', userSelect:'none', touchAction:'none' }}
         >
-          {open ? <X size={22} color="white" /> : <BotFace blink={!pressing} />}
+          {open ? <X size={20} color="white" /> : <BotFace size={27} blink={!pressing} />}
           {!open && unread > 0 && (
             <div style={{ position:'absolute', top:'-2px', right:'-2px', minWidth:'20px', height:'20px', borderRadius:'10px', backgroundColor:'#EF4444', border:'2px solid white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'10px', color:'white', fontWeight:'800', padding:'0 4px', boxSizing:'border-box' }}>
               {unread > 9 ? '9+' : unread}
@@ -1222,6 +1297,14 @@ const LiveChat = () => {
         @keyframes chatBounce { 0%,60%,100% { transform:translateY(0); opacity:0.5; } 30% { transform:translateY(-5px); opacity:1; } }
         @keyframes chatOnlinePulse { 0%,100% { opacity:1; } 50% { opacity:0.35; } }
         @keyframes eyeBlink { 0%,88%,100% { transform:scaleY(1); } 92% { transform:scaleY(0.06); } }
+        @keyframes kxLook {
+          0%, 18%   { transform: translate(0px, 0px); }
+          24%, 38%  { transform: translate(1.6px, -0.4px); }   /* glance right */
+          44%, 58%  { transform: translate(-1.6px, 0.2px); }   /* glance left */
+          64%, 74%  { transform: translate(0.4px, 0.9px); }    /* look down a bit */
+          80%, 100% { transform: translate(0px, 0px); }
+        }
+        @keyframes kxAntenna { 0%,100% { opacity: 0.55; } 50% { opacity: 1; } }
         @keyframes toastProgress { from { width:100%; } to { width:0%; } }
       `}</style>
     </>

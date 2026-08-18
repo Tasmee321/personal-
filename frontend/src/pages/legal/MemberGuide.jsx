@@ -46,7 +46,7 @@ const StatBadge = ({ label, value }) => {
       textAlign: 'center', minWidth: '60px',
     }}>
       <div style={{ fontSize: '22px', fontWeight: 900, color: theme.brand, letterSpacing: '-0.5px' }}>{value}</div>
-      <div style={{ fontSize: '11px', color: theme.faint, marginTop: '4px', fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: '11px', color: theme.subtext, marginTop: '4px', fontWeight: 600 }}>{label}</div>
     </div>
   );
 };
@@ -113,7 +113,7 @@ const MemberGuide = () => {
               padding: '5px 10px', borderRadius: '20px', border: `1px solid`,
               borderColor: activeChapter === ch.id ? theme.primary : theme.cardBorder,
               background: activeChapter === ch.id ? `${theme.primary}18` : 'transparent',
-              color: activeChapter === ch.id ? theme.brand : theme.faint,
+              color: activeChapter === ch.id ? theme.brand : theme.subtext,
               fontSize: '11px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
               whiteSpace: 'nowrap',
             }}

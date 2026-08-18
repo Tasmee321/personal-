@@ -189,12 +189,12 @@ function TransferForm({ spotBalance, signalBalance, volumeData, onSubmit, onRefr
         </div>
 
         {direction === 'toSpot' && vd.requiredVolume > 0 && (
-          <div style={{ marginTop: '12px', padding: '12px', borderRadius: '12px', backgroundColor: volumeComplete ? 'rgba(16,185,129,0.08)' : 'rgba(245,158,11,0.08)', border: `1px solid ${volumeComplete ? 'rgba(16,185,129,0.25)' : 'rgba(245,158,11,0.25)'}` }}>
-            <span style={{ fontSize: '11px', fontWeight: '700', color: volumeComplete ? '#10B981' : '#F59E0B' }}>
+          <div style={{ marginTop: '12px', padding: '12px', borderRadius: '12px', backgroundColor: volumeComplete ? theme.upSoft : theme.brandSoft, border: `1px solid ${volumeComplete ? theme.up : theme.brand}40` }}>
+            <span style={{ fontSize: '11px', fontWeight: '700', color: volumeComplete ? theme.up : theme.brand }}>
               {volumeComplete ? 'Volume Complete — 0% fee' : 'Volume Incomplete — 20% penalty applies'}
             </span>
             <div style={{ height: '5px', borderRadius: '3px', backgroundColor: theme.inputBg, overflow: 'hidden', marginTop: '8px' }}>
-              <div style={{ height: '100%', borderRadius: '3px', background: volumeComplete ? theme.upGradient : 'linear-gradient(90deg, #F59E0B, #EAB308)', width: `${Math.min(100, vd.requiredVolume > 0 ? (vd.tradedVolume / vd.requiredVolume) * 100 : 0)}%`, transition: 'width 0.3s' }} />
+              <div style={{ height: '100%', borderRadius: '3px', background: volumeComplete ? theme.upGradient : theme.brandGradient, width: `${Math.min(100, vd.requiredVolume > 0 ? (vd.tradedVolume / vd.requiredVolume) * 100 : 0)}%`, transition: 'width 0.3s' }} />
             </div>
             <div style={{ fontSize: '10px', color: theme.faint, marginTop: '5px' }}>
               {fmt(vd.tradedVolume)} / {fmt(vd.requiredVolume)} USDT &middot; Remaining: {fmt(Math.max(0, vd.requiredVolume - vd.tradedVolume))} USDT
@@ -242,7 +242,7 @@ function DepositPanel({ depositAddresses, rewardSummary, onDeposited }) {
       <div style={{ fontSize: '15px', fontWeight: '700', marginBottom: '14px', color: theme.text }}>Deposit USDT</div>
       <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
         {networks.map(n => (
-          <button key={n.key} onClick={() => { setDepNet(n.key); setDepMsg(''); }} style={{ flex: 1, padding: '10px 4px', borderRadius: '12px', border: `1px solid ${depNet === n.key ? n.color : theme.cardBorder}`, backgroundColor: depNet === n.key ? `${n.color}12` : 'transparent', color: depNet === n.key ? n.color : theme.subtext, fontWeight: '700', fontSize: '12px', cursor: 'pointer', transition: 'all 0.2s' }}>
+          <button key={n.key} onClick={() => { setDepNet(n.key); setDepMsg(''); }} style={{ flex: 1, padding: '10px 4px', borderRadius: '12px', border: `1px solid ${depNet === n.key ? n.color : theme.cardBorder}`, backgroundColor: depNet === n.key ? `${n.color}12` : 'transparent', color: depNet === n.key ? theme.text : theme.subtext, fontWeight: '700', fontSize: '12px', cursor: 'pointer', transition: 'all 0.2s' }}>
             {n.label}
           </button>
         ))}
@@ -257,8 +257,8 @@ function DepositPanel({ depositAddresses, rewardSummary, onDeposited }) {
           </button>
         </div>
       </div>
-      <div style={{ padding: '12px', borderRadius: '12px', backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.18)', marginBottom: '14px' }}>
-        <span style={{ fontSize: '11px', color: '#F59E0B', lineHeight: '1.5' }}>Send only USDT on the {net.chain} network to this address. Sending other tokens or using the wrong network may result in permanent loss.</span>
+      <div style={{ padding: '12px', borderRadius: '12px', backgroundColor: theme.brandSoft, border: `1px solid ${theme.brand}30`, marginBottom: '14px' }}>
+        <span style={{ fontSize: '11px', color: theme.brand, fontWeight: '600', lineHeight: '1.5' }}>Send only USDT on the {net.chain} network to this address. Sending other tokens or using the wrong network may result in permanent loss.</span>
       </div>
       <div style={{ fontSize: '12px', fontWeight: '700', color: theme.subtext, marginBottom: '10px' }}>Quick Deposit</div>
       <div style={{ display: 'flex', gap: '8px' }}>
@@ -347,7 +347,7 @@ function WithdrawPanel({ balance, withdrawalRequests, onWithdrawn }) {
                 <div style={{ fontWeight: '600', color: theme.text }}>{Number(wr.netPayout).toFixed(2)} USDT <span style={{ color: theme.faint, fontWeight: 'normal' }}>via {wr.network.toUpperCase()}</span></div>
                 <div style={{ color: theme.faint, fontSize: '10px' }}>{new Date(wr.createdAt).toLocaleString()}</div>
               </div>
-              <span style={{ fontSize: '11px', fontWeight: '700', padding: '4px 10px', borderRadius: '10px', backgroundColor: wr.status === 'completed' ? 'rgba(16,185,129,0.12)' : wr.status === 'rejected' ? 'rgba(239,68,68,0.12)' : 'rgba(245,158,11,0.12)', color: wr.status === 'completed' ? '#10B981' : wr.status === 'rejected' ? '#EF4444' : '#F59E0B' }}>
+              <span style={{ fontSize: '11px', fontWeight: '700', padding: '4px 10px', borderRadius: '10px', backgroundColor: wr.status === 'completed' ? theme.upSoft : wr.status === 'rejected' ? theme.downSoft : theme.brandSoft, color: wr.status === 'completed' ? theme.up : wr.status === 'rejected' ? theme.down : theme.brand }}>
                 {wr.status === 'completed' ? 'Completed' : wr.status === 'rejected' ? 'Rejected' : 'Pending'}
               </span>
             </div>
@@ -669,7 +669,7 @@ const Assets = () => {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ fontWeight: '700', fontSize: '14px', color: theme.text }}>Signal Balance</span>
                     {volumeData.requiredVolume > 0 && (
-                      <span style={{ fontSize: '9px', fontWeight: '700', padding: '3px 8px', borderRadius: '10px', backgroundColor: volumeData.tradedVolume >= volumeData.requiredVolume ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)', color: volumeData.tradedVolume >= volumeData.requiredVolume ? '#10B981' : '#F59E0B' }}>
+                      <span style={{ fontSize: '9px', fontWeight: '700', padding: '3px 8px', borderRadius: '10px', backgroundColor: volumeData.tradedVolume >= volumeData.requiredVolume ? theme.upSoft : theme.brandSoft, color: volumeData.tradedVolume >= volumeData.requiredVolume ? theme.up : theme.brand }}>
                         {volumeData.tradedVolume >= volumeData.requiredVolume ? 'VOL DONE' : `VOL ${Math.round((volumeData.tradedVolume / volumeData.requiredVolume) * 100)}%`}
                       </span>
                     )}
@@ -831,8 +831,8 @@ const Assets = () => {
           </div>
 
           {signalBalance < 200 && (
-            <div style={{ padding: '12px 14px', borderRadius: '14px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.18)', marginBottom: '16px' }}>
-              <span style={{ fontSize: '12px', color: '#F59E0B', fontWeight: '600' }}>Minimum $200 balance required to place signals. Transfer funds from Spot wallet.</span>
+            <div style={{ padding: '12px 14px', borderRadius: '14px', background: theme.brandSoft, border: `1px solid ${theme.brand}30`, marginBottom: '16px' }}>
+              <span style={{ fontSize: '12px', color: theme.brand, fontWeight: '600' }}>Minimum $200 balance required to place signals. Transfer funds from Spot wallet.</span>
             </div>
           )}
 

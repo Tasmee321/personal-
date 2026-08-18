@@ -5,8 +5,8 @@
   "description": "KYNEX Crypto Trading Platform",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#080C18",
-  "theme_color": "#3B82F6",
+  "background_color": "#F0F2F8",
+  "theme_color": "#F0F2F8",
   "orientation": "portrait",
   "categories": ["finance", "crypto"],
   "icons": [

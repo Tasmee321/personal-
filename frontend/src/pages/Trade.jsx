@@ -28,6 +28,8 @@ function fmt(n, digits = 2) {
 }
 
 const PKT_OFFSET_SEC = 5 * 60 * 60;
+import { buildChartStreamUrl, applyOverrideDrift, mergeTradeTick, TF_SECONDS } from '../utils/liveCandles';
+
 function toCandle(k) {
   return { time: Math.floor(k[0] / 1000) + PKT_OFFSET_SEC, open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]) };
 }
@@ -57,10 +59,10 @@ const RiskWarningModal = ({ theme, onAccept, onCancel }) => (
     }}>
       <div style={{
         width: 56, height: 56, borderRadius: '50%',
-        background: 'linear-gradient(135deg, #FF6B35 0%, #FF4444 100%)',
+        background: theme.downGradient || theme.down,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         margin: '0 auto 18px',
-        boxShadow: '0 8px 24px rgba(255,68,68,0.3)',
+        boxShadow: '0 8px 24px rgba(239,68,68,0.3)',
       }}>
         <AlertTriangle size={28} color="white" />
       </div>
@@ -89,7 +91,7 @@ const RiskWarningModal = ({ theme, onAccept, onCancel }) => (
           flex: 1, padding: '14px', borderRadius: '12px', border: 'none',
           background: theme.primaryGradient || theme.primary,
           color: 'white', fontWeight: 700, fontSize: '14px', cursor: 'pointer',
-          boxShadow: '0 6px 18px rgba(36,104,242,0.35)',
+          boxShadow: '0 6px 18px rgba(59,130,246,0.3)',
         }}>
           I Understand
         </button>
@@ -278,6 +280,8 @@ const Trade = () => {
     let ws = null;
     let animFrameId = null;
     let pendingUpdate = null; // buffer latest tick, drain on rAF
+    let lastRawCandle = null; // last real candle (kline / tick-merged) — ticks merge into real data
+    const tfSec = TF_SECONDS[timeframe] || 60;
 
     const container = chartContainerRef.current;
     const chart = createChart(container, {
@@ -342,33 +346,29 @@ const Trade = () => {
 
     const connectWs = () => {
       if (ws) { try { ws.close(); } catch (_) {} }
-      ws = new WebSocket(`wss://stream.binance.com:9443/ws/${selectedCoin.symbol.toLowerCase()}@kline_${timeframe}`);
+      // Combined stream: kline (authoritative OHLC every ~2s) + aggTrade (every trade → fluid candle)
+      ws = new WebSocket(buildChartStreamUrl(selectedCoin.symbol, timeframe));
       ws.onmessage = (event) => {
         if (cancelled || !seriesRef.current) return;
-        let k; try { ({ k } = JSON.parse(event.data)); } catch { return; }
-        if (!k) return;
-        const c = {
-          time: Math.floor(k.t / 1000) + PKT_OFFSET_SEC,
-          open: parseFloat(k.o),
-          high: parseFloat(k.h),
-          low: parseFloat(k.l),
-          close: parseFloat(k.c),
-        };
+        let msg; try { msg = JSON.parse(event.data); } catch { return; }
+        const data = msg?.data;
+        if (!data) return;
+        let c;
+        if (data.e === 'kline' && data.k) {
+          const k = data.k;
+          c = { time: Math.floor(k.t / 1000) + PKT_OFFSET_SEC, open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c) };
+          lastRawCandle = c;
+        } else if (data.e === 'aggTrade') {
+          const t = Number(data.T || data.E || Date.now());
+          const bucket = Math.floor(t / 1000 / tfSec) * tfSec + PKT_OFFSET_SEC;
+          const merged = mergeTradeTick(lastRawCandle, parseFloat(data.p), bucket);
+          if (!merged) return;
+          lastRawCandle = merged;
+          c = merged;
+        } else return;
         const override = candleOverridesRef.current.find(o => o.symbol === selectedCoin.symbol);
-        if (override) {
-          const biasFactor = 0.0003 + Math.random() * 0.0004;
-          const noise = (Math.random() - 0.45) * c.open * 0.0006;
-          const drift = override.direction === 'up' ? biasFactor * c.open : -biasFactor * c.open;
-          c.close = +(c.close + drift + noise).toFixed(8);
-          if (override.direction === 'up') {
-            c.high = Math.max(c.high, c.close, c.open + c.open * 0.0002);
-            c.low = Math.min(c.low, c.open - c.open * 0.0001);
-          } else {
-            c.low = Math.min(c.low, c.close, c.open - c.open * 0.0002);
-            c.high = Math.max(c.high, c.open + c.open * 0.0001);
-          }
-        }
-        pendingUpdate = c; // buffer — rAF drains it
+        // Deterministic per-candle bias (no per-tick jitter)
+        pendingUpdate = override ? applyOverrideDrift(c, override) : c; // buffer — rAF drains it
       };
       ws.onerror = () => {
         // auto-reconnect after 2s on error
@@ -390,7 +390,9 @@ const Trade = () => {
         );
         const raw = await res.json();
         if (cancelled || !seriesRef.current || !Array.isArray(raw)) return;
-        seriesRef.current.setData(raw.map(toCandle));
+        const hist = raw.map(toCandle);
+        seriesRef.current.setData(hist);
+        if (hist.length && (!lastRawCandle || hist[hist.length - 1].time >= lastRawCandle.time)) lastRawCandle = { ...hist[hist.length - 1] };
         chartRef.current?.timeScale().fitContent();
       } catch { /* WS keeps it live even if REST fails */ }
     };
@@ -526,7 +528,7 @@ const Trade = () => {
             <div style={{ display: 'flex', gap: '8px' }}>
               <input type="number" min="0" value={buyAmount} onChange={(e) => setBuyAmount(e.target.value)} placeholder="0.00"
                 style={{ flex: 1, padding: '12px', borderRadius: '10px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg, color: theme.text, fontSize: '14px', boxSizing: 'border-box' }} />
-              <button onClick={handleBuy} disabled={busy} style={{ padding: '0 20px', borderRadius: '10px', border: 'none', background: theme.upGradient || theme.up, color: 'white', fontWeight: 'bold', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1, boxShadow: '0 4px 12px rgba(0,200,83,0.25)' }}>
+              <button onClick={handleBuy} disabled={busy} style={{ padding: '0 20px', borderRadius: '10px', border: 'none', background: theme.upGradient || theme.up, color: 'white', fontWeight: 'bold', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1, boxShadow: '0 4px 12px rgba(16,185,129,0.25)' }}>
                 Buy {selectedCoin.short}
               </button>
             </div>
@@ -537,7 +539,7 @@ const Trade = () => {
             <div style={{ display: 'flex', gap: '8px' }}>
               <input type="number" min="0" value={sellQty} onChange={(e) => setSellQty(e.target.value)} placeholder="0.000000"
                 style={{ flex: 1, padding: '12px', borderRadius: '10px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg, color: theme.text, fontSize: '14px', boxSizing: 'border-box' }} />
-              <button onClick={handleSell} disabled={busy} style={{ padding: '0 20px', borderRadius: '10px', border: 'none', background: theme.downGradient || theme.down, color: 'white', fontWeight: 'bold', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1, boxShadow: '0 4px 12px rgba(255,68,68,0.25)' }}>
+              <button onClick={handleSell} disabled={busy} style={{ padding: '0 20px', borderRadius: '10px', border: 'none', background: theme.downGradient || theme.down, color: 'white', fontWeight: 'bold', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1, boxShadow: '0 4px 12px rgba(239,68,68,0.25)' }}>
                 Sell {selectedCoin.short}
               </button>
             </div>
@@ -565,10 +567,10 @@ const Trade = () => {
               style={{ width: '100%', padding: '12px', borderRadius: '10px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg, color: theme.text, fontSize: '14px', boxSizing: 'border-box', marginBottom: '14px' }} />
 
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => openFutures('long')} disabled={busy} style={{ flex: 1, background: theme.upGradient || theme.up, color: 'white', border: 'none', padding: '14px', borderRadius: '10px', fontWeight: 'bold', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1, boxShadow: '0 4px 12px rgba(0,200,83,0.25)' }}>
+              <button onClick={() => openFutures('long')} disabled={busy} style={{ flex: 1, background: theme.upGradient || theme.up, color: 'white', border: 'none', padding: '14px', borderRadius: '10px', fontWeight: 'bold', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1, boxShadow: '0 4px 12px rgba(16,185,129,0.25)' }}>
                 Long
               </button>
-              <button onClick={() => openFutures('short')} disabled={busy} style={{ flex: 1, background: theme.downGradient || theme.down, color: 'white', border: 'none', padding: '14px', borderRadius: '10px', fontWeight: 'bold', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1, boxShadow: '0 4px 12px rgba(255,68,68,0.25)' }}>
+              <button onClick={() => openFutures('short')} disabled={busy} style={{ flex: 1, background: theme.downGradient || theme.down, color: 'white', border: 'none', padding: '14px', borderRadius: '10px', fontWeight: 'bold', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1, boxShadow: '0 4px 12px rgba(239,68,68,0.25)' }}>
                 Short
               </button>
             </div>
@@ -594,7 +596,7 @@ const Trade = () => {
                   <span style={{ fontWeight: 'bold', color: floatingPnl === null ? theme.faint : floatingPnl >= 0 ? theme.up : theme.down }}>
                     {floatingPnl === null ? 'Switch to this pair for live PnL' : `${floatingPnl >= 0 ? '+' : ''}${fmt(floatingPnl)} USDT`}
                   </span>
-                  <button onClick={() => closeFutures(p.id)} disabled={busy} style={{ padding: '8px 16px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.bg, color: theme.text, fontWeight: 'bold', cursor: busy ? 'not-allowed' : 'pointer', fontSize: '12px' }}>
+                  <button onClick={() => closeFutures(p.id)} disabled={busy} style={{ padding: '8px 16px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, backgroundColor: 'transparent', color: theme.text, fontWeight: 'bold', cursor: busy ? 'not-allowed' : 'pointer', fontSize: '12px' }}>
                     Close
                   </button>
                 </div>

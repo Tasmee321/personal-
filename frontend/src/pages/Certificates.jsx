@@ -666,7 +666,7 @@ const Certificates = () => {
             {/* Intro text before each cert */}
             <div style={{
               backgroundColor: theme.card, border: `1px solid ${theme.cardBorder}`,
-              borderRadius: '10px', padding: '13px 16px', marginBottom: '14px',
+              borderRadius: '14px', padding: '13px 16px', marginBottom: '14px',
               backdropFilter: theme.cardGlass, WebkitBackdropFilter: theme.cardGlass,
             }}>
               <p style={{ margin: 0, fontSize: '12.5px', color: theme.subtext, lineHeight: '1.65' }}>

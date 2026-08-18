@@ -121,7 +121,7 @@ const DepositPage = () => {
         <div style={{ display: 'flex', gap: '4px' }}>
           {['deposit', 'history'].map(v => (
             <button key={v} onClick={() => setView(v)} style={{
-              background: view === v ? `${theme.primary}15` : 'none', border: view === v ? `1px solid ${theme.primary}` : `1px solid transparent`,
+              background: view === v ? theme.primarySoft : 'none', border: view === v ? `1px solid ${theme.primary}` : `1px solid transparent`,
               color: view === v ? theme.primary : theme.subtext, fontWeight: '600', fontSize: '13px', cursor: 'pointer',
               padding: '6px 14px', borderRadius: '8px',
             }}>{v === 'deposit' ? 'Deposit' : 'History'}</button>
@@ -166,7 +166,7 @@ const DepositPage = () => {
                 </button>
               </div>
               {showNetDropdown && (
-                <div style={{ position: 'absolute', left: '0', right: '0', top: '100%', marginTop: '4px', backgroundColor: theme.inputBg || theme.bg, borderRadius: '12px', border: `1px solid ${theme.cardBorder}`, boxShadow: '0 8px 32px rgba(0,0,0,0.3)', zIndex: 100, overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', left: '0', right: '0', top: '100%', marginTop: '4px', backgroundColor: theme.card, backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)', borderRadius: '12px', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadowElevated || theme.shadow, zIndex: 100, overflow: 'hidden' }}>
                   {NETWORKS.map(n => (
                     <button key={n.key} onClick={() => { setDepNet(n.key); setShowNetDropdown(false); }} style={{
                       width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 16px',
@@ -249,8 +249,8 @@ const DepositPage = () => {
             {/* Warnings */}
             <div style={{ borderRadius: '12px', overflow: 'hidden', marginBottom: '12px' }}>
               <div style={{ padding: '12px 14px', backgroundColor: 'rgba(245,158,11,0.08)', borderBottom: '1px solid rgba(245,158,11,0.12)', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                <AlertTriangle size={16} style={{ color: '#F59E0B', flexShrink: 0, marginTop: '1px' }} />
-                <span style={{ fontSize: '12px', color: '#F59E0B', lineHeight: '1.5' }}>
+                <AlertTriangle size={16} style={{ color: theme.brand, flexShrink: 0, marginTop: '1px' }} />
+                <span style={{ fontSize: '12px', color: theme.brand, fontWeight: '600', lineHeight: '1.5' }}>
                   Send only <b>USDT</b> on the <b>{net.chain}</b> network. Deposits via other networks will not be credited.
                 </span>
               </div>
@@ -272,7 +272,7 @@ const DepositPage = () => {
                 { step: '4', text: 'Your deposit will be reviewed and credited within 30 minutes.' },
               ].map((tip, i) => (
                 <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', marginBottom: i < 3 ? '10px' : 0 }}>
-                  <span style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: `${theme.primary}15`, color: theme.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '700', flexShrink: 0 }}>{tip.step}</span>
+                  <span style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: theme.primarySoft, color: theme.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '700', flexShrink: 0 }}>{tip.step}</span>
                   <span style={{ fontSize: '12px', color: theme.subtext, lineHeight: '1.5' }}>{tip.text}</span>
                 </div>
               ))}
@@ -323,7 +323,7 @@ const DepositPage = () => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span style={{ fontSize: '18px' }}>📥</span>
                       <div>
-                        <div style={{ fontWeight: '700', fontSize: '15px', color: isDone ? '#10B981' : theme.text }}>
+                        <div style={{ fontWeight: '700', fontSize: '15px', color: isDone ? theme.up : theme.text }}>
                           +{fmt(entry.amount)} USDT
                         </div>
                         <div style={{ fontSize: '11px', color: theme.subtext, marginTop: '1px' }}>
@@ -361,7 +361,7 @@ const DepositPage = () => {
                       </div>
                     )}
                     {entry.autoVerified && (
-                      <div style={{ marginTop: '2px', fontSize: '11px', color: '#10B981', fontWeight: '600' }}>⚡ Auto-verified</div>
+                      <div style={{ marginTop: '2px', fontSize: '11px', color: theme.up, fontWeight: '600' }}>⚡ Auto-verified</div>
                     )}
                     <div style={{ fontSize: '11px', color: theme.primary, fontWeight: '600', marginTop: '2px' }}>Tap for full details →</div>
                   </div>
@@ -406,7 +406,7 @@ const DepositPage = () => {
             <div style={{ fontWeight: '800', fontSize: '18px', color: theme.text, marginBottom: '8px' }}>
               {depPopup.type === 'credited' ? '💚 Deposit Credited!' : '⏳ Deposit Submitted!'}
             </div>
-            <div style={{ fontSize: '22px', fontWeight: '800', color: depPopup.type === 'credited' ? '#10B981' : '#F59E0B', marginBottom: '8px' }}>
+            <div style={{ fontSize: '22px', fontWeight: '800', color: depPopup.type === 'credited' ? theme.up : theme.brand, marginBottom: '8px' }}>
               +{depPopup.amount?.toFixed(2)} USDT
             </div>
             <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '6px' }}>via {depPopup.network}</div>

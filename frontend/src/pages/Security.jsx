@@ -291,7 +291,7 @@ const Security = () => {
                   padding: '3px 10px',
                   borderRadius: '8px',
                   backgroundColor: security.securityLevel === 'High' ? theme.upSoft
-                    : security.securityLevel === 'Medium' ? theme.primarySoft
+                    : security.securityLevel === 'Medium' ? theme.brandSoft
                     : theme.downSoft,
                 }}>
                   {security.securityLevel}
@@ -400,7 +400,8 @@ const Security = () => {
                     style={{
                       width: 44, height: 24, borderRadius: 12,
                       cursor: lockBusy ? 'not-allowed' : 'pointer',
-                      backgroundColor: appLock ? '#F59E0B' : theme.cardBorder,
+                      background: appLock ? theme.primaryGradient : theme.cardBorder,
+                      boxShadow: appLock ? '0 2px 8px rgba(59,130,246,0.3)' : 'none',
                       position: 'relative', transition: 'background 0.2s',
                       flexShrink: 0, opacity: lockBusy ? 0.6 : 1,
                     }}

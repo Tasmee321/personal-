@@ -297,7 +297,7 @@ export default function KynexAuth() {
         .ka-logo .brand { font-size: 30px; font-weight: 800; color: ${theme.brand}; letter-spacing: 1px; }
         .ka-logo .tagline { font-size: 11px; color: ${theme.faint}; margin-top: 4px; letter-spacing: 2px; text-transform: uppercase; }
         .ka-mode-tabs { display: flex; justify-content: center; gap: 36px; margin-bottom: 28px; }
-        .ka-mode-tab { background: none; border: none; cursor: pointer; font-size: 17px; font-weight: 700; color: ${theme.faint}; padding: 0 0 8px 0; border-bottom: 2px solid transparent; }
+        .ka-mode-tab { background: none; border: none; cursor: pointer; font-size: 17px; font-weight: 700; color: ${theme.subtext}; padding: 0 0 8px 0; border-bottom: 2px solid transparent; }
         .ka-mode-tab.active { color: ${theme.text}; border-bottom-color: ${theme.brand}; }
         .ka-method-tabs { display: flex; gap: 24px; margin-bottom: 20px; }
         .ka-method-tab { display: flex; align-items: center; gap: 6px; background: none; border: none; cursor: pointer; font-size: 14px; font-weight: 600; color: ${theme.faint}; padding: 0 0 6px 0; border-bottom: 2px solid transparent; }
@@ -328,7 +328,7 @@ export default function KynexAuth() {
         .ka-input.has-toggle { padding-right: 48px; }
         .ka-eye { position: absolute; ${isRTL ? 'left' : 'right'}: 14px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: ${theme.faint}; display: flex; align-items: center; padding: 0; }
         .ka-eye:hover { color: ${theme.text}; }
-        .ka-btn { width: 100%; padding: 16px; border: none; border-radius: 25px; background-color: ${theme.inputBg || theme.bg}; color: ${theme.faint}; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; margin-top: 10px; border: 1px solid ${theme.cardBorder}; }
+        .ka-btn { width: 100%; padding: 16px; border: none; border-radius: 25px; background-color: ${theme.inputBg || theme.bg}; color: ${theme.subtext}; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; margin-top: 10px; border: 1px solid ${theme.cardBorder}; }
         .ka-btn.active { background: ${theme.brandGradient || theme.brand}; color: #1A1305; cursor: pointer; border-color: transparent; box-shadow: 0 6px 18px rgba(217,119,6,0.3); }
         .ka-btn:disabled { cursor: not-allowed; opacity: 0.8; }
         .ka-graphic { width: 350px; height: 200px; background: ${theme.primaryGradient || theme.primary}; position: absolute; bottom: 0; ${isRTL ? 'right' : 'left'}: 80px; border-top-left-radius: 12px; border-top-right-radius: 12px; display: flex; justify-content: center; align-items: center; }
@@ -484,7 +484,7 @@ export default function KynexAuth() {
 
                     {!isLogin && (
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '25px', fontSize: '13px', color: theme.subtext, lineHeight: '1.4' }}>
-                        <input type="checkbox" required style={{ marginTop: '3px', width: '16px', height: '16px' }} />
+                        <input type="checkbox" required style={{ marginTop: '3px', width: '16px', height: '16px', accentColor: theme.brand, cursor: 'pointer' }} />
                         <label>
                           {t.agreeText}{' '}
                           <Link to="/legal/user-agreement" target="_blank" rel="noopener noreferrer" style={{ color: theme.primary }}>{t.termsOfService}</Link>
@@ -508,7 +508,7 @@ export default function KynexAuth() {
                     <input type="text" placeholder="• • • • • •" className="ka-input" value={otp} onChange={(e) => setOtp(e.target.value)} required maxLength={6} style={{ textAlign: 'center', fontSize: '28px', letterSpacing: '8px' }} />
                     <button type="submit" className={`ka-btn ${otp.length === 6 ? 'active' : ''}`} disabled={loading}>{loading ? t.verifying : t.verifyBtn}</button>
                   </form>
-                  <button type="button" onClick={handleResendOtp} disabled={resendCooldown > 0} style={{ background: 'none', border: 'none', color: resendCooldown > 0 ? theme.subtext : theme.accent, cursor: resendCooldown > 0 ? 'default' : 'pointer', marginTop: '16px', fontSize: '14px' }}>
+                  <button type="button" onClick={handleResendOtp} disabled={resendCooldown > 0} style={{ background: 'none', border: 'none', color: resendCooldown > 0 ? theme.faint : theme.primary, cursor: resendCooldown > 0 ? 'default' : 'pointer', marginTop: '16px', fontSize: '14px' }}>
                     {resendCooldown > 0 ? `Resend Code in ${resendCooldown}s` : 'Resend Code'}
                   </button>
                 </>
@@ -542,7 +542,8 @@ export default function KynexAuth() {
           <div style={{
             width: '88%', maxWidth: '340px', borderRadius: '24px', padding: '36px 28px 28px',
             backgroundColor: theme.card, border: `1px solid ${theme.cardBorder}`,
-            boxShadow: '0 24px 80px rgba(0,0,0,0.4)', textAlign: 'center', position: 'relative', overflow: 'hidden',
+            boxShadow: theme.shadowElevated || theme.shadow, backdropFilter: theme.cardGlass, WebkitBackdropFilter: theme.cardGlass,
+            textAlign: 'center', position: 'relative', overflow: 'hidden',
             animation: 'kaSlideUp 0.4s ease 0.1s both',
           }}>
             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', background: `linear-gradient(90deg, ${theme.up}, ${theme.primary}, ${theme.brand})` }} />

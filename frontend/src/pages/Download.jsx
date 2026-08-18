@@ -137,8 +137,11 @@ const CERTS = [
 ];
 
 const Download = () => {
-  const { theme, iconBadges } = useTheme();
+  const { theme, mode, iconBadges } = useTheme();
   const navigate = useNavigate();
+  const appleBg = mode === 'dark' ? 'linear-gradient(135deg, #F8FAFC, #CBD5E1)' : 'linear-gradient(135deg, #555, #222)';
+  const appleFg = mode === 'dark' ? '#0F172A' : 'white';
+  const appleShadow = mode === 'dark' ? '0 4px 16px rgba(255,255,255,0.12)' : '0 4px 16px rgba(0,0,0,0.3)';
   const [showIosGuide, setShowIosGuide] = useState(false);
   const [apkInfo, setApkInfo] = useState({
     version_name: '2.0.0',
@@ -261,7 +264,7 @@ const Download = () => {
         <h1 style={{ fontSize: '32px', fontWeight: 800, margin: '0 0 10px', letterSpacing: '-0.5px', position: 'relative', zIndex: 2 }}>
           Get KYNEX App
         </h1>
-        <p style={{ color: theme.faint, fontSize: '14px', margin: '0 0 36px', position: 'relative', zIndex: 2, maxWidth: 360 }}>
+        <p style={{ color: theme.subtext, fontSize: '14px', margin: '0 0 36px', position: 'relative', zIndex: 2, maxWidth: 360 }}>
           Trade crypto on the go with our fast, secure & always up-to-date application
         </p>
       </div>
@@ -291,7 +294,7 @@ const Download = () => {
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 4,
               fontSize: '11px', color: theme.up, fontWeight: 600,
-              backgroundColor: `${theme.up}15`, padding: '3px 10px', borderRadius: 20,
+              backgroundColor: theme.upSoft, padding: '3px 10px', borderRadius: 20,
               marginBottom: 14,
             }}>
               <CheckCircle size={12} /> v{apkInfo.version_name}
@@ -322,18 +325,18 @@ const Download = () => {
           }}>
             <div style={{
               width: 52, height: 52, borderRadius: 14,
-              background: 'linear-gradient(135deg, #555, #222)',
+              background: appleBg,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              marginBottom: 14, boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+              marginBottom: 14, boxShadow: appleShadow,
             }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill={appleFg}><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
             </div>
             <h3 style={{ margin: '0 0 4px', fontSize: '16px', fontWeight: 700 }}>iPhone</h3>
             <p style={{ margin: '0 0 6px', fontSize: '11px', color: theme.faint }}>Add to Home Screen</p>
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 4,
               fontSize: '11px', color: theme.primary, fontWeight: 600,
-              backgroundColor: `${theme.primary}15`, padding: '3px 10px', borderRadius: 20,
+              backgroundColor: theme.primarySoft, padding: '3px 10px', borderRadius: 20,
               marginBottom: 14,
             }}>
               <Smartphone size={12} /> No download needed
@@ -343,9 +346,9 @@ const Download = () => {
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                 padding: '12px 24px', borderRadius: '10px', border: 'none', width: '100%',
-                background: 'linear-gradient(135deg, #555, #222)',
-                color: 'white', fontWeight: 700, fontSize: '14px', cursor: 'pointer',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+                background: appleBg,
+                color: appleFg, fontWeight: 700, fontSize: '14px', cursor: 'pointer',
+                boxShadow: appleShadow,
               }}
             >
               View Guide
@@ -372,7 +375,7 @@ const Download = () => {
               <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                 <div style={{
                   width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-                  backgroundColor: `${theme.primary}15`,
+                  backgroundColor: theme.primarySoft,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   color: theme.primary,
                 }}>
@@ -380,7 +383,7 @@ const Download = () => {
                 </div>
                 <div>
                   <div style={{ fontSize: '11px', fontWeight: 700, marginBottom: 2 }}>{b.title}</div>
-                  <div style={{ fontSize: '10px', color: theme.faint, lineHeight: 1.5 }}>{b.desc}</div>
+                  <div style={{ fontSize: '11px', color: theme.subtext, lineHeight: 1.5 }}>{b.desc}</div>
                 </div>
               </div>
             ))}
@@ -438,7 +441,7 @@ const Download = () => {
                 {f.icon}
               </div>
               <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, lineHeight: 1.3 }}>{f.title}</h4>
-              <p style={{ margin: 0, fontSize: '12px', color: theme.faint, lineHeight: 1.5 }}>{f.desc}</p>
+              <p style={{ margin: 0, fontSize: '12px', color: theme.subtext, lineHeight: 1.5 }}>{f.desc}</p>
             </div>
           ))}
         </div>

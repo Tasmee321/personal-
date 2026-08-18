@@ -278,14 +278,14 @@ const Invite = () => {
         {summary && (
           <>
             {/* UID card */}
-            <div style={{ ...glassCard(theme, { background: theme.brandGradient || `linear-gradient(135deg, ${theme.primarySoft} 0%, ${theme.brandSoft} 100%)`, padding: '20px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }) }}>
+            <div style={{ ...glassCard(theme, { background: theme.brandGradient || `linear-gradient(135deg, ${theme.primarySoft} 0%, ${theme.brandSoft} 100%)`, color: '#1A1305', padding: '20px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }) }}>
               <div>
-                <div style={{ color: theme.subtext, fontSize: '12px', marginBottom: '4px' }}>My UID</div>
-                <div style={{ fontWeight: 'bold', fontSize: '18px' }}>{summary.uid}</div>
+                <div style={{ color: 'rgba(26,19,5,0.72)', fontSize: '12px', marginBottom: '4px' }}>My UID</div>
+                <div style={{ fontWeight: 'bold', fontSize: '18px', color: '#1A1305' }}>{summary.uid}</div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ color: theme.subtext, fontSize: '12px', marginBottom: '4px' }}>Referrer UID</div>
-                <div style={{ fontWeight: 'bold', fontSize: '18px' }}>{summary.referrerUid || '--'}</div>
+                <div style={{ color: 'rgba(26,19,5,0.72)', fontSize: '12px', marginBottom: '4px' }}>Referrer UID</div>
+                <div style={{ fontWeight: 'bold', fontSize: '18px', color: '#1A1305' }}>{summary.referrerUid || '--'}</div>
               </div>
             </div>
 
@@ -337,8 +337,8 @@ const Invite = () => {
                         Lv{req.level}
                         <span style={{
                           fontSize: '11px', fontWeight: '700', padding: '1px 6px', borderRadius: '8px',
-                          backgroundColor: achieved ? theme.up : isNext ? theme.primary : theme.faint,
-                          color: 'white',
+                          backgroundColor: achieved ? theme.up : isNext ? theme.primary : `${theme.faint}33`,
+                          color: achieved || isNext ? 'white' : theme.subtext,
                         }}>{count}</span>
                       </button>
                     );

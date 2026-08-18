@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createChart, CandlestickSeries } from 'lightweight-charts';
 import PullIndicator from '../components/PullToRefresh';
 import { usePullToRefresh } from '../utils/usePullToRefresh';
+import { buildChartStreamUrl, applyOverrideDrift, mergeTradeTick } from '../utils/liveCandles';
 import { Link } from 'react-router-dom';
 import { ChevronDown, Search, X, Settings } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
@@ -169,6 +170,8 @@ const Signals = () => {
 
   const priceBufferRef = useRef({});
   const pendingKlinesRef = useRef(null);
+  const lastRawCandleRef = useRef(null);   // last real (kline/tick-merged) candle for the selected coin
+  const latestTickRef = useRef(null);      // coalesced latest aggTrade tick
   const candleOverridesRef = useRef([]);
 
   const getEndpoint = (path) => {
@@ -183,9 +186,11 @@ const Signals = () => {
       if (res.ok) {
         setSignalBalance(data.signalBalance);
         setPositions(data.positions || []);
+        if (data.volumeData) setVolumeData(data.volumeData);
       }
     } catch { /* next poll */ }
   };
+  const [volumeData, setVolumeData] = useState(null);
 
   useEffect(() => {
     loadAccount();
@@ -202,7 +207,7 @@ const Signals = () => {
       try {
         const res = await fetch(`${API_URL}/api/signal-status`, { headers: authHeaders() });
         const data = await res.json();
-        if (res.ok) setBonusInfo({ bonusSignals: data.bonusSignals || 0, daysRemaining: data.daysRemaining || 0, bonusUsedToday: data.bonusUsedToday || 0, referralWindowOpen: !!data.referralWindowOpen, referralSignalTime: data.referralSignalTime, referralDirection: data.referralDirection, referralSymbol: data.referralSymbol, referralEndTime: data.referralEndTime });
+        if (res.ok) setBonusInfo({ bonusSignals: data.bonusSignals || 0, daysRemaining: data.daysRemaining || 0, bonusUsedToday: data.bonusUsedToday || 0, referralWindowOpen: !!data.referralWindowOpen, referralSignalTime: data.referralSignalTime, referralDirection: data.referralDirection, referralSymbol: data.referralSymbol, referralEndTime: data.referralEndTime, dailySignalLimit: data.dailySignalLimit ?? null, signalsUsedToday: data.signalsUsedToday ?? null, signalsLeftToday: data.signalsLeftToday ?? null });
       } catch { /* silent */ }
     };
     loadBonusStatus();
@@ -317,6 +322,8 @@ const Signals = () => {
     let ws;
     const pending = [];
     pendingKlinesRef.current = pending;
+    lastRawCandleRef.current = null;
+    latestTickRef.current = null;
     const load = async () => {
       try {
         const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=${selectedCoin.symbol}&interval=1m&limit=120`);
@@ -328,22 +335,32 @@ const Signals = () => {
           time: Math.floor(k[0] / 1000) + shiftSec + PKT_OFFSET_SEC,
           open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]),
         }));
-        seriesRef.current.setData(candles.filter((c) => (c.time - shiftSec - PKT_OFFSET_SEC) <= cutoffSec));
+        const shown = candles.filter((c) => (c.time - shiftSec - PKT_OFFSET_SEC) <= cutoffSec);
+        seriesRef.current.setData(shown);
+        lastRawCandleRef.current = shown.length ? { ...shown[shown.length - 1] } : null;
         candles.filter((c) => (c.time - shiftSec - PKT_OFFSET_SEC) > cutoffSec).forEach((c) => {
           pending.push({ eventTime: (c.time - shiftSec - PKT_OFFSET_SEC) * 1000, candle: c });
         });
         chartRef.current?.timeScale().fitContent();
       } catch { /* silent */ }
-      ws = new WebSocket(`wss://stream.binance.com:9443/ws/${selectedCoin.symbol.toLowerCase()}@kline_1m`);
+      // Combined stream: kline_1m (source of truth every ~2s) + aggTrade (every trade → fluid candle)
+      ws = new WebSocket(buildChartStreamUrl(selectedCoin.symbol, '1m'));
       ws.onmessage = (event) => {
-        let data; try { data = JSON.parse(event.data); } catch { return; }
-        const k = data?.k;
-        if (!k) return;
+        let msg; try { msg = JSON.parse(event.data); } catch { return; }
+        const data = msg?.data;
+        if (!data) return;
         const shiftSec = Math.floor(MARKET_DATA_DELAY_MS / 1000);
-        pending.push({
-          eventTime: data.E || Date.now(),
-          candle: { time: Math.floor(k.t / 1000) + shiftSec + PKT_OFFSET_SEC, open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c) },
-        });
+        if (data.e === 'kline' && data.k) {
+          const k = data.k;
+          pending.push({
+            eventTime: data.E || Date.now(),
+            candle: { time: Math.floor(k.t / 1000) + shiftSec + PKT_OFFSET_SEC, open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c) },
+          });
+        } else if (data.e === 'aggTrade') {
+          // Only the latest tick matters — coalesce (BTC can push dozens per second)
+          const t = Number(data.T || data.E || Date.now());
+          latestTickRef.current = { price: parseFloat(data.p), bucketTime: Math.floor(t / 60000) * 60 + shiftSec + PKT_OFFSET_SEC, eventTime: t };
+        }
       };
     };
     const initial = setTimeout(load, 0);
@@ -355,31 +372,29 @@ const Signals = () => {
       const pending = pendingKlinesRef.current;
       if (!pending || !seriesRef.current) return;
       const cutoff = Date.now() - MARKET_DATA_DELAY_MS;
-      while (pending.length > 0 && pending[0].eventTime <= cutoff) {
+      const override = candleOverridesRef.current.find(o => o.symbol === selectedCoin.symbol);
+      let toDraw = null;
+      // 1) kline updates (authoritative OHLC) — keep the raw candle so ticks merge into real data
+      // (with no artificial delay, don't gate on the client clock — phone clocks are often behind
+      // Binance server time, which would hold back live updates)
+      const noDelay = MARKET_DATA_DELAY_MS === 0;
+      while (pending.length > 0 && (noDelay || pending[0].eventTime <= cutoff)) {
         const update = pending.shift();
-        const c = { ...update.candle };
-        const override = candleOverridesRef.current.find(o => o.symbol === selectedCoin.symbol);
-        if (override) {
-          // Realistic drift: small oscillation biased toward direction, not a hard lock
-          // Each candle moves naturally but with a gentle directional bias
-          const biasFactor = 0.0003 + Math.random() * 0.0004; // 0.03–0.07% per candle bias
-          const noise = (Math.random() - 0.45) * c.open * 0.0006; // random oscillation ±0.06%
-          const drift = override.direction === 'up' ? biasFactor * c.open : -biasFactor * c.open;
-          // Apply to close: keep it close to real open, just nudge with noise
-          const adjustedClose = c.close + drift + noise;
-          c.close = +adjustedClose.toFixed(8);
-          // Wicks stay natural — just extend slightly if close moved outside them
-          if (override.direction === 'up') {
-            c.high = Math.max(c.high, c.close, c.open + c.open * 0.0002);
-            c.low = Math.min(c.low, c.open - c.open * 0.0001);
-          } else {
-            c.low = Math.min(c.low, c.close, c.open - c.open * 0.0002);
-            c.high = Math.max(c.high, c.open + c.open * 0.0001);
-          }
-        }
-        seriesRef.current.update(c);
+        lastRawCandleRef.current = { ...update.candle };
+        toDraw = lastRawCandleRef.current;
       }
-    }, 100);
+      // 2) latest trade tick — moves the current candle between kline pushes (fluid, like Binance)
+      const tick = latestTickRef.current;
+      if (tick && (noDelay || tick.eventTime <= cutoff)) {
+        latestTickRef.current = null;
+        const merged = mergeTradeTick(lastRawCandleRef.current, tick.price, tick.bucketTime);
+        if (merged) { lastRawCandleRef.current = merged; toDraw = merged; }
+      }
+      if (!toDraw) return;
+      // Admin override bias — deterministic per candle (no per-tick jitter), gentle wobble
+      const c = override ? applyOverrideDrift(toDraw, override) : toDraw;
+      seriesRef.current.update(c);
+    }, 80);
     return () => clearInterval(interval);
   }, [selectedCoin]);
 
@@ -467,13 +482,47 @@ const Signals = () => {
       </div>
 
       {/* Balance card */}
-      <div style={{ ...glassCard(theme), padding: '14px 16px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ color: theme.subtext, fontSize: '13px' }}>
-          Signal Balance
-        </span>
-        <span style={{ fontWeight: 'bold', color: theme.brand }}>
-          {signalBalance === null ? '...' : `${fmtUsd(signalBalance)} USDT`}
-        </span>
+      <div style={{ ...glassCard(theme), padding: '14px 16px', marginBottom: '14px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ color: theme.subtext, fontSize: '13px' }}>
+            Signal Balance
+          </span>
+          <span style={{ fontWeight: 'bold', color: theme.brand }}>
+            {signalBalance === null ? '...' : `${fmtUsd(signalBalance)} USDT`}
+          </span>
+        </div>
+        {/* Today's signals — same limit the server enforces, shown up-front */}
+        {bonusInfo.dailySignalLimit != null && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', fontSize: '11px', color: theme.subtext }}>
+            <span>Signals today</span>
+            <span style={{ fontWeight: 600, color: bonusInfo.signalsLeftToday === 0 ? theme.down : theme.text }}>
+              {Math.min(bonusInfo.signalsUsedToday || 0, bonusInfo.dailySignalLimit)} / {bonusInfo.dailySignalLimit}
+              {bonusInfo.bonusSignals > 0 && bonusInfo.bonusUsedToday < 1 ? ' + 1 bonus' : ''}
+              {bonusInfo.signalsLeftToday === 0 ? ' · limit reached' : ''}
+            </span>
+          </div>
+        )}
+        {/* Trading-volume progress (5× of everything transferred into Signal; unlocks penalty-free Signal → Spot) */}
+        {volumeData && volumeData.requiredVolume > 0 && (() => {
+          const done = volumeData.tradedVolume >= volumeData.requiredVolume;
+          const pct = Math.min(100, (volumeData.tradedVolume / volumeData.requiredVolume) * 100);
+          const remaining = Math.max(0, volumeData.requiredVolume - volumeData.tradedVolume);
+          return (
+            <div style={{ marginTop: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: theme.subtext, marginBottom: '4px' }}>
+                <span>Trading volume {done ? '✓ complete' : ''}</span>
+                <span style={{ fontWeight: 600, color: done ? theme.up : theme.text }}>{Math.round(pct)}%</span>
+              </div>
+              <div style={{ height: '6px', borderRadius: '3px', backgroundColor: theme.inputBg || theme.cardBorder, overflow: 'hidden' }}>
+                <div style={{ height: '100%', borderRadius: '3px', background: done ? theme.upGradient : theme.brandGradient, width: `${pct}%`, transition: 'width 0.4s ease' }} />
+              </div>
+              <div style={{ fontSize: '10px', color: theme.faint, marginTop: '4px' }}>
+                {fmtUsd(volumeData.tradedVolume)} / {fmtUsd(volumeData.requiredVolume)} USDT
+                {done ? ' · Signal → Spot transfers are penalty-free' : ` · ${fmtUsd(remaining)} USDT more to unlock penalty-free transfer`}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {signalBalance === 0 && (

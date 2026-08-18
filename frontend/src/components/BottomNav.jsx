@@ -4,19 +4,19 @@ import { Home, LineChart, ArrowLeftRight, Zap, Wallet } from 'lucide-react';
 import { useTheme } from '../ThemeContext';
 
 const NAV_ITEMS = [
-  { path: '/dashboard', label: 'Home',    icon: Home,           color: '#60A5FA', soft: 'rgba(96,165,250,0.15)' },
-  { path: '/markets',   label: 'Markets', icon: LineChart,      color: '#A78BFA', soft: 'rgba(167,139,250,0.15)' },
-  { path: '/signals',   label: 'Signals', icon: Zap,            color: null,      soft: null, center: true },
-  { path: '/trade',     label: 'Trade',   icon: ArrowLeftRight, color: '#34D399', soft: 'rgba(52,211,153,0.15)' },
-  { path: '/assets',    label: 'Assets',  icon: Wallet,         color: '#FBBF24', soft: 'rgba(251,191,36,0.15)' },
+  { path: '/dashboard', label: 'Home',    icon: Home,           badgeKey: 'blue' },
+  { path: '/markets',   label: 'Markets', icon: LineChart,      badgeKey: 'purple' },
+  { path: '/signals',   label: 'Signals', icon: Zap,            badgeKey: 'purple', center: true },
+  { path: '/trade',     label: 'Trade',   icon: ArrowLeftRight, badgeKey: 'green' },
+  { path: '/assets',    label: 'Assets',  icon: Wallet,         badgeKey: 'amber' },
 ];
 
 const BottomNav = () => {
   const location = useLocation();
-  const { theme } = useTheme();
+  const { theme, iconBadges } = useTheme();
 
   return (
-    <div style={{
+    <div data-kynex-bottomnav="1" style={{
       position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 1000,
       backgroundColor: theme.navBg,
       backdropFilter: theme.cardGlass || 'blur(18px)',
@@ -29,6 +29,7 @@ const BottomNav = () => {
     }}>
       {NAV_ITEMS.map((item) => {
         const Icon = item.icon;
+        const badge = iconBadges[item.badgeKey];
         const isActive = item.path === '/assets'
           ? ['/assets', '/deposit', '/withdraw', '/transfer', '/transactions'].some((p) => location.pathname.startsWith(p))
           : location.pathname === item.path;
@@ -48,7 +49,7 @@ const BottomNav = () => {
               }}>
                 <Icon size={22} color="white" />
               </div>
-              <span style={{ fontSize: '10px', marginTop: '4px', fontWeight: 'bold', color: isActive ? '#A78BFA' : theme.faint }}>
+              <span style={{ fontSize: '10px', marginTop: '4px', fontWeight: 'bold', color: isActive ? iconBadges.purple.fg : theme.faint }}>
                 {item.label}
               </span>
             </Link>
@@ -59,14 +60,14 @@ const BottomNav = () => {
           <Link key={item.path} to={item.path} style={{ textDecoration: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '52px' }}>
             <div style={{
               width: '38px', height: '38px', borderRadius: '12px',
-              backgroundColor: isActive ? item.soft : 'transparent',
+              backgroundColor: isActive ? badge.bg : 'transparent',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               marginBottom: '2px',
               transition: 'background-color 0.15s ease',
             }}>
-              <Icon size={20} color={isActive ? item.color : theme.faint} />
+              <Icon size={20} color={isActive ? badge.fg : theme.faint} />
             </div>
-            <span style={{ fontSize: '10px', fontWeight: isActive ? '700' : '500', color: isActive ? item.color : theme.faint }}>
+            <span style={{ fontSize: '10px', fontWeight: isActive ? '700' : '500', color: isActive ? badge.fg : theme.faint }}>
               {item.label}
             </span>
           </Link>

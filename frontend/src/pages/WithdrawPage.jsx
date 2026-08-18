@@ -239,14 +239,14 @@ const WithdrawPage = () => {
       {/* Withdrawal submitted popup */}
       {wdPopup && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)' }} onClick={() => setWdPopup(null)}>
-          <div style={{ background: 'linear-gradient(135deg, #1a0f0f 0%, #2a1515 100%)', border: '1.5px solid rgba(239,68,68,0.45)', borderRadius: '24px', padding: '36px 28px', maxWidth: '300px', width: '90%', textAlign: 'center', boxShadow: '0 20px 60px rgba(239,68,68,0.2), 0 8px 24px rgba(0,0,0,0.6)', animation: 'popIn 0.3s cubic-bezier(0.34,1.56,0.64,1)' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: theme.card, backdropFilter: theme.cardGlass, WebkitBackdropFilter: theme.cardGlass, border: '1.5px solid rgba(239,68,68,0.45)', borderRadius: '24px', padding: '36px 28px', maxWidth: '300px', width: '90%', textAlign: 'center', boxShadow: '0 20px 60px rgba(239,68,68,0.2), 0 8px 24px rgba(0,0,0,0.6)', animation: 'popIn 0.3s cubic-bezier(0.34,1.56,0.64,1)' }} onClick={e => e.stopPropagation()}>
             <style>{`@keyframes popIn { from { transform: scale(0.7); opacity: 0 } to { transform: scale(1); opacity: 1 } }`}</style>
             <div style={{ width: '64px', height: '64px', borderRadius: '50%', margin: '0 auto 20px', background: 'linear-gradient(135deg, #EF4444, #DC2626)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 24px rgba(239,68,68,0.5)', fontSize: '28px' }}>📤</div>
-            <div style={{ fontWeight: '800', fontSize: '18px', color: '#fff', marginBottom: '8px' }}>Withdrawal Submitted!</div>
+            <div style={{ fontWeight: '800', fontSize: '18px', color: theme.text, marginBottom: '8px' }}>Withdrawal Submitted!</div>
             <div style={{ fontSize: '22px', fontWeight: '800', color: '#EF4444', marginBottom: '4px' }}>-{wdPopup.amount?.toFixed(2)} USDT</div>
             <div style={{ fontSize: '14px', color: '#10B981', fontWeight: '700', marginBottom: '4px' }}>You receive: {wdPopup.netPayout?.toFixed(2)} USDT</div>
-            <div style={{ fontSize: '12px', color: '#9CA3AF', marginBottom: '6px' }}>via {wdPopup.network}</div>
-            <div style={{ fontSize: '13px', color: '#9CA3AF', lineHeight: '1.6', marginBottom: '24px' }}>Your withdrawal is under review. Processing time is typically 1–24 hours.</div>
+            <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '6px' }}>via {wdPopup.network}</div>
+            <div style={{ fontSize: '13px', color: theme.subtext, lineHeight: '1.6', marginBottom: '24px' }}>Your withdrawal is under review. Processing time is typically 1–24 hours.</div>
             <button onClick={() => setWdPopup(null)} style={{ padding: '12px 32px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #EF4444, #DC2626)', color: '#fff', fontWeight: '700', fontSize: '14px', cursor: 'pointer', boxShadow: '0 4px 14px rgba(239,68,68,0.4)' }}>OK</button>
           </div>
         </div>
