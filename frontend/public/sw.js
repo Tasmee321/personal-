@@ -26,31 +26,47 @@ self.addEventListener('fetch', (e) => {
   );
 });
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function trySetBadge(count) {
+  // Try all known badge APIs across browsers/platforms
+  const n = count || 1;
+  if (typeof navigator !== 'undefined' && 'setAppBadge' in navigator) {
+    return navigator.setAppBadge(n).catch(() => {});
+  }
+  return Promise.resolve();
+}
+
 // ── Web Push ─────────────────────────────────────────────────────────────────
 self.addEventListener('push', (e) => {
   let data = {};
-  try { data = e.data ? e.data.json() : {}; } catch { data = { title: 'KYNEX', body: e.data ? e.data.text() : '' }; }
+  try { data = e.data ? e.data.json() : {}; } catch { data = { body: e.data ? e.data.text() : '' }; }
 
   const title = data.title || 'KYNEX Support';
+  const badgeCount = data.badgeCount || 1;
   const options = {
     body: data.body || 'You have a new message.',
-    icon: data.icon || '/icons/icon-192.png',
-    badge: data.badge || '/icons/icon-192.png',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
     tag: data.tag || 'kynex-chat',
-    renotify: data.renotify !== false,
-    data: { url: '/' },
+    renotify: true,
+    data: { url: '/#kynex-chat-open' },
     vibrate: [200, 100, 200],
   };
 
+  // Run showNotification and setAppBadge in parallel — don't chain them
   e.waitUntil(
-    self.registration.showNotification(title, options).then(() => {
-      if ('setAppBadge' in self.navigator) self.navigator.setAppBadge(1).catch(() => {});
-    })
+    Promise.all([
+      self.registration.showNotification(title, options),
+      trySetBadge(badgeCount),
+    ]).catch(() => {})
   );
 });
 
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
+  if (typeof navigator !== 'undefined' && 'clearAppBadge' in navigator) {
+    navigator.clearAppBadge().catch(() => {});
+  }
   e.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
       for (const client of windowClients) {
@@ -59,7 +75,6 @@ self.addEventListener('notificationclick', (e) => {
           return client.focus();
         }
       }
-      // App not open — open with hash flag so LiveChat picks it up on mount
       return clients.openWindow('/#kynex-chat-open');
     })
   );

@@ -618,7 +618,10 @@ async function sendWebPush(uid, title, body) {
     const subs = await readPushSubs();
     const userSubs = subs[uid] || [];
     if (!userSubs.length) return;
-    const payload = JSON.stringify({ title, body, icon: '/icons/icon-192.png', badge: '/icons/icon-192.png', tag: 'kynex-chat', renotify: true });
+    // Include actual unread count so SW can set correct app icon badge
+    const chats = await readLiveChats();
+    const badgeCount = ((chats[uid] || {}).messages || []).filter(m => m.from === 'admin' && !m.read).length || 1;
+    const payload = JSON.stringify({ title, body, icon: '/icons/icon-192.png', badge: '/icons/icon-192.png', tag: 'kynex-chat', renotify: true, badgeCount });
     const expired = [];
     await Promise.allSettled(userSubs.map(async (sub, i) => {
       try { await webpush.sendNotification(sub, payload); }
