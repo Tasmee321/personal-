@@ -613,6 +613,8 @@ const LiveChat = () => {
   // Request notification permission when chat first opens; subscribe to push
   useEffect(() => {
     if (!open) return;
+    // APK: native handles push — just register the FCM token with the server
+    if (window.KynexBridge) { registerFcmToken(); return; }
     if (!('Notification' in window)) return;
     if (Notification.permission === 'granted') {
       subscribePush();

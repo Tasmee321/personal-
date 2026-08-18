@@ -678,7 +678,7 @@ async function sendWebPushAll(title, body) {
 }
 
 async function sendFcmNotification(userId, title, body) {
-  if (!fcmMessaging) return;
+  if (!fcmMessaging) { console.warn('FCM: firebase-admin not initialized — FIREBASE_SERVICE_ACCOUNT env var missing?'); return; }
   try {
     const users = await readUsers();
     const user = users.find(u => u.id === userId);
@@ -687,9 +687,11 @@ async function sendFcmNotification(userId, title, body) {
     await fcmMessaging.send({
       token: fcmToken,
       notification: { title, body },
-      android: { priority: 'high', notification: { sound: 'default' } },
+      data: { title, body, type: 'chat' },
+      android: { priority: 'high', notification: { channelId: 'kynex_messages', sound: 'default' } },
     });
   } catch (e) {
+    console.error('FCM send error:', e.code || e.message);
     if (e.code === 'messaging/registration-token-not-registered') {
       const users = await readUsers();
       const user = users.find(u => u.id === userId);
