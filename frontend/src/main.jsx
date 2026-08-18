@@ -8,13 +8,9 @@ import { applyLanguage } from './utils/language'
 const savedLang = localStorage.getItem('kynex_language') || 'en';
 applyLanguage(savedLang);
 
-// Register both service workers:
-// sw.js           → caching + Web Push (VAPID)
-// firebase-messaging-sw.js → FCM background notifications (Android)
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
-    navigator.serviceWorker.register('/firebase-messaging-sw.js').catch(() => {});
   });
 }
 

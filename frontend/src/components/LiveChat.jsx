@@ -573,6 +573,13 @@ const LiveChat = () => {
     else navigator.clearAppBadge().catch(() => {});
   }, [unread]);
 
+  // Re-check unread + badge when app returns to foreground
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchHistory(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [fetchHistory]);
+
   // ── Web Push subscription ──────────────────────────────────────────────
   const subscribePush = useCallback(async () => {
     const dbg = (s) => localStorage.setItem('kynex_push_dbg', s);
@@ -628,11 +635,15 @@ const LiveChat = () => {
     }
   }, [open, subscribePush]);
 
-  // Listen for SW notification click → open chat in agent view
+  // Listen for SW messages: notification click + badge updates
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
     const handler = (e) => {
       if (e.data?.type === 'KYNEX_NOTIF_CLICK') { setOpen(true); setView('agent'); }
+      if (e.data?.type === 'KYNEX_BADGE' && e.data.count > 0) {
+        setUnread(e.data.count);
+        if ('setAppBadge' in navigator) navigator.setAppBadge(e.data.count).catch(() => {});
+      }
     };
     navigator.serviceWorker.addEventListener('message', handler);
     return () => navigator.serviceWorker.removeEventListener('message', handler);
