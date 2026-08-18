@@ -190,13 +190,14 @@ const TransferPage = () => {
             return (
               <div style={{ padding: '10px 14px', borderRadius: '10px', backgroundColor: theme.card, border: `1px solid ${theme.cardBorder}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: theme.subtext, marginBottom: '5px' }}>
-                  <span>
-                    {done ? '✓ Volume complete' : `Remaining: ${fmt(remaining)} USDT`}
-                  </span>
+                  <span>Trading volume {done ? '✓ complete' : ''}</span>
                   <span style={{ fontWeight: 600, color: done ? theme.up : theme.text }}>{Math.round(pct)}%</span>
                 </div>
                 <div style={{ height: '6px', borderRadius: '3px', backgroundColor: theme.inputBg || theme.cardBorder, overflow: 'hidden' }}>
                   <div style={{ height: '100%', borderRadius: '3px', background: done ? theme.upGradient : theme.brandGradient, width: `${pct}%`, transition: 'width 0.4s ease' }} />
+                </div>
+                <div style={{ fontSize: '10px', color: theme.faint, marginTop: '5px' }}>
+                  {done ? 'this transfer is penalty-free' : `${fmt(remaining)} USDT remaining to avoid the 20% penalty`}
                 </div>
               </div>
             );
