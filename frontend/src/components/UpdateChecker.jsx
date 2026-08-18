@@ -105,8 +105,13 @@ export default function UpdateChecker({ onPendingChange }) {
   const handleDownload = () => {
     if (!update?.download_url) return;
     setVisible(false);
-    // Do NOT mark the APK installed here. Installation may fail or be cancelled.
-    window.location.href = update.download_url;
+    const url = update.download_url;
+    // Native Android bridge — triggers DownloadManager directly
+    if (window.KynexBridge?.downloadApk) {
+      window.KynexBridge.downloadApk(url);
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
   };
 
   const handleLater = () => {
