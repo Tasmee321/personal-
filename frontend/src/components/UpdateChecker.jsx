@@ -106,11 +106,10 @@ export default function UpdateChecker({ onPendingChange }) {
     if (!update?.download_url) return;
     setVisible(false);
     const url = update.download_url;
-    // Native Android bridge — triggers DownloadManager directly
     if (window.KynexBridge?.downloadApk) {
       window.KynexBridge.downloadApk(url);
     } else {
-      window.open(url, '_blank', 'noopener,noreferrer');
+      window.location.href = url;
     }
   };
 
