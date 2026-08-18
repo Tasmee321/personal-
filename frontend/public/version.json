@@ -1,34 +1,34 @@
 {
-  "version_code": 2,
-  "version_name": "2.1.0",
+  "version_code": 3,
+  "version_name": "2.2.0",
   "download_url": "https://kynex.site/KYNEX.apk",
-  "message": "New update available! KYNEX v2.1.0 is ready — tap below to download.",
-  "tagline": "Your app is now up to date 🎉",
+  "message": "New update available! KYNEX v2.2.0 is ready — tap below to download.",
+  "tagline": "Your app is now up to date!",
   "features": [
     {
-      "icon": "🚀",
-      "title": "Faster Performance",
-      "desc": "App loads 2x faster with improved background processing and smoother animations."
-    },
-    {
       "icon": "🔔",
-      "title": "Smart Notifications",
-      "desc": "Get real-time alerts for price movements, deposits, and withdrawals instantly."
-    },
-    {
-      "icon": "🎨",
-      "title": "New UI Design",
-      "desc": "Completely redesigned dashboard with cleaner layout and better navigation."
+      "title": "Push Notifications Fixed",
+      "desc": "Get instant notifications even when the app is in background — never miss a message again."
     },
     {
       "icon": "🔒",
-      "title": "Enhanced Security",
-      "desc": "Upgraded 2FA flow and biometric login for faster, safer access."
+      "title": "App Lock (Biometric)",
+      "desc": "Secure your app with fingerprint or face unlock. Enable from Settings > Security."
     },
     {
-      "icon": "🔄",
-      "title": "Signal Cancellation Fixed",
-      "desc": "Cancelled signals no longer count against your daily limit. Only settled signals reduce your limit."
+      "icon": "🕐",
+      "title": "PKT Timezone on Charts",
+      "desc": "All charts and signal times now display in Pakistan Standard Time (UTC+5)."
+    },
+    {
+      "icon": "📊",
+      "title": "Signal Time Tracking",
+      "desc": "See exact open and settlement times for all active and past signals."
+    },
+    {
+      "icon": "🎨",
+      "title": "Improved App Icon",
+      "desc": "New adaptive icon that looks perfect on all Android launchers."
     }
   ]
 }

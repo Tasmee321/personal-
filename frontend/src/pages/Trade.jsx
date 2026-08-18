@@ -27,8 +27,9 @@ function fmt(n, digits = 2) {
   return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
+const PKT_OFFSET_SEC = (300 + new Date().getTimezoneOffset()) * 60;
 function toCandle(k) {
-  return { time: Math.floor(k[0] / 1000), open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]) };
+  return { time: Math.floor(k[0] / 1000) + PKT_OFFSET_SEC, open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]) };
 }
 
 function glassCard(theme) {
@@ -346,7 +347,7 @@ const Trade = () => {
         if (cancelled || !seriesRef.current) return;
         const { k } = JSON.parse(event.data);
         const c = {
-          time: Math.floor(k.t / 1000),
+          time: Math.floor(k.t / 1000) + PKT_OFFSET_SEC,
           open: parseFloat(k.o),
           high: parseFloat(k.h),
           low: parseFloat(k.l),
@@ -479,7 +480,8 @@ const Trade = () => {
       <div style={{ ...glassCard(theme), marginBottom: '14px', overflow: 'hidden' }}>
         <div ref={chartContainerRef} style={{ borderRadius: '16px 16px 0 0', minHeight: '260px', width: '100%', position: 'relative' }} />
         {/* Timeframe selector */}
-        <div style={{ display: 'flex', gap: '4px', padding: '8px 12px', borderTop: `1px solid ${theme.cardBorder}` }}>
+        <div style={{ display: 'flex', gap: '4px', padding: '8px 12px', borderTop: `1px solid ${theme.cardBorder}`, alignItems: 'center' }}>
+          <span style={{ fontSize: '10px', color: theme.faint, fontWeight: '600', marginRight: '4px' }}>PKT</span>
           {TIMEFRAMES.map((tf) => (
             <button
               key={tf.interval}

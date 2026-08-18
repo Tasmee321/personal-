@@ -10,7 +10,7 @@ function adminHeaders(key) {
 function fmtDate(ts) {
   if (!ts) return '—';
   const d = new Date(ts);
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Karachi' }) + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Karachi' });
 }
 
 const AdminKyc = () => {
@@ -600,7 +600,7 @@ This cannot be undone!`)) return;
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: theme.bg, color: theme.text }}>
+    <div className="admin-root" style={{ minHeight: '100vh', backgroundColor: theme.bg, color: theme.text }}>
       {toast && (
         <div style={{
           position: 'fixed', top: '16px', right: '16px', zIndex: 9999,
@@ -729,11 +729,11 @@ This cannot be undone!`)) return;
 
       {error && <div style={{ padding: '8px 24px' }}><p style={{ color: theme.down, fontSize: '13px', margin: 0 }}>{error}</p></div>}
 
-      <div style={{ padding: '20px 24px', maxWidth: '1200px', margin: '0 auto' }}>
+      <div className="admin-content" style={{ padding: '20px 24px', maxWidth: '1200px', margin: '0 auto' }}>
 
         {activeTab === 'dashboard' && (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '24px' }}>
+            <div className="admin-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '24px' }}>
               {[
                 { label: 'Total Users', value: users.length, color: theme.primary },
                 { label: 'Verified (KYC)', value: verifiedCount, color: theme.up },
@@ -806,8 +806,8 @@ This cannot be undone!`)) return;
                 }}>{f === 'all' ? 'All Users' : f === 'deposited' ? 'Deposited' : 'KYC Verified'}</button>
               ))}
             </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <div className="admin-table-wrap" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '800px' }}>
                 <thead>
                   <tr style={{ borderBottom: `2px solid ${theme.cardBorder}`, textAlign: 'left' }}>
                     {['UID', 'Name', 'Email', 'KYC', 'Level', 'Spot', 'Signal', 'Deposited', 'Withdrawn', 'Status', ''].map(h => (
@@ -879,7 +879,7 @@ This cannot be undone!`)) return;
             </div>
 
             {/* INFO & ACTIONS TAB */}
-            {userDetailTab === 'info' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            {userDetailTab === 'info' && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
               <div style={card}>
                 <div style={{ fontWeight: 'bold', fontSize: '16px', marginBottom: '4px' }}>{selectedUser.name}</div>
                 <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '16px' }}>{selectedUser.email} · UID {selectedUser.uid}</div>
@@ -1894,6 +1894,18 @@ This cannot be undone!`)) return;
         @media (max-width: 768px) {
           table { font-size: 11px !important; }
           td, th { padding: 6px 4px !important; }
+        }
+        @media (max-width: 600px) {
+          .admin-root { font-size: 13px; }
+          .admin-root > div:nth-child(2) { padding: 10px 12px !important; gap: 8px !important; }
+          .admin-root > div:nth-child(3) { padding: 10px 12px !important; gap: 6px !important; }
+          .admin-root > div:nth-child(3) button { padding: 7px 12px !important; font-size: 12px !important; }
+          .admin-content { padding: 12px !important; }
+          .admin-stat-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
+          .admin-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+          .admin-table-wrap table { min-width: 600px; }
+          .admin-detail-tabs { flex-wrap: wrap !important; }
+          .admin-detail-tabs button { flex: 0 0 auto !important; font-size: 11px !important; padding: 6px 10px !important; }
         }
       `}</style>
     </div>

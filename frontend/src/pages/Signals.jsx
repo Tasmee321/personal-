@@ -15,8 +15,12 @@ function authHeaders() {
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` };
 }
 
+const PKT_OFFSET_SEC = (300 + new Date().getTimezoneOffset()) * 60;
 function fmtClock(ms) {
-  return new Date(ms).toLocaleTimeString('en-US');
+  return new Date(ms).toLocaleTimeString('en-US', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+function fmtClockShort(ms) {
+  return new Date(ms).toLocaleTimeString('en-US', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit' });
 }
 
 function fmtUsd(n) {
@@ -317,7 +321,7 @@ const Signals = () => {
         const cutoffSec = Math.floor((Date.now() - MARKET_DATA_DELAY_MS) / 1000);
         const shiftSec = Math.floor(MARKET_DATA_DELAY_MS / 1000);
         const candles = raw.map((k) => ({
-          time: Math.floor(k[0] / 1000) + shiftSec,
+          time: Math.floor(k[0] / 1000) + shiftSec + PKT_OFFSET_SEC,
           open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]),
         }));
         seriesRef.current.setData(candles.filter((c) => (c.time - shiftSec) <= cutoffSec));
@@ -333,7 +337,7 @@ const Signals = () => {
         const shiftSec = Math.floor(MARKET_DATA_DELAY_MS / 1000);
         pending.push({
           eventTime: data.E || Date.now(),
-          candle: { time: Math.floor(k.t / 1000) + shiftSec, open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c) },
+          candle: { time: Math.floor(k.t / 1000) + shiftSec + PKT_OFFSET_SEC, open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c) },
         });
       };
     };
@@ -474,7 +478,10 @@ const Signals = () => {
       )}
 
       {/* Chart */}
-      <div ref={chartContainerRef} style={{ ...glassCard(theme), marginBottom: '14px', overflow: 'hidden', minHeight: '260px' }} />
+      <div style={{ ...glassCard(theme), marginBottom: '14px', overflow: 'hidden' }}>
+        <div ref={chartContainerRef} style={{ minHeight: '260px' }} />
+        <div style={{ textAlign: 'right', padding: '4px 12px 6px', fontSize: '10px', color: theme.faint, fontWeight: '600', borderTop: `1px solid ${theme.cardBorder}` }}>PKT (UTC+5)</div>
+      </div>
 
       {/* Trade size */}
       <div style={{ ...glassCard(theme), padding: '12px 16px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -635,9 +642,10 @@ const Signals = () => {
                   <span style={{ color: p.direction === 'up' ? theme.up : theme.down, fontWeight: 'bold' }}>{p.direction.toUpperCase()}</span>
                 </div>
                 <div style={{ color: theme.subtext, fontSize: '12px' }}>Stake: {fmtUsd(p.stake)} USDT · Entry: {fmtUsd(p.entryPrice)}</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+                <div style={{ color: theme.faint, fontSize: '11px', marginTop: '4px' }}>Opened: {fmtClockShort(p.openedAt)} PKT · Settles: {fmtClockShort(p.settleAt)} PKT</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
                   <div style={{ color: theme.text, fontSize: '13px', fontWeight: '500' }}>
-                    {secondsLeft > 0 ? `Settles at ${fmtClock(p.settleAt)}` : 'Settling...'}
+                    {secondsLeft > 0 ? `${Math.floor(secondsLeft / 60)}m ${secondsLeft % 60}s left` : 'Settling...'}
                   </div>
                   {secondsLeft > 0 && (
                     <button
@@ -708,6 +716,9 @@ const Signals = () => {
                 <div style={{ color: theme.subtext, fontSize: '12px' }}>
                   Stake: {fmtUsd(p.stake)} USDT · Entry: {fmtUsd(p.entryPrice)}
                   {!isCancelled && !isTimedOut && <> → Close: {fmtUsd(p.closePrice)}</>}
+                </div>
+                <div style={{ color: theme.faint, fontSize: '11px', marginTop: '3px' }}>
+                  {fmtClockShort(p.openedAt)} → {fmtClockShort(p.settleAt)} PKT
                 </div>
                 {!isCancelled && !isTimedOut && (
                   <div style={{ color: p.won ? theme.up : theme.down, fontSize: '13px', fontWeight: 'bold', marginTop: '4px' }}>
