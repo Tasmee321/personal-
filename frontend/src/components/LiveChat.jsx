@@ -672,11 +672,8 @@ const LiveChat = () => {
     ? '0 2px 6px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.12)'
     : '0 6px 0 rgba(0,0,0,0.22), 0 10px 28px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.28)';
 
-  // Separate broadcasts from regular chat messages
-  const broadcastMsgs = messages.filter(m => m.broadcast === true);
-  const chatMessages = messages.filter(m => !m.broadcast);
   const localNotices = localMsgs.filter(m => m.type === 'notice');
-  const allAgentMsgs = [...chatMessages, ...localNotices].sort((a, b) => a.at - b.at);
+  const allAgentMsgs = [...messages, ...localNotices].sort((a, b) => a.at - b.at);
 
   // ── Render ─────────────────────────────────────────────────────────────
   return (
@@ -686,7 +683,7 @@ const LiveChat = () => {
         <div style={{
           position: 'fixed', bottom: `${chatBottom}px`, right: `${chatRight}px`, zIndex: 1000,
           width: 'min(352px, calc(100vw - 24px))',
-          height: view === 'resolved' ? 'auto' : view === 'welcome' ? 'auto' : '530px',
+          height: view === 'resolved' ? 'auto' : 'min(560px, calc(100vh - 150px))',
           maxHeight: 'calc(100vh - 130px)',
           backgroundColor: theme.card, border: `1px solid ${theme.cardBorder}`,
           borderRadius: '22px', boxShadow: '0 20px 60px rgba(0,0,0,0.35)',
@@ -907,26 +904,6 @@ const LiveChat = () => {
           {/* ── AGENT VIEW (live messages — admin sees these) ── */}
           {view === 'agent' && (
             <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', backgroundColor:theme.bg||theme.card }}>
-              {/* Admin Announcements — prominent sticky cards */}
-              {broadcastMsgs.length > 0 && (
-                <div style={{ flexShrink:0, position:'sticky', top:0, zIndex:2 }}>
-                  {broadcastMsgs.slice(-1).map(bc => (
-                    <div key={bc.id} style={{ margin:'10px 12px 0', background:'linear-gradient(135deg,rgba(245,158,11,0.18),rgba(59,130,246,0.14))', border:`1.5px solid rgba(245,158,11,0.45)`, borderRadius:'14px', padding:'10px 14px', display:'flex', gap:'10px', alignItems:'flex-start', boxShadow:'0 2px 12px rgba(245,158,11,0.15)' }}>
-                      <div style={{ width:'32px',height:'32px',borderRadius:'10px',flexShrink:0,background:'linear-gradient(135deg,#F59E0B,#D97706)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'16px' }}>📢</div>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:'10px', fontWeight:'800', color:'#F59E0B', textTransform:'uppercase', letterSpacing:'0.8px', marginBottom:'4px', display:'flex', alignItems:'center', gap:'6px' }}>
-                          Admin Announcement
-                          <span style={{ fontSize:'9px', background:'rgba(245,158,11,0.2)', color:'#F59E0B', padding:'1px 6px', borderRadius:'8px', fontWeight:'700' }}>KYNEX</span>
-                        </div>
-                        <div style={{ fontSize:'12.5px', color:theme.text, lineHeight:'1.6', fontWeight:'500' }}>{bc.text}</div>
-                        <div style={{ fontSize:'10px', color:theme.faint, marginTop:'4px' }}>{fmtTime(bc.at)}</div>
-                      </div>
-                    </div>
-                  ))}
-                  <div style={{ height:'10px' }} />
-                </div>
-              )}
-
               <div style={{ padding:'12px', display:'flex', flexDirection:'column', gap:'10px', flex:1 }}>
                 {/* Connecting notice at top if no messages yet */}
                 {messages.length === 0 && (
@@ -942,6 +919,15 @@ const LiveChat = () => {
                     <div key={msg.id} style={{ display:'flex', justifyContent:'center' }}>
                       <div style={{ display:'inline-flex', alignItems:'center', gap:'5px', backgroundColor:theme.primarySoft, color:theme.primary, padding:'7px 14px', borderRadius:'20px', fontSize:'12px', fontWeight:'600', animation:'chatSlideIn 0.2s ease-out' }}>
                         ✓ {msg.text || 'An agent will contact you shortly'}
+                      </div>
+                    </div>
+                  );
+                  if (msg.broadcast) return (
+                    <div key={msg.id || msg.at} style={{ display:'flex', justifyContent:'flex-start', animation:'chatSlideIn 0.18s ease-out' }}>
+                      <div style={{ maxWidth:'85%', padding:'9px 13px', borderRadius:'4px 18px 18px 18px', backgroundColor:'rgba(245,158,11,0.12)', border:'1.5px solid rgba(245,158,11,0.4)', color:theme.text, fontSize:'13px', lineHeight:'1.5', wordBreak:'break-word', boxShadow:'0 2px 8px rgba(0,0,0,0.07)' }}>
+                        <div style={{ fontSize:'10px', fontWeight:'800', color:'#F59E0B', textTransform:'uppercase', letterSpacing:'0.7px', marginBottom:'4px' }}>📢 Admin Announcement</div>
+                        <div>{msg.text}</div>
+                        <div style={{ fontSize:'10px', marginTop:'4px', color:theme.faint, textAlign:'right' }}>{fmtTime(msg.at)}</div>
                       </div>
                     </div>
                   );
