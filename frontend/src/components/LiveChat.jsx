@@ -551,8 +551,16 @@ const LiveChat = () => {
       setUnread(0);
       markRead();
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 120);
+      if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(() => {});
     }
   }, [open, markRead]);
+
+  // ── App icon badge (iOS / Android PWA) ────────────────────────────────
+  useEffect(() => {
+    if (!('setAppBadge' in navigator)) return;
+    if (unread > 0) navigator.setAppBadge(unread).catch(() => {});
+    else navigator.clearAppBadge().catch(() => {});
+  }, [unread]);
 
   // ── Web Push subscription ──────────────────────────────────────────────
   const subscribePush = useCallback(async () => {

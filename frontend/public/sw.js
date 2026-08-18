@@ -42,7 +42,11 @@ self.addEventListener('push', (e) => {
     vibrate: [200, 100, 200],
   };
 
-  e.waitUntil(self.registration.showNotification(title, options));
+  e.waitUntil(
+    self.registration.showNotification(title, options).then(() => {
+      if ('setAppBadge' in self.navigator) self.navigator.setAppBadge(1).catch(() => {});
+    })
+  );
 });
 
 self.addEventListener('notificationclick', (e) => {
