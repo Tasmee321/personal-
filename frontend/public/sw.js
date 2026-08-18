@@ -47,7 +47,6 @@ self.addEventListener('push', (e) => {
 
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
-  const targetUrl = (e.notification.data && e.notification.data.url) || '/';
   e.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
       for (const client of windowClients) {
@@ -56,7 +55,8 @@ self.addEventListener('notificationclick', (e) => {
           return client.focus();
         }
       }
-      return clients.openWindow(targetUrl);
+      // App not open — open with hash flag so LiveChat picks it up on mount
+      return clients.openWindow('/#kynex-chat-open');
     })
   );
 });

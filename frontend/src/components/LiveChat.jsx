@@ -549,10 +549,13 @@ const LiveChat = () => {
       const keyRes = await fetch(`${API_URL}/api/push/vapid-key`);
       if (!keyRes.ok) return;
       const { publicKey } = await keyRes.json();
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: publicKey,
-      });
+      // Convert base64url string → Uint8Array (required by PushManager)
+      const padding = '='.repeat((4 - publicKey.length % 4) % 4);
+      const base64 = (publicKey + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const raw = window.atob(base64);
+      const key = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) key[i] = raw.charCodeAt(i);
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
       await fetch(`${API_URL}/api/push/subscribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
@@ -580,6 +583,15 @@ const LiveChat = () => {
     };
     navigator.serviceWorker.addEventListener('message', handler);
     return () => navigator.serviceWorker.removeEventListener('message', handler);
+  }, []);
+
+  // Handle notification click when app was closed — SW opens /#kynex-chat-open
+  useEffect(() => {
+    if (window.location.hash === '#kynex-chat-open') {
+      window.history.replaceState(null, '', window.location.pathname);
+      setOpen(true);
+      setView('agent');
+    }
   }, []);
 
   // ── 5-minute idle auto-reset to welcome ───────────────────────────────
