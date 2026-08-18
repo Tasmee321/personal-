@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useTheme } from '../ThemeContext';
 
 const LOCK_KEY  = 'kynex_app_lock';
 const CRED_KEY  = 'kynex_lock_cred_id';
@@ -62,16 +61,26 @@ export async function verifyBiometric() {
 export function clearBiometric() {
   localStorage.removeItem(CRED_KEY);
   localStorage.removeItem(LOCK_KEY);
+  localStorage.removeItem(FIRST_KEY);
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 const AppLock = () => {
-  const { theme } = useTheme();
-  const [locked, setLocked]           = useState(false);
-  const [authing, setAuthing]         = useState(false);
-  const [error,   setError]           = useState('');
-  const autoTriedRef                  = useRef(false);
+  const [locked, setLocked]       = useState(false);
+  const [authing, setAuthing]     = useState(false);
+  const [error,   setError]       = useState('');
+  const [failCount, setFailCount] = useState(0);
+  const autoTriedRef              = useRef(false);
   const isAPK = !!(window.KynexBridge);
+
+  // Emergency disable — clears lock without biometric
+  const disableAndUnlock = useCallback(() => {
+    clearBiometric();
+    setLocked(false);
+    setError('');
+    setFailCount(0);
+    autoTriedRef.current = false;
+  }, []);
 
   // Trigger biometric prompt
   const unlock = useCallback(async () => {
@@ -81,35 +90,39 @@ const AppLock = () => {
       await verifyBiometric();
       setLocked(false);
       autoTriedRef.current = false;
+      setFailCount(0);
     } catch (err) {
       const msg = err?.name === 'NotAllowedError'
-        ? 'Cancelled or not recognised. Tap to try again.'
+        ? 'Cancelled. Tap to try again.'
         : err?.message || 'Authentication failed. Tap to retry.';
       setError(msg);
+      setFailCount(c => c + 1);
     } finally {
       setAuthing(false);
     }
   }, []);
 
-  // visibilitychange — lock when app returns from background
+  // Lock when app comes back from background (visibilitychange)
   useEffect(() => {
-    if (isAPK) return; // native layer handles APK
+    if (isAPK) return;
+
+    // Use sessionStorage for first-load flag so every fresh page open skips the lock.
+    // The lock only fires when the user backgrounds then resumes the same session.
+    const SESSION_KEY = 'kynex_session_started';
 
     const onVisible = () => {
       if (document.hidden) return;
       if (localStorage.getItem(LOCK_KEY) !== 'true') return;
-      // Skip lock on very first page load (first mount)
-      if (!localStorage.getItem(FIRST_KEY)) {
-        localStorage.setItem(FIRST_KEY, '1');
+      if (!sessionStorage.getItem(SESSION_KEY)) {
+        sessionStorage.setItem(SESSION_KEY, '1');
         return;
       }
       autoTriedRef.current = false;
       setLocked(true);
     };
 
-    // Mark first load so next visibility event is treated as a resume
-    if (!localStorage.getItem(FIRST_KEY)) {
-      localStorage.setItem(FIRST_KEY, '1');
+    if (!sessionStorage.getItem(SESSION_KEY)) {
+      sessionStorage.setItem(SESSION_KEY, '1');
     }
 
     document.addEventListener('visibilitychange', onVisible);
@@ -120,17 +133,18 @@ const AppLock = () => {
   useEffect(() => {
     if (!locked || authing || autoTriedRef.current) return;
     autoTriedRef.current = true;
-    // Small delay so the lock overlay renders first
     const t = setTimeout(() => unlock(), 350);
     return () => clearTimeout(t);
   }, [locked, authing, unlock]);
 
   if (!locked || isAPK) return null;
 
+  const showEmergency = failCount >= 2;
+
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 99999,
-      backgroundColor: theme.bg || '#0F172A',
+      backgroundColor: '#0A0F1E',
       display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
       gap: '20px', padding: '32px',
@@ -152,18 +166,19 @@ const AppLock = () => {
       </div>
 
       <div style={{ textAlign: 'center' }}>
-        <div style={{ fontWeight: '700', fontSize: '17px', color: theme.text, marginBottom: '6px' }}>
+        <div style={{ fontWeight: '700', fontSize: '17px', color: '#F1F5F9', marginBottom: '6px' }}>
           App Locked
         </div>
-        <div style={{ fontSize: '13px', color: theme.subtext, lineHeight: '1.6' }}>
+        <div style={{ fontSize: '13px', color: '#94A3B8', lineHeight: '1.6' }}>
           Verify your identity to continue
         </div>
       </div>
 
       {error && (
         <div style={{
-          fontSize: '12px', color: '#EF4444', textAlign: 'center',
-          backgroundColor: 'rgba(239,68,68,0.1)', padding: '8px 16px', borderRadius: '10px',
+          fontSize: '12px', color: '#FCA5A5', textAlign: 'center',
+          backgroundColor: 'rgba(239,68,68,0.15)', padding: '8px 16px', borderRadius: '10px',
+          border: '1px solid rgba(239,68,68,0.25)',
         }}>
           {error}
         </div>
@@ -174,9 +189,7 @@ const AppLock = () => {
         disabled={authing}
         style={{
           padding: '14px 36px', borderRadius: '16px', border: 'none',
-          background: authing
-            ? theme.cardBorder
-            : 'linear-gradient(135deg, #F59E0B, #3B82F6)',
+          background: authing ? '#1E293B' : 'linear-gradient(135deg, #F59E0B, #3B82F6)',
           color: 'white', fontWeight: '700', fontSize: '15px',
           cursor: authing ? 'not-allowed' : 'pointer',
           boxShadow: authing ? 'none' : '0 6px 20px rgba(245,158,11,0.35)',
@@ -195,9 +208,33 @@ const AppLock = () => {
         )}
       </button>
 
-      <div style={{ fontSize: '11px', color: theme.faint, textAlign: 'center' }}>
+      <div style={{ fontSize: '11px', color: '#475569', textAlign: 'center' }}>
         Face ID · Touch ID · Fingerprint · Device PIN
       </div>
+
+      {/* Emergency disable — shown after 2 failed attempts */}
+      {showEmergency && (
+        <div style={{ textAlign: 'center', marginTop: '8px' }}>
+          <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '8px' }}>
+            Biometric not working?
+          </div>
+          <button
+            onClick={disableAndUnlock}
+            style={{
+              background: 'transparent',
+              border: '1px solid rgba(239,68,68,0.4)',
+              color: '#FCA5A5',
+              padding: '8px 20px',
+              borderRadius: '10px',
+              fontSize: '12px',
+              cursor: 'pointer',
+              fontWeight: '600',
+            }}
+          >
+            Disable App Lock &amp; Enter
+          </button>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kynex-v1';
+const CACHE_NAME = 'kynex-v2';
 const STATIC_ASSETS = ['/', '/index.html'];
 
 self.addEventListener('install', (e) => {
