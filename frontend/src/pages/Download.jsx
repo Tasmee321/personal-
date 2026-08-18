@@ -76,23 +76,9 @@ const CertBadge = ({ title, body, regNo, color, seal, idx }) => {
   const gold = '#B8973B';
   const pat = MINI_PATTERNS[idx % MINI_PATTERNS.length];
   const signerName = MINI_SIGNERS[idx % MINI_SIGNERS.length];
-
   return (
-    <div style={{
-      background: '#FFFEF7',
-      borderRadius: '4px',
-      border: `2.5px solid ${gold}`,
-      padding: '3px',
-      boxShadow: '0 2px 12px rgba(0,0,0,0.12)',
-    }}>
-      <div style={{
-        border: `1.5px solid ${gold}88`,
-        borderRadius: '3px',
-        padding: '18px 16px 14px',
-        position: 'relative',
-        overflow: 'hidden',
-        minHeight: '180px',
-      }}>
+    <div style={{ background: '#FFFEF7', borderRadius: '4px', border: `2.5px solid ${gold}`, padding: '3px', boxShadow: '0 2px 12px rgba(0,0,0,0.12)' }}>
+      <div style={{ border: `1.5px solid ${gold}88`, borderRadius: '3px', padding: '18px 16px 14px', position: 'relative', overflow: 'hidden', minHeight: '180px' }}>
         <div style={{ position:'absolute', inset:0, opacity:0.025, pointerEvents:'none', backgroundImage:pat(gold) }} />
         {[{t:2,l:2,s:''},{t:2,r:2,s:'scaleX(-1)'},{b:2,l:2,s:'scaleY(-1)'},{b:2,r:2,s:'scale(-1)'}].map((pos,pi) => (
           <svg key={pi} style={{position:'absolute',top:pos.t,bottom:pos.b,left:pos.l,right:pos.r,transform:pos.s}} width="28" height="28" viewBox="0 0 28 28">
@@ -101,9 +87,7 @@ const CertBadge = ({ title, body, regNo, color, seal, idx }) => {
             <circle cx="4" cy="4" r="1.5" fill={gold} opacity="0.4" />
           </svg>
         ))}
-        <div style={{ textAlign:'center', marginBottom:'8px' }}>
-          <MiniSealSVG idx={idx} color={color} />
-        </div>
+        <div style={{ textAlign:'center', marginBottom:'8px' }}><MiniSealSVG idx={idx} color={color} /></div>
         <div style={{ textAlign:'center', marginBottom:'4px' }}>
           <div style={{ fontSize:'7px', letterSpacing:'2.5px', color:'#888', textTransform:'uppercase', marginBottom:'4px' }}>{seal}</div>
           <div style={{ fontSize:'11px', fontWeight:'700', color:'#1a1a1a', fontFamily:'Georgia, "Times New Roman", serif', lineHeight:1.3 }}>{title}</div>
@@ -148,11 +132,25 @@ const Download = () => {
   useEffect(() => {
     fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' })
       .then(r => r.json())
-      .then(data => {
-        if (data.download_url) setApkInfo(data);
-      })
+      .then(data => { if (data.download_url) setApkInfo(data); })
       .catch(() => {});
   }, []);
+
+  const handleAndroidDownload = () => {
+    const url = apkInfo.download_url;
+    if (window.KynexBridge?.downloadApk) {
+      window.KynexBridge.downloadApk(url);
+    } else {
+      // Works in old WebView + new WebView + browser
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => document.body.removeChild(a), 100);
+    }
+  };
 
   const features = [
     { icon: <Zap size={28} />, badge: iconBadges.amber, title: 'Lightning-fast transactions', desc: 'The KYNEX matching engine enables up to 100,000 transactions per second' },
@@ -254,9 +252,7 @@ const Download = () => {
           fontWeight: 900, fontSize: 22, color: 'white', letterSpacing: 1,
           marginBottom: 24, position: 'relative', zIndex: 2,
           boxShadow: `0 8px 32px rgba(59,130,246,0.4)`,
-        }}>
-          K
-        </div>
+        }}>K</div>
 
         <h1 style={{ fontSize: '32px', fontWeight: 800, margin: '0 0 10px', letterSpacing: '-0.5px', position: 'relative', zIndex: 2 }}>
           Get KYNEX App
@@ -297,14 +293,7 @@ const Download = () => {
               <CheckCircle size={12} /> v{apkInfo.version_name}
             </div>
             <button
-              onClick={() => {
-                const url = apkInfo.download_url;
-                if (window.KynexBridge?.downloadApk) {
-                  window.KynexBridge.downloadApk(url);
-                } else {
-                  window.location.href = url;
-                }
-              }}
+              onClick={handleAndroidDownload}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                 padding: '12px 24px', borderRadius: '10px', border: 'none', width: '100%',
@@ -380,9 +369,7 @@ const Download = () => {
                   backgroundColor: `${theme.primary}15`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   color: theme.primary,
-                }}>
-                  {b.icon}
-                </div>
+                }}>{b.icon}</div>
                 <div>
                   <div style={{ fontSize: '11px', fontWeight: 700, marginBottom: 2 }}>{b.title}</div>
                   <div style={{ fontSize: '10px', color: theme.faint, lineHeight: 1.5 }}>{b.desc}</div>
@@ -397,8 +384,7 @@ const Download = () => {
           <div style={{
             width: 130, height: 130, backgroundColor: 'white', borderRadius: 12,
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: theme.shadowElevated || theme.shadow,
-            marginBottom: 10,
+            boxShadow: theme.shadowElevated || theme.shadow, marginBottom: 10,
           }}>
             <QRCodeSVG
               value={apkInfo.download_url}
@@ -408,19 +394,14 @@ const Download = () => {
               level="M"
               imageSettings={{
                 src: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" rx="8" fill="%233B82F6"/><text x="20" y="27" text-anchor="middle" fill="white" font-size="22" font-weight="900">K</text></svg>'),
-                width: 24,
-                height: 24,
-                excavate: true,
+                width: 24, height: 24, excavate: true,
               }}
             />
           </div>
-          <p style={{ color: theme.faint, fontSize: '12px', margin: 0 }}>
-            Scan to open KYNEX on your phone
-          </p>
+          <p style={{ color: theme.faint, fontSize: '12px', margin: 0 }}>Scan to open KYNEX on your phone</p>
         </div>
       </div>
 
-      {/* Divider */}
       <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${theme.cardBorder}, transparent)` }} />
 
       {/* Features Section */}
@@ -434,14 +415,7 @@ const Download = () => {
               boxShadow: theme.shadow,
               backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)',
             }}>
-              <div style={{
-                width: 50, height: 50, borderRadius: 14,
-                backgroundColor: f.badge.bg,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: f.badge.fg,
-              }}>
-                {f.icon}
-              </div>
+              <div style={{ width: 50, height: 50, borderRadius: 14, backgroundColor: f.badge.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: f.badge.fg }}>{f.icon}</div>
               <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, lineHeight: 1.3 }}>{f.title}</h4>
               <p style={{ margin: 0, fontSize: '12px', color: theme.faint, lineHeight: 1.5 }}>{f.desc}</p>
             </div>
@@ -465,7 +439,6 @@ const Download = () => {
         </p>
       </div>
 
-      {/* Divider */}
       <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${theme.cardBorder}, transparent)`, margin: '0 20px' }} />
 
       {/* iOS Guide Modal */}
@@ -474,8 +447,7 @@ const Download = () => {
           position: 'fixed', inset: 0, zIndex: 9999,
           backgroundColor: 'rgba(0,0,0,0.65)',
           backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: '20px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
         }}>
           <div style={{
             backgroundColor: theme.card, borderRadius: '20px', border: `1px solid ${theme.cardBorder}`,
@@ -486,11 +458,9 @@ const Download = () => {
               <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: theme.text }}>Install on iPhone</h3>
               <button onClick={() => setShowIosGuide(false)} style={{ background: 'none', border: 'none', color: theme.faint, cursor: 'pointer', fontSize: '22px', padding: 0, lineHeight: 1 }}>×</button>
             </div>
-
             <p style={{ color: theme.subtext, fontSize: '13px', marginBottom: '20px', lineHeight: 1.6 }}>
               KYNEX works as a full-screen app on iPhone — no App Store needed. Just follow these steps:
             </p>
-
             {[
               { step: 1, title: 'Open in Safari', desc: 'Open kynex.site in Safari browser (not Chrome or other browsers).', icon: <Globe size={16} /> },
               { step: 2, title: 'Tap the Share button', desc: 'Tap the Share icon (square with arrow pointing up) at the bottom of Safari.', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> },
@@ -499,30 +469,21 @@ const Download = () => {
               { step: 5, title: 'Done!', desc: 'KYNEX icon appears on your home screen. Open it for a full-screen app experience.', icon: <Smartphone size={16} /> },
             ].map(s => (
               <div key={s.step} style={{ display: 'flex', gap: '14px', marginBottom: '16px' }}>
-                <div style={{
-                  width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0,
-                  background: theme.primaryGradient || theme.primary,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: 'white',
-                }}>{s.icon}</div>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0, background: theme.primaryGradient || theme.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>{s.icon}</div>
                 <div>
                   <div style={{ fontWeight: '700', fontSize: '14px', color: theme.text, marginBottom: '2px' }}>
-                    <span style={{ color: theme.faint, marginRight: 6, fontSize: '12px' }}>Step {s.step}</span>
-                    {s.title}
+                    <span style={{ color: theme.faint, marginRight: 6, fontSize: '12px' }}>Step {s.step}</span>{s.title}
                   </div>
                   <div style={{ fontSize: '12px', color: theme.subtext, lineHeight: 1.5 }}>{s.desc}</div>
                 </div>
               </div>
             ))}
-
             <button onClick={() => setShowIosGuide(false)} style={{
               width: '100%', padding: '14px', borderRadius: '12px', border: 'none',
               background: theme.primaryGradient || theme.primary,
               color: 'white', fontWeight: 700, fontSize: '15px', cursor: 'pointer',
               marginTop: '8px', boxShadow: '0 6px 18px rgba(59,130,246,0.3)',
-            }}>
-              Got it
-            </button>
+            }}>Got it</button>
           </div>
         </div>
       )}
@@ -536,18 +497,10 @@ const Download = () => {
         <p style={{ color: theme.faint, fontSize: '13px', margin: '0 0 24px', lineHeight: 1.5 }}>
           KYNEX is registered and regulated across multiple international jurisdictions. All licenses can be independently verified with the respective regulatory authorities.
         </p>
-
         <div className="dl-cert-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
-          {CERTS.map((c, i) => (
-            <CertBadge key={i} idx={i} {...c} />
-          ))}
+          {CERTS.map((c, i) => (<CertBadge key={i} idx={i} {...c} />))}
         </div>
-
-        <div style={{
-          marginTop: '20px', padding: '14px 16px', borderRadius: '12px',
-          backgroundColor: theme.card, border: `1px solid ${theme.cardBorder}`,
-          boxShadow: theme.shadow,
-        }}>
+        <div style={{ marginTop: '20px', padding: '14px 16px', borderRadius: '12px', backgroundColor: theme.card, border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadow }}>
           <p style={{ margin: 0, fontSize: '11px', color: theme.faint, lineHeight: 1.6 }}>
             KYNEX AG is incorporated in the Canton of Zurich, Switzerland (CHE-384.719.528).
             SOC 2 Type II and ISO 27001:2022 certified. Audited by Deloitte AG.
