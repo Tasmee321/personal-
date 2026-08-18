@@ -498,6 +498,23 @@ setInterval(() => {
   }
 }, 60000);
 
+// ── Auto-clear live chat history at 5 AM PKT (UTC+5) every day ───────────
+let _chatClearLastDate = null;
+setInterval(async () => {
+  const now = new Date();
+  const pktHour = (now.getUTCHours() + 5) % 24;
+  const todayKey = now.toISOString().slice(0, 10);
+  if (pktHour === 5 && _chatClearLastDate !== todayKey) {
+    _chatClearLastDate = todayKey;
+    try {
+      await dbWrite('live_chats', {});
+      console.log('[AutoClear] Live chat history cleared at 5 AM PKT');
+    } catch (e) {
+      console.error('[AutoClear] Live chat clear failed:', e);
+    }
+  }
+}, 60 * 1000);
+
 const authRateLimit = rateLimit(15 * 60 * 1000, 15);
 const otpRateLimit = rateLimit(60 * 1000, 3);
 
