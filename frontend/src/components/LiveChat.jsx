@@ -556,31 +556,39 @@ const LiveChat = () => {
 
   // ── Web Push subscription ──────────────────────────────────────────────
   const subscribePush = useCallback(async () => {
+    const dbg = (s) => localStorage.setItem('kynex_push_dbg', s);
     try {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-      const reg = await navigator.serviceWorker.ready;
-      // Clear any stale/wrong-key subscription from a previous session
+      if (!('serviceWorker' in navigator)) { dbg('no-sw'); return; }
+      if (!('PushManager' in window)) { dbg('no-push-manager'); return; }
+      dbg('waiting-sw-ready');
+      const reg = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise((_, rej) => setTimeout(() => rej(new Error('sw-timeout')), 8000)),
+      ]);
+      dbg('sw-ready');
       const alreadyFixed = localStorage.getItem('kynex_push_v2');
       const existing = await reg.pushManager.getSubscription();
-      if (alreadyFixed && existing) return; // already subscribed with correct key
-      if (existing) await existing.unsubscribe(); // clear stale
+      if (alreadyFixed && existing) { dbg('already-ok'); return; }
+      if (existing) { await existing.unsubscribe(); dbg('unsubbed-stale'); }
       const keyRes = await fetch(`${API_URL}/api/push/vapid-key`);
-      if (!keyRes.ok) return;
+      if (!keyRes.ok) { dbg(`vapid-fail-${keyRes.status}`); return; }
       const { publicKey } = await keyRes.json();
-      // Convert base64url string → Uint8Array (required by PushManager)
+      dbg('got-vapid-key');
       const padding = '='.repeat((4 - publicKey.length % 4) % 4);
       const base64 = (publicKey + padding).replace(/-/g, '+').replace(/_/g, '/');
       const raw = window.atob(base64);
       const key = new Uint8Array(raw.length);
       for (let i = 0; i < raw.length; i++) key[i] = raw.charCodeAt(i);
       const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
-      await fetch(`${API_URL}/api/push/subscribe`, {
+      dbg('push-subscribed');
+      const saveRes = await fetch(`${API_URL}/api/push/subscribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify(sub),
       });
-      localStorage.setItem('kynex_push_v2', '1');
-    } catch { /* browser or network error */ }
+      dbg(saveRes.ok ? 'saved-ok' : `save-fail-${saveRes.status}`);
+      if (saveRes.ok) localStorage.setItem('kynex_push_v2', '1');
+    } catch (err) { localStorage.setItem('kynex_push_dbg', `err:${err.message}`); }
   }, []);
 
   // Request notification permission when chat first opens; subscribe to push
