@@ -105,12 +105,7 @@ export default function UpdateChecker({ onPendingChange }) {
   const handleDownload = () => {
     if (!update?.download_url) return;
     setVisible(false);
-    const url = update.download_url;
-    if (window.KynexBridge?.downloadApk) {
-      window.KynexBridge.downloadApk(url);
-    } else {
-      window.location.href = url;
-    }
+    window.location.href = update.download_url;
   };
 
   const handleLater = () => {

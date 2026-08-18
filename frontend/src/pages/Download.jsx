@@ -142,7 +142,7 @@ const Download = () => {
   const [showIosGuide, setShowIosGuide] = useState(false);
   const [apkInfo, setApkInfo] = useState({
     version_name: '2.0.0',
-    download_url: 'https://kynex.site/KYNEX.apk',
+    download_url: 'https://www.kynex.site/KYNEX.apk',
   });
 
   useEffect(() => {
@@ -298,12 +298,7 @@ const Download = () => {
             </div>
             <button
               onClick={() => {
-                const url = apkInfo.download_url;
-                if (window.KynexBridge?.downloadApk) {
-                  window.KynexBridge.downloadApk(url);
-                } else {
-                  window.location.href = url;
-                }
+                window.location.href = apkInfo.download_url;
               }}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
