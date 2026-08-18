@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useTheme } from '../ThemeContext';
 import { API_URL } from '../config';
 const KEY_STORAGE = 'kynex_admin_key';
@@ -91,11 +91,35 @@ const AdminKyc = () => {
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
+  const prevUnreadRef = useRef(null);
+  const chatBeep = () => {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext; if (!Ctx) return;
+      const ctx = new Ctx(); const o = ctx.createOscillator(); const g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = 880; g.gain.value = 0.0001;
+      o.connect(g); g.connect(ctx.destination); o.start();
+      g.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+      o.stop(ctx.currentTime + 0.4);
+    } catch { /* autoplay blocked until first click — fine */ }
+  };
   const loadChatThreads = React.useCallback(async (key) => {
     const k = key || adminKey;
     if (!k) return;
     const { ok, data } = await safeFetch(`${API_URL}/api/admin/livechat`, { headers: { 'x-admin-key': k } });
-    if (ok && data.ok) setChatThreads(data.threads || []);
+    if (ok && data.ok) {
+      const threads = data.threads || [];
+      setChatThreads(threads);
+      const total = threads.reduce((s, t) => s + (t.unreadAdmin || 0), 0);
+      if (prevUnreadRef.current !== null && total > prevUnreadRef.current) {
+        chatBeep();
+        if ('Notification' in window && Notification.permission === 'granted' && !document.hasFocus()) {
+          try { new Notification('KYNEX Admin — new chat message', { body: `${total} unread`, tag: 'kynex-admin-chat' }); } catch { /* ignore */ }
+        }
+      }
+      prevUnreadRef.current = total;
+      document.title = total > 0 ? `(${total}) KYNEX Admin` : 'KYNEX Admin';
+    }
   }, [adminKey]);
 
   const markThreadRead = async (uid) => {
@@ -2065,6 +2089,17 @@ This cannot be undone!`)) return;
                           <>
                             <div style={{ fontWeight: '700', fontSize: '14px', color: theme.text }}>{t?.name || t?.email || activeChatUid}</div>
                             <div style={{ fontSize: '11px', color: theme.faint }}>{t?.email} · UID: {t?.userUid || '—'}</div>
+                            {t?.ctx && (
+                              <div style={{ fontSize: '10px', color: theme.subtext, marginTop: '3px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                <span style={{ padding: '1px 6px', borderRadius: '6px', backgroundColor: t.ctx.kyc === 'certified' ? theme.upSoft : theme.brandSoft, color: t.ctx.kyc === 'certified' ? theme.up : theme.brand, fontWeight: 700 }}>KYC {t.ctx.kyc}</span>
+                                <span>L{t.ctx.level}</span>
+                                <span>Spot ${t.ctx.balance} · Sig ${t.ctx.signalBalance}</span>
+                                <span>Dep ${t.ctx.totalDeposited}</span>
+                                {t.ctx.pendingDeposits > 0 && <span style={{ color: theme.brand, fontWeight: 700 }}>⏳ {t.ctx.pendingDeposits} dep pending</span>}
+                                {t.ctx.pendingWithdrawals > 0 && <span style={{ color: theme.brand, fontWeight: 700 }}>⏳ {t.ctx.pendingWithdrawals} wd pending</span>}
+                                {t.ctx.lastDeposit && <span>last dep ${t.ctx.lastDeposit.amount} {t.ctx.lastDeposit.network?.toUpperCase()}</span>}
+                              </div>
+                            )}
                           </>
                         );
                       })()}
@@ -2094,7 +2129,8 @@ This cannot be undone!`)) return;
                           boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
                           border: msg.from === 'user' ? `1px solid ${theme.cardBorder}` : 'none',
                         }}>
-                          <div>{msg.text}</div>
+                          {msg.image && <img src={msg.image} alt="attachment" onClick={() => window.open(msg.image, '_blank')} style={{ display: 'block', maxWidth: '100%', maxHeight: '260px', borderRadius: '10px', marginBottom: msg.text ? '6px' : 0, cursor: 'zoom-in' }} />}
+                          {msg.text && <div>{msg.text}</div>}
                           <div style={{ fontSize: '10px', marginTop: '4px', color: msg.from === 'admin' ? 'rgba(255,255,255,0.65)' : theme.faint, textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '3px' }}>
                             {new Date(msg.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             {msg.from === 'admin' && (
@@ -2136,6 +2172,19 @@ This cannot be undone!`)) return;
                     <div ref={chatBottomRef} />
                   </div>
 
+                  {/* Canned replies */}
+                  <div style={{ padding: '8px 16px 0', display: 'flex', gap: '6px', flexWrap: 'wrap', backgroundColor: theme.card, borderTop: `1px solid ${theme.cardBorder}` }}>
+                    {[
+                      ['Deposit', 'Thanks! Your deposit is being verified on the blockchain — confirmed transactions are credited automatically, usually within a few minutes. If it stays pending, we will review it manually.'],
+                      ['Withdrawal', 'Your withdrawal request has been received and is under review. Withdrawals are processed within 24 hours after review.'],
+                      ['KYC', 'Please complete KYC in Security → Verification (ID + selfie). Once certified, withdrawals are enabled.'],
+                      ['Volume', 'Signal → Spot transfers are penalty-free once your trading volume (5× of the amount transferred into Signal) is complete. You can see your progress on the Signals page.'],
+                      ['Referral', 'Referral bonus signals can be placed daily between 8:00–8:20 PM (PKT). Unused days are forfeited.'],
+                      ['Thanks', 'You are welcome! Let us know if there is anything else we can help with. 😊'],
+                    ].map(([label, text]) => (
+                      <button key={label} onClick={() => setChatReply(text)} style={{ padding: '4px 10px', borderRadius: '10px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.bg, color: theme.subtext, fontSize: '11px', cursor: 'pointer' }}>{label}</button>
+                    ))}
+                  </div>
                   {/* Reply input */}
                   <div style={{ padding: '12px 16px', borderTop: `1px solid ${theme.cardBorder}`, display: 'flex', gap: '8px', backgroundColor: theme.card }}>
                     <input

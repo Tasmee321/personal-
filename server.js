@@ -1933,15 +1933,24 @@ app.post("/api/messages/read-all", authenticate, async (req, res) => {
 
 // ---- Live Chat ----
 // User sends a message
+const CHAT_IMG_MAX = 700 * 1024; // data-URL length cap (~500KB image), client compresses first
+function cleanChatImage(img) {
+  if (!img || typeof img !== 'string') return null;
+  if (!/^data:image\/(jpeg|png|webp);base64,/.test(img)) return null;
+  if (img.length > CHAT_IMG_MAX) return null;
+  return img;
+}
 app.post("/api/livechat/send", authenticate, chatSendRateLimit, async (req, res) => {
-  const { text } = req.body || {};
+  const { text, image } = req.body || {};
   const clean = String(text || "").trim().slice(0, CHAT_MAX_LEN);
-  if (!clean) return res.status(400).json({ error: "Message cannot be empty." });
+  const img = cleanChatImage(image);
+  if (image && !img) return res.status(400).json({ error: "Image must be JPEG/PNG/WebP under ~500KB." });
+  if (!clean && !img) return res.status(400).json({ error: "Message cannot be empty." });
   const uid = req.user.sub;
   const msg = await withChatLock(async () => {
     const chats = await readLiveChats();
     if (!chats[uid]) chats[uid] = { messages: [], unreadAdmin: 0 };
-    const m = { id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`, from: 'user', text: clean, at: Date.now(), read: false };
+    const m = { id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`, from: 'user', text: clean, at: Date.now(), read: false, ...(img ? { image: img } : {}) };
     chats[uid].messages.push(m);
     if (chats[uid].messages.length > 500) chats[uid].messages = chats[uid].messages.slice(-500);
     chats[uid].unreadAdmin = (chats[uid].unreadAdmin || 0) + 1;
@@ -1974,8 +1983,10 @@ app.get("/api/livechat/history", authenticate, async (req, res) => {
 app.get("/api/admin/livechat", requireAdmin, async (req, res) => {
   const chats = await readLiveChats();
   const users = await dbRead('users') || [];
+  const accounts = await readDemoAccounts();
   const threads = Object.entries(chats).map(([uid, chat]) => {
     const user = users.find(u => u.id === uid);
+    const acct = accounts[uid] || {};
     return {
       uid,
       userUid: user?.uid || '',
@@ -1984,8 +1995,20 @@ app.get("/api/admin/livechat", requireAdmin, async (req, res) => {
       unreadAdmin: chat.unreadAdmin || 0,
       lastMessage: chat.messages[chat.messages.length - 1] || null,
       messageCount: chat.messages.length,
+      // context so the admin can answer "where is my deposit" without switching tabs
+      ctx: {
+        kyc: user?.kyc?.status || 'not_started',
+        level: user?.level || 0,
+        balance: Math.round((acct.balance || 0) * 100) / 100,
+        signalBalance: Math.round((acct.signalBalance || 0) * 100) / 100,
+        totalDeposited: Math.round((acct.totalDeposited || 0) * 100) / 100,
+        pendingDeposits: (acct.depositRequests || []).filter(d => d.status === 'pending').length,
+        pendingWithdrawals: (acct.withdrawalRequests || []).filter(w => w.status === 'pending').length,
+        lastDeposit: (acct.depositRequests || []).filter(d => d.status === 'done').sort((a, b) => (b.processedAt || b.createdAt) - (a.processedAt || a.createdAt))[0] || null,
+      },
     };
-  }).sort((a, b) => (b.lastMessage?.at || 0) - (a.lastMessage?.at || 0));
+  // unread-first, then most recent
+  }).sort((a, b) => ((b.unreadAdmin > 0) - (a.unreadAdmin > 0)) || ((b.lastMessage?.at || 0) - (a.lastMessage?.at || 0)));
   res.json({ ok: true, threads });
 });
 
@@ -2017,12 +2040,13 @@ app.post("/api/admin/livechat/:uid/read", requireAdmin, async (req, res) => {
 app.post("/api/admin/livechat/:uid/reply", requireAdmin, async (req, res) => {
   const { text } = req.body || {};
   const clean = String(text || "").trim().slice(0, CHAT_MAX_LEN);
-  if (!clean) return res.status(400).json({ error: "Message cannot be empty." });
+  const img = cleanChatImage((req.body || {}).image);
+  if (!clean && !img) return res.status(400).json({ error: "Message cannot be empty." });
   const uid = req.params.uid;
   const msg = await withChatLock(async () => {
     const chats = await readLiveChats();
     if (!chats[uid]) chats[uid] = { messages: [], unreadAdmin: 0 };
-    const m = { id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`, from: 'admin', text: clean, at: Date.now(), read: false };
+    const m = { id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`, from: 'admin', text: clean, at: Date.now(), read: false, ...(img ? { image: img } : {}) };
     chats[uid].messages.push(m);
     // admin replied → they've obviously seen the user's messages
     chats[uid].unreadAdmin = 0;
@@ -2030,7 +2054,7 @@ app.post("/api/admin/livechat/:uid/reply", requireAdmin, async (req, res) => {
     await writeLiveChats(chats);
     return m;
   });
-  sendWebPush(uid, 'KYNEX Support', clean).catch(() => {});
+  sendWebPush(uid, 'KYNEX Support', clean || '📷 Image').catch(() => {});
   sendFcmNotification(uid, 'KYNEX Support', String(text).trim()).catch(() => {});
   res.json({ ok: true, message: msg });
 });

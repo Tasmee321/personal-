@@ -486,6 +486,25 @@ const LiveChat = () => {
   const [pendingMsgs, setPendingMsgs] = useState([]); // optimistic / failed local sends
   const lastSendAtRef = useRef(0);         // ignore poll responses that started before our last send
   const [kbInset, setKbInset] = useState(0); // on-screen keyboard height (visualViewport)
+  const [attach, setAttach] = useState(null); // { dataUrl, name } pending image
+  const fileRef = useRef(null);
+  // Compress a picked image to ≤1024px JPEG so it stays well under the server cap
+  const pickImage = (file) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const max = 1024; const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      let q = 0.8, dataUrl = c.toDataURL('image/jpeg', q);
+      while (dataUrl.length > 650 * 1024 && q > 0.35) { q -= 0.1; dataUrl = c.toDataURL('image/jpeg', q); }
+      URL.revokeObjectURL(url);
+      setAttach({ dataUrl, name: file.name });
+      if (view !== 'agent') setView('agent');
+    };
+    img.src = url;
+  };
   const pollRef = useRef(null);
   const typingPollRef = useRef(null);
   const lastTypingSentRef = useRef(0);
@@ -849,11 +868,11 @@ const LiveChat = () => {
 
   // ── Send user message (agent mode — goes to admin) ─────────────────────
   // Deliver one message: optimistic bubble → server → replace with server copy, or mark failed (tap to retry)
-  const deliver = async (text, localId) => {
+  const deliver = async (text, localId, image = null) => {
     const id = localId || `l${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     setPendingMsgs(prev => {
       const others = prev.filter(m => m.localId !== id);
-      return [...others, { localId: id, text, at: Date.now(), status: 'sending' }];
+      return [...others, { localId: id, text, image, at: Date.now(), status: 'sending' }];
     });
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 40);
     let failure = null;
@@ -861,7 +880,7 @@ const LiveChat = () => {
       const res = await fetch(`${API_URL}/api/livechat/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify(image ? { text, image } : { text }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
@@ -878,16 +897,17 @@ const LiveChat = () => {
 
   const send = async () => {
     const text = input.trim();
-    if (!text || sending) return;
-    setSending(true); setInput('');
+    if ((!text && !attach) || sending) return;
+    const image = attach?.dataUrl || null;
+    setSending(true); setInput(''); setAttach(null);
     // If user types from welcome (not typical, but possible), switch to agent
     if (view !== 'agent') setView('agent');
     touchAgentActivity();
-    await deliver(text);
+    await deliver(text, null, image);
     setSending(false);
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
   };
-  const retryPending = (m) => { if (m.status !== 'failed') return; touchAgentActivity(); deliver(m.text, m.localId); };
+  const retryPending = (m) => { if (m.status !== 'failed') return; touchAgentActivity(); deliver(m.text, m.localId, m.image || null); };
   const discardPending = (localId) => setPendingMsgs(prev => prev.filter(m => m.localId !== localId));
 
   // Track whether the user is scrolled near the bottom of the agent list
@@ -1262,7 +1282,8 @@ const LiveChat = () => {
                         </div>
                       )}
                       <div style={{ maxWidth:'75%', padding:'9px 13px', borderRadius:msg.from==='user'?'18px 18px 4px 18px':'4px 18px 18px 18px', backgroundColor:msg.from==='user'?theme.primary:theme.inputBg, border:msg.from==='user'?'none':`1px solid ${theme.cardBorder}`, color:msg.from==='user'?'white':theme.text, fontSize:'13px', lineHeight:'1.5', wordBreak:'break-word', boxShadow:'0 2px 8px rgba(0,0,0,0.07)', animation:'chatSlideIn 0.18s ease-out' }}>
-                        <div>{msg.text}</div>
+                        {msg.image && <img src={msg.image} alt="attachment" onClick={() => window.open(msg.image, '_blank')} style={{ display:'block', maxWidth:'100%', maxHeight:'220px', borderRadius:'10px', marginBottom:msg.text?'6px':0, cursor:'zoom-in' }} />}
+                        {msg.text && <div>{msg.text}</div>}
                         <div style={{ fontSize:'10px', marginTop:'4px', color:msg.from==='user'?'rgba(255,255,255,0.7)':theme.faint, textAlign:'right', display:'flex', alignItems:'center', justifyContent:'flex-end', gap:'3px' }}>
                           {fmtTime(msg.at)}
                           {msg.from==='user' && <span style={{ color:msg.read?'#FFFFFF':'rgba(255,255,255,0.6)' }}>{msg.read?'✓✓':'✓'}</span>}
@@ -1287,7 +1308,8 @@ const LiveChat = () => {
                 {pendingMsgs.map(pm => (
                   <div key={pm.localId} style={{ display:'flex', justifyContent:'flex-end' }}>
                     <div onClick={() => retryPending(pm)} title={pm.status==='failed' ? 'Tap to retry' : ''} style={{ maxWidth:'75%', padding:'9px 13px', borderRadius:'18px 18px 4px 18px', backgroundColor:theme.primary, opacity:pm.status==='sending'?0.6:1, color:'white', fontSize:'13px', lineHeight:'1.5', wordBreak:'break-word', cursor:pm.status==='failed'?'pointer':'default', border:pm.status==='failed'?`1.5px solid ${theme.down}`:'none' }}>
-                      <div>{pm.text}</div>
+                      {pm.image && <img src={pm.image} alt="" style={{ display:'block', maxWidth:'100%', maxHeight:'220px', borderRadius:'10px', marginBottom:pm.text?'6px':0 }} />}
+                      {pm.text && <div>{pm.text}</div>}
                       <div style={{ fontSize:'10px', marginTop:'4px', color:'rgba(255,255,255,0.75)', textAlign:'right' }}>
                         {pm.status==='sending' ? 'Sending…' : (
                           <span style={{ color:'#FFE4E6' }}>⚠ {pm.error} · <b>Retry</b> · <span onClick={(e)=>{e.stopPropagation(); discardPending(pm.localId);}} style={{ textDecoration:'underline' }}>discard</span></span>
@@ -1318,7 +1340,16 @@ const LiveChat = () => {
                   </button>
                 </div>
               )}
+              {attach && (
+                <div style={{ padding:'8px 12px 0', display:'flex', alignItems:'center', gap:'8px' }}>
+                  <img src={attach.dataUrl} alt="" style={{ width:'44px', height:'44px', objectFit:'cover', borderRadius:'8px', border:`1px solid ${theme.cardBorder}` }} />
+                  <span style={{ fontSize:'11px', color:theme.subtext, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{attach.name}</span>
+                  <button onClick={() => setAttach(null)} style={{ background:'none', border:'none', color:theme.down, cursor:'pointer', fontSize:'12px', fontWeight:700 }}>Remove</button>
+                </div>
+              )}
               <div style={{ padding:'10px 12px', display:'flex', gap:'8px', alignItems:'flex-end' }}>
+                <input ref={fileRef} type="file" accept="image/*" style={{ display:'none' }} onChange={(e) => { pickImage(e.target.files?.[0]); e.target.value=''; }} />
+                <button onClick={() => fileRef.current?.click()} title="Attach screenshot" style={{ width:'38px', height:'42px', borderRadius:'12px', border:`1.5px solid ${theme.cardBorder}`, background:theme.inputBg||theme.bg, color:theme.subtext, cursor:'pointer', fontSize:'16px', flexShrink:0 }}>📎</button>
                 <textarea value={input} onChange={handleInputChange} onKeyDown={handleKey} maxLength={1000}
                   placeholder={view === 'welcome' ? 'Or type your question…' : view === 'bot' ? 'Type for live agent…' : 'Type a message…'}
                   rows={1}
@@ -1326,7 +1357,7 @@ const LiveChat = () => {
                   onFocus={e => e.target.style.borderColor=theme.primary}
                   onBlur={e => e.target.style.borderColor=theme.cardBorder}
                 />
-                <button onClick={send} disabled={!input.trim()||sending} style={{ width:'42px', height:'42px', borderRadius:'14px', border:'none', cursor:input.trim()&&!sending?'pointer':'not-allowed', background:input.trim()&&!sending?'linear-gradient(135deg,#3B82F6,#F59E0B)':theme.cardBorder, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'all 0.15s', boxShadow:input.trim()&&!sending?'0 4px 12px rgba(59,130,246,0.4)':'none' }}>
+                <button onClick={send} disabled={(!input.trim()&&!attach)||sending} style={{ width:'42px', height:'42px', borderRadius:'14px', border:'none', cursor:(input.trim()||attach)&&!sending?'pointer':'not-allowed', background:input.trim()&&!sending?'linear-gradient(135deg,#3B82F6,#F59E0B)':theme.cardBorder, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'all 0.15s', boxShadow:input.trim()&&!sending?'0 4px 12px rgba(59,130,246,0.4)':'none' }}>
                   <Send size={16} color="white" />
                 </button>
               </div>
