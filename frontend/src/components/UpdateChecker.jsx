@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Download, X, RefreshCw, Sparkles } from 'lucide-react';
 import { useTheme } from '../ThemeContext';
 
-const VERSION_JSON_URL = 'https://kynex.site/version.json';
 const DISMISSED_KEY = 'kynex_dismissed_version';
 
 // Returns true when running inside an Android WebView (i.e. the KYNEX APK wrapper).
@@ -49,9 +48,8 @@ export default function UpdateChecker({ onPendingChange }) {
 
     const check = async () => {
       try {
-        const res = await fetch(`${VERSION_JSON_URL}?t=${Date.now()}`, {
+        const res = await fetch(`/version.json?t=${Date.now()}`, {
           cache: 'no-store',
-          headers: { 'Cache-Control': 'no-cache' },
         });
         if (!res.ok) return;
 

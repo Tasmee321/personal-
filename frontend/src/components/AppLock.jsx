@@ -12,7 +12,7 @@ function b64ToUint8(b64) {
 }
 function uint8ToB64(buf) {
   return btoa(String.fromCharCode(...new Uint8Array(buf)))
-    .replace(/\+/g, '-').replace(/\//g, '/').replace(/=/g, '');
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
 export async function registerBiometric() {
