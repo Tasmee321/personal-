@@ -480,6 +480,12 @@ const LiveChat = () => {
   const [toast, setToast] = useState(null);
 
   const bottomRef = useRef(null);
+  const listRef = useRef(null);            // agent-view scroll container
+  const nearBottomRef = useRef(true);      // was the user at the bottom before new messages arrived?
+  const [newBelow, setNewBelow] = useState(false); // "new messages ↓" pill
+  const [pendingMsgs, setPendingMsgs] = useState([]); // optimistic / failed local sends
+  const lastSendAtRef = useRef(0);         // ignore poll responses that started before our last send
+  const [kbInset, setKbInset] = useState(0); // on-screen keyboard height (visualViewport)
   const pollRef = useRef(null);
   const typingPollRef = useRef(null);
   const lastTypingSentRef = useRef(0);
@@ -518,16 +524,26 @@ const LiveChat = () => {
 
   // ── Fetch server messages ──────────────────────────────────────────────
   const fetchHistory = useCallback(async () => {
+    const startedAt = Date.now();
     try {
-      const res = await fetch(`${API_URL}/api/livechat/history`, {
+      // While the chat is open and visible, reading = marking admin messages read (fixes ✓✓ + badge)
+      const mark = open && document.visibilityState === 'visible' ? '?markRead=1' : '';
+      const res = await fetch(`${API_URL}/api/livechat/history${mark}`, {
         headers: { Authorization: `Bearer ${getToken()}` },
       });
       if (!res.ok) return;
       const data = await res.json();
       if (data.ok) {
         const msgs = data.messages || [];
-        setMessages(msgs);
-        if (!open) setUnread(msgs.filter(m => m.from === 'admin' && !m.read).length);
+        // Race guard: a poll that started before our last send must not wipe the just-sent bubble
+        const stale = startedAt < lastSendAtRef.current;
+        setMessages(prev => {
+          if (!stale) return msgs;
+          const ids = new Set(msgs.map(m => m.id));
+          return [...msgs, ...prev.filter(m => m.id && !ids.has(m.id) && m.at >= lastSendAtRef.current - 5000)];
+        });
+        if (mark) setUnread(0);
+        else if (!open) setUnread(msgs.filter(m => m.from === 'admin' && !m.read).length);
         // On first load: seed seen IDs, auto-resume agent view if history exists
         if (!initialLoadRef.current) {
           initialLoadRef.current = true;
@@ -556,6 +572,11 @@ const LiveChat = () => {
               });
               n.onclick = () => { window.focus(); setOpen(true); setView('agent'); };
             } catch { /* permission or browser issue */ }
+          }
+          // Chat is open: keep the user at the bottom if they were there, else show a "new messages" pill
+          if (open) {
+            if (nearBottomRef.current) setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 60);
+            else setNewBelow(true);
           }
           // In-app toast + auto-open when chat is closed
           if (!open) {
@@ -741,14 +762,16 @@ const LiveChat = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // While chat is open in agent view: auto-reset to welcome after 2 min of no new messages
+  // While chat is open in agent view: auto-reset to welcome after 2 min of no activity.
+  // Typing (input changes) and unsent/failed messages count as activity — never eject mid-conversation.
   useEffect(() => {
     if (view !== 'agent' || !open) return;
+    if (input.trim() || pendingMsgs.length) return; // user is composing / has a message to retry
     const timer = setTimeout(() => {
       setView('welcome');
     }, IDLE_RESET_MS);
     return () => clearTimeout(timer);
-  }, [view, open, messages.length]);
+  }, [view, open, messages.length, input, pendingMsgs.length]);
 
   // ── View control helpers ───────────────────────────────────────────────
   // resetToWelcome: clears bot session, stays open (or closes if called with close=true)
@@ -817,13 +840,42 @@ const LiveChat = () => {
         body: JSON.stringify({ text }),
       });
       const data = await res.json();
-      if (data.ok) setMessages(prev => [...prev, data.message]);
-    } catch { /* network */ }
+      if (res.ok && data.ok) { lastSendAtRef.current = Date.now(); setMessages(prev => [...prev, data.message]); }
+      else setPendingMsgs(prev => [...prev, { localId: `l${Date.now()}`, text, at: Date.now(), status: 'failed', error: data.error || 'Could not send' }]);
+    } catch { setPendingMsgs(prev => [...prev, { localId: `l${Date.now()}`, text, at: Date.now(), status: 'failed', error: 'Network error' }]); }
     setSending(false);
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   }, [selectedTopic]);
 
   // ── Send user message (agent mode — goes to admin) ─────────────────────
+  // Deliver one message: optimistic bubble → server → replace with server copy, or mark failed (tap to retry)
+  const deliver = async (text, localId) => {
+    const id = localId || `l${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    setPendingMsgs(prev => {
+      const others = prev.filter(m => m.localId !== id);
+      return [...others, { localId: id, text, at: Date.now(), status: 'sending' }];
+    });
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 40);
+    let failure = null;
+    try {
+      const res = await fetch(`${API_URL}/api/livechat/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        lastSendAtRef.current = Date.now();
+        setMessages(prev => prev.some(m => m.id === data.message.id) ? prev : [...prev, data.message]);
+        setPendingMsgs(prev => prev.filter(m => m.localId !== id));
+        return true;
+      }
+      failure = data.error || (res.status === 429 ? 'Too many messages — slow down a little.' : 'Could not send. Tap to retry.');
+    } catch { failure = 'No connection. Tap to retry.'; }
+    setPendingMsgs(prev => prev.map(m => m.localId === id ? { ...m, status: 'failed', error: failure } : m));
+    return false;
+  };
+
   const send = async () => {
     const text = input.trim();
     if (!text || sending) return;
@@ -831,26 +883,41 @@ const LiveChat = () => {
     // If user types from welcome (not typical, but possible), switch to agent
     if (view !== 'agent') setView('agent');
     touchAgentActivity();
-    try {
-      const res = await fetch(`${API_URL}/api/livechat/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
-        body: JSON.stringify({ text }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setMessages(prev => [...prev, data.message]);
-        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
-      }
-    } catch { /* network */ }
+    await deliver(text);
     setSending(false);
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
   };
+  const retryPending = (m) => { if (m.status !== 'failed') return; touchAgentActivity(); deliver(m.text, m.localId); };
+  const discardPending = (localId) => setPendingMsgs(prev => prev.filter(m => m.localId !== localId));
+
+  // Track whether the user is scrolled near the bottom of the agent list
+  const onListScroll = (e) => {
+    const el = e.currentTarget;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    nearBottomRef.current = near;
+    if (near) setNewBelow(false);
+  };
+
+  // Mobile keyboard: keep the input above the keyboard (iOS Safari doesn't resize the layout viewport)
+  useEffect(() => {
+    if (!open || typeof window === 'undefined' || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const update = () => {
+      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setKbInset(inset > 80 ? inset : 0);
+    };
+    update();
+    vv.addEventListener('resize', update); vv.addEventListener('scroll', update);
+    return () => { vv.removeEventListener('resize', update); vv.removeEventListener('scroll', update); setKbInset(0); };
+  }, [open]);
 
   const handleKey = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
   const handleInputChange = (e) => {
-    const val = e.target.value;
+    const val = e.target.value.slice(0, 1000);
     setInput(val);
-    notifyTyping();
+    if (view === 'agent') { notifyTyping(); touchAgentActivity(); }
+    // auto-grow up to maxHeight
+    const el = e.target; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 80) + 'px';
     if (view === 'welcome' && val.length >= 3) {
       setSuggestedTopic(detectTopic(val));
     } else {
@@ -930,10 +997,11 @@ const LiveChat = () => {
       {/* ── Chat Window ─────────────────────────────────────────────── */}
       {open && (
         <div style={{
-          position: 'fixed', bottom: `${chatBottom}px`, right: `${chatRight}px`, zIndex: 1000,
+          position: 'fixed', bottom: `${kbInset ? kbInset + 8 : chatBottom}px`, right: `${chatRight}px`, zIndex: 1000,
           width: 'min(352px, calc(100vw - 24px))',
-          height: view === 'resolved' ? 'auto' : 'min(560px, calc(100vh - 150px))',
-          maxHeight: 'calc(100vh - 130px)',
+          height: view === 'resolved' ? 'auto' : (kbInset ? `calc(100vh - ${kbInset + 24}px)` : 'min(560px, calc(100vh - 150px))'),
+          maxHeight: kbInset ? `calc(100vh - ${kbInset + 16}px)` : 'calc(100vh - 130px)',
+          transition: 'bottom 0.15s ease, height 0.15s ease',
           backgroundColor: theme.card, border: `1px solid ${theme.cardBorder}`,
           borderRadius: '22px', boxShadow: theme.shadowElevated || theme.shadow,
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
@@ -972,7 +1040,7 @@ const LiveChat = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                 <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#4ADE80', animation: 'chatOnlinePulse 2s ease-in-out infinite' }} />
                 <div style={{ color: 'rgba(255,255,255,0.9)', fontSize: '11px' }}>
-                  {view === 'agent' ? 'Live Agent Session' : 'Online · Fast replies'}
+                  {view === 'agent' ? 'Live Agent Session · history clears daily 5 AM PKT' : 'Support · usually replies within minutes'}
                 </div>
               </div>
             </div>
@@ -1152,7 +1220,13 @@ const LiveChat = () => {
 
           {/* ── AGENT VIEW (live messages — admin sees these) ── */}
           {view === 'agent' && (
-            <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', backgroundColor:theme.bg||theme.card }}>
+            <div ref={listRef} onScroll={onListScroll} style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', backgroundColor:theme.bg||theme.card, position:'relative' }}>
+              {newBelow && (
+                <button onClick={() => { setNewBelow(false); bottomRef.current?.scrollIntoView({ behavior:'smooth' }); }}
+                  style={{ position:'sticky', top:'8px', alignSelf:'center', zIndex:2, padding:'5px 12px', borderRadius:'14px', border:'none', background:theme.primary, color:'white', fontSize:'11px', fontWeight:700, cursor:'pointer', boxShadow:theme.shadow }}>
+                  ↓ New messages
+                </button>
+              )}
               <div style={{ padding:'12px', display:'flex', flexDirection:'column', gap:'10px', flex:1 }}>
                 {/* Connecting notice at top if no messages yet */}
                 {messages.length === 0 && (
@@ -1210,6 +1284,18 @@ const LiveChat = () => {
                     </div>
                   </div>
                 )}
+                {pendingMsgs.map(pm => (
+                  <div key={pm.localId} style={{ display:'flex', justifyContent:'flex-end' }}>
+                    <div onClick={() => retryPending(pm)} title={pm.status==='failed' ? 'Tap to retry' : ''} style={{ maxWidth:'75%', padding:'9px 13px', borderRadius:'18px 18px 4px 18px', backgroundColor:theme.primary, opacity:pm.status==='sending'?0.6:1, color:'white', fontSize:'13px', lineHeight:'1.5', wordBreak:'break-word', cursor:pm.status==='failed'?'pointer':'default', border:pm.status==='failed'?`1.5px solid ${theme.down}`:'none' }}>
+                      <div>{pm.text}</div>
+                      <div style={{ fontSize:'10px', marginTop:'4px', color:'rgba(255,255,255,0.75)', textAlign:'right' }}>
+                        {pm.status==='sending' ? 'Sending…' : (
+                          <span style={{ color:'#FFE4E6' }}>⚠ {pm.error} · <b>Retry</b> · <span onClick={(e)=>{e.stopPropagation(); discardPending(pm.localId);}} style={{ textDecoration:'underline' }}>discard</span></span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
                 <div ref={bottomRef} />
               </div>
             </div>
@@ -1233,7 +1319,7 @@ const LiveChat = () => {
                 </div>
               )}
               <div style={{ padding:'10px 12px', display:'flex', gap:'8px', alignItems:'flex-end' }}>
-                <textarea value={input} onChange={handleInputChange} onKeyDown={handleKey}
+                <textarea value={input} onChange={handleInputChange} onKeyDown={handleKey} maxLength={1000}
                   placeholder={view === 'welcome' ? 'Or type your question…' : view === 'bot' ? 'Type for live agent…' : 'Type a message…'}
                   rows={1}
                   style={{ flex:1, resize:'none', padding:'10px 12px', borderRadius:'14px', border:`1.5px solid ${theme.cardBorder}`, backgroundColor:theme.inputBg||theme.bg, color:theme.text, fontSize:'13px', outline:'none', fontFamily:'inherit', maxHeight:'80px', overflowY:'auto', transition:'border-color 0.15s' }}

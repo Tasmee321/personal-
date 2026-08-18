@@ -581,7 +581,7 @@ let _chatClearLastDate = null;
 setInterval(async () => {
   const now = new Date();
   const pktHour = (now.getUTCHours() + 5) % 24;
-  const todayKey = now.toISOString().slice(0, 10);
+  const todayKey = new Date(now.getTime() + 5 * 3600 * 1000).toISOString().slice(0, 10); // PKT date
   if (pktHour === 5 && _chatClearLastDate !== todayKey) {
     _chatClearLastDate = todayKey;
     try {
@@ -794,6 +794,16 @@ async function sendFcmNotification(userId, title, body) {
 // ---- Live Chat helpers ----
 async function readLiveChats() { return await dbRead('live_chats') || {}; }
 async function writeLiveChats(data) { await dbWrite('live_chats', data); }
+// live_chats is one JSON blob for all users — serialize every read-modify-write so a broadcast or
+// two simultaneous sends can't overwrite each other's messages.
+let _chatLockTail = Promise.resolve();
+function withChatLock(fn) {
+  const run = _chatLockTail.then(fn, fn);
+  _chatLockTail = run.catch(() => {});
+  return run;
+}
+const CHAT_MAX_LEN = 1000;
+const chatSendRateLimit = rateLimit(60 * 1000, 15);
 
 async function readBlockedEmails() { return await dbRead('blocked_emails'); }
 async function writeBlockedEmails(list) { await dbWrite('blocked_emails', list); }
@@ -1923,16 +1933,21 @@ app.post("/api/messages/read-all", authenticate, async (req, res) => {
 
 // ---- Live Chat ----
 // User sends a message
-app.post("/api/livechat/send", authenticate, async (req, res) => {
+app.post("/api/livechat/send", authenticate, chatSendRateLimit, async (req, res) => {
   const { text } = req.body || {};
-  if (!text || !String(text).trim()) return res.status(400).json({ error: "Message cannot be empty." });
-  const chats = await readLiveChats();
+  const clean = String(text || "").trim().slice(0, CHAT_MAX_LEN);
+  if (!clean) return res.status(400).json({ error: "Message cannot be empty." });
   const uid = req.user.sub;
-  if (!chats[uid]) chats[uid] = { messages: [], unreadAdmin: 0 };
-  const msg = { id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`, from: 'user', text: String(text).trim(), at: Date.now(), read: false };
-  chats[uid].messages.push(msg);
-  chats[uid].unreadAdmin = (chats[uid].unreadAdmin || 0) + 1;
-  await writeLiveChats(chats);
+  const msg = await withChatLock(async () => {
+    const chats = await readLiveChats();
+    if (!chats[uid]) chats[uid] = { messages: [], unreadAdmin: 0 };
+    const m = { id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`, from: 'user', text: clean, at: Date.now(), read: false };
+    chats[uid].messages.push(m);
+    if (chats[uid].messages.length > 500) chats[uid].messages = chats[uid].messages.slice(-500);
+    chats[uid].unreadAdmin = (chats[uid].unreadAdmin || 0) + 1;
+    await writeLiveChats(chats);
+    return m;
+  });
   res.json({ ok: true, message: msg });
 });
 
@@ -1942,9 +1957,15 @@ app.get("/api/livechat/history", authenticate, async (req, res) => {
   const uid = req.user.sub;
   if (!chats[uid]) chats[uid] = { messages: [], unreadAdmin: 0 };
   // only mark admin msgs as read when user explicitly opens chat (markRead=1)
-  if (req.query.markRead === '1') {
-    chats[uid].messages.forEach(m => { if (m.from === 'admin') { m.read = true; m.readByUser = true; } });
-    await writeLiveChats(chats);
+  if (req.query.markRead === '1' && chats[uid].messages.some(m => m.from === 'admin' && !m.readByUser)) {
+    await withChatLock(async () => {
+      const fresh = await readLiveChats();
+      if (!fresh[uid]) return;
+      let changed = false;
+      fresh[uid].messages.forEach(m => { if (m.from === 'admin' && !m.readByUser) { m.read = true; m.readByUser = true; changed = true; } });
+      if (changed) await writeLiveChats(fresh);
+      chats[uid] = fresh[uid];
+    });
   }
   res.json({ ok: true, messages: chats[uid].messages });
 });
@@ -1973,26 +1994,43 @@ app.get("/api/admin/livechat/:uid", requireAdmin, async (req, res) => {
   const chats = await readLiveChats();
   const uid = req.params.uid;
   const chat = chats[uid] || { messages: [], unreadAdmin: 0 };
-  // reset unread counter + mark all user->admin messages as read (enables double tick on user side)
-  if (chats[uid]) {
+  // Pure read (polled every few seconds). Marking as read is an explicit action below.
+  res.json({ ok: true, messages: chat.messages, unreadAdmin: chat.unreadAdmin || 0 });
+});
+
+// Admin opened / is viewing a thread: reset unread counter + mark user messages read (double tick)
+app.post("/api/admin/livechat/:uid/read", requireAdmin, async (req, res) => {
+  const uid = req.params.uid;
+  await withChatLock(async () => {
+    const chats = await readLiveChats();
+    if (!chats[uid]) return;
+    const hadUnread = (chats[uid].unreadAdmin || 0) > 0 || chats[uid].messages.some(m => m.from === 'user' && !m.read);
+    if (!hadUnread) return;
     chats[uid].unreadAdmin = 0;
     chats[uid].messages = chats[uid].messages.map(m => m.from === 'user' ? { ...m, read: true } : m);
     await writeLiveChats(chats);
-  }
-  res.json({ ok: true, messages: chat.messages });
+  });
+  res.json({ ok: true });
 });
 
 // Admin: reply to a user
 app.post("/api/admin/livechat/:uid/reply", requireAdmin, async (req, res) => {
   const { text } = req.body || {};
-  if (!text || !String(text).trim()) return res.status(400).json({ error: "Message cannot be empty." });
-  const chats = await readLiveChats();
+  const clean = String(text || "").trim().slice(0, CHAT_MAX_LEN);
+  if (!clean) return res.status(400).json({ error: "Message cannot be empty." });
   const uid = req.params.uid;
-  if (!chats[uid]) chats[uid] = { messages: [], unreadAdmin: 0 };
-  const msg = { id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`, from: 'admin', text: String(text).trim(), at: Date.now(), read: false };
-  chats[uid].messages.push(msg);
-  await writeLiveChats(chats);
-  sendWebPush(uid, 'KYNEX Support', String(text).trim()).catch(() => {});
+  const msg = await withChatLock(async () => {
+    const chats = await readLiveChats();
+    if (!chats[uid]) chats[uid] = { messages: [], unreadAdmin: 0 };
+    const m = { id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`, from: 'admin', text: clean, at: Date.now(), read: false };
+    chats[uid].messages.push(m);
+    // admin replied → they've obviously seen the user's messages
+    chats[uid].unreadAdmin = 0;
+    chats[uid].messages = chats[uid].messages.map(x => x.from === 'user' ? { ...x, read: true } : x);
+    await writeLiveChats(chats);
+    return m;
+  });
+  sendWebPush(uid, 'KYNEX Support', clean).catch(() => {});
   sendFcmNotification(uid, 'KYNEX Support', String(text).trim()).catch(() => {});
   res.json({ ok: true, message: msg });
 });
@@ -3591,24 +3629,24 @@ app.post("/api/admin/livechat/broadcast", requireAdmin, async (req, res) => {
 
   if (targetUids.length === 0) return res.json({ ok: true, sent: 0 });
 
-  const chats = await readLiveChats();
+  const clean = String(text).trim().slice(0, CHAT_MAX_LEN);
   const now = Date.now();
   let sent = 0;
-  for (const uid of targetUids) {
-    if (!chats[uid]) chats[uid] = { messages: [], unreadAdmin: 0 };
-    const msg = {
-      id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
-      from: 'admin',
-      text: String(text).trim(),
-      at: now,
-      read: false,
-      broadcast: true,
-    };
-    chats[uid].messages.push(msg);
-    sent++;
-  }
-  await writeLiveChats(chats);
-  sendWebPushAll('📢 KYNEX Announcement', String(text).trim()).catch(() => {});
+  await withChatLock(async () => {
+    const chats = await readLiveChats();
+    for (const uid of targetUids) {
+      if (!chats[uid]) chats[uid] = { messages: [], unreadAdmin: 0 };
+      chats[uid].messages.push({
+        id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
+        from: 'admin', text: clean, at: now, read: false, broadcast: true,
+      });
+      sent++;
+    }
+    await writeLiveChats(chats);
+  });
+  sendWebPushAll('📢 KYNEX Announcement', clean).catch(() => {});
+  // APK users get FCM (web users get web push above)
+  for (const uid of targetUids) sendFcmNotification(uid, '📢 KYNEX Announcement', clean).catch(() => {});
   await adminLog(req, 'chat.broadcast', { sent, text: String(text).trim().slice(0, 200) });
   res.json({ ok: true, sent });
 });
@@ -3897,7 +3935,7 @@ initDb().then(() => initVapid()).then(() => {
     setInterval(() => {
       fetch(`https://kynex-backend-9w8t.onrender.com/api/health`).catch(() => {});
     }, 14 * 60 * 1000);
-    scheduleDailyChatClear();
+    // (daily chat clear runs from the 5 AM PKT interval near the top of the file — single scheduler)
     // Auto re-verify pending deposits (first pass 30s after boot, then every 3 min)
     setTimeout(() => recheckPendingDeposits().catch(() => {}), 30 * 1000);
     setInterval(() => recheckPendingDeposits().catch(() => {}), DEPOSIT_RECHECK_INTERVAL_MS);

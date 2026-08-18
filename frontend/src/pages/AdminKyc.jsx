@@ -98,6 +98,14 @@ const AdminKyc = () => {
     if (ok && data.ok) setChatThreads(data.threads || []);
   }, [adminKey]);
 
+  const markThreadRead = async (uid) => {
+    try { await fetch(`${API_URL}/api/admin/livechat/${uid}/read`, { method: 'POST', headers: { 'x-admin-key': adminKey } }); } catch { /* ignore */ }
+    setChatThreads(prev => prev.map(t => (t.uid === uid || t.userId === uid) ? { ...t, unreadAdmin: 0 } : t));
+  };
+  const closeChatThread = () => {
+    setActiveChatUid(null); setChatMessages([]); setUserTyping(false);
+    clearInterval(chatPollRef.current); clearInterval(typingPollRef.current);
+  };
   const openChatThread = async (uid) => {
     setActiveChatUid(uid);
     setUserTyping(false);
@@ -106,13 +114,27 @@ const AdminKyc = () => {
       setChatMessages(data.messages || []);
       setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     }
+    markThreadRead(uid); // explicit read (GET is now pure — no DB write every 4s)
     clearInterval(chatPollRef.current);
     clearInterval(typingPollRef.current);
+    let lastSeenId = (data?.messages || []).slice(-1)[0]?.id || null;
     chatPollRef.current = setInterval(async () => {
       const r = await safeFetch(`${API_URL}/api/admin/livechat/${uid}`, { headers: { 'x-admin-key': adminKey } });
       if (r.ok && r.data.ok) {
-        setChatMessages(r.data.messages || []);
-        setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
+        const msgs = r.data.messages || [];
+        const newestId = msgs.slice(-1)[0]?.id || null;
+        setChatMessages(prev => {
+          // keep optimistic admin replies not yet in the poll (server round-trip)
+          const ids = new Set(msgs.map(m => m.id));
+          const keep = prev.filter(m => m.id && !ids.has(m.id) && m.from === 'admin' && Date.now() - m.at < 8000);
+          return keep.length ? [...msgs, ...keep] : msgs;
+        });
+        if (newestId && newestId !== lastSeenId) {
+          lastSeenId = newestId;
+          const hasNewFromUser = msgs.slice(-1)[0]?.from === 'user';
+          if (hasNewFromUser) markThreadRead(uid); // we're viewing → mark read
+          setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80); // scroll ONLY on new message
+        }
       }
     }, 4000);
     typingPollRef.current = setInterval(async () => {
@@ -136,15 +158,17 @@ const AdminKyc = () => {
     const text = chatReply.trim();
     if (!text || chatSending || !activeChatUid) return;
     setChatSending(true);
-    setChatReply('');
     const { ok, data } = await safeFetch(`${API_URL}/api/admin/livechat/${activeChatUid}/reply`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-admin-key': adminKey },
       body: JSON.stringify({ text }),
     });
     if (ok && data.ok) {
+      setChatReply(''); // only clear once the server accepted it
       setChatMessages(prev => [...prev, data.message]);
       setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
+    } else {
+      setError(data?.error || 'Reply failed — your text is still in the box, try again.');
     }
     setChatSending(false);
   };
@@ -2032,7 +2056,7 @@ This cannot be undone!`)) return;
                     padding: '14px 16px', borderBottom: `1px solid ${theme.cardBorder}`,
                     display: 'flex', alignItems: 'center', gap: '10px',
                   }}>
-                    <button className="admin-chat-back" onClick={() => { setActiveChatUid(null); setChatMessages([]); clearInterval(chatPollRef.current); }}
+                    <button className="admin-chat-back" onClick={closeChatThread}
                       style={{ display: 'none', background: 'none', border: 'none', color: theme.primary, cursor: 'pointer', fontSize: '14px', fontWeight: '700', padding: 0 }}>←</button>
                     <div style={{ flex: 1 }}>
                       {(() => {
@@ -2045,7 +2069,7 @@ This cannot be undone!`)) return;
                         );
                       })()}
                     </div>
-                    <button onClick={() => { setActiveChatUid(null); setChatMessages([]); clearInterval(chatPollRef.current); }}
+                    <button onClick={closeChatThread}
                       style={{ background: 'none', border: 'none', color: theme.faint, cursor: 'pointer', fontSize: '18px' }}>✕</button>
                   </div>
 
