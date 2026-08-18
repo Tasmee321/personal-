@@ -146,7 +146,7 @@ const Download = () => {
   });
 
   useEffect(() => {
-    fetch(`https://kynex.site/version.json?t=${Date.now()}`, { cache: 'no-store' })
+    fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' })
       .then(r => r.json())
       .then(data => {
         if (data.download_url) setApkInfo(data);

@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Sparkles, X, Star } from 'lucide-react';
 import { useTheme } from '../ThemeContext';
 
-const VERSION_JSON_URL = 'https://kynex.site/version.json';
 const SEEN_WHATS_NEW_KEY = 'kynex_seen_whats_new';
 
 export default function WhatsNewModal({ updatePending }) {
@@ -15,7 +14,7 @@ export default function WhatsNewModal({ updatePending }) {
     let cancelled = false;
     const check = async () => {
       try {
-        const res = await fetch(`${VERSION_JSON_URL}?t=${Date.now()}`, { cache:'no-store' });
+        const res = await fetch(`/version.json?t=${Date.now()}`, { cache:'no-store' });
         if (!res.ok) return;
         const data = await res.json();
         const versionCode = Number(data.version_code);

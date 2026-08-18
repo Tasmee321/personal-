@@ -447,6 +447,13 @@ const LiveChat = () => {
     return () => clearTimeout(idleTimerRef.current);
   }, [open, resetIdle]);
 
+  // Moved above fetchHistory to avoid TDZ: fetchHistory dep array references this
+  const touchAgentActivity = useCallback(() => {
+    const now = Date.now();
+    lastAgentActivityRef.current = now;
+    localStorage.setItem('kynex_last_agent_active', String(now));
+  }, []);
+
   // ── Fetch server messages ──────────────────────────────────────────────
   const fetchHistory = useCallback(async () => {
     try {
@@ -633,13 +640,6 @@ const LiveChat = () => {
   }, []);
 
   const IDLE_RESET_MS = 2 * 60 * 1000; // 2 minutes
-
-  // Record "agent active now" — call whenever user does something in agent view
-  const touchAgentActivity = useCallback(() => {
-    const now = Date.now();
-    lastAgentActivityRef.current = now;
-    localStorage.setItem('kynex_last_agent_active', String(now));
-  }, []);
 
   // When chat opens: if >2 min since last agent activity and there were messages → show welcome
   useEffect(() => {
