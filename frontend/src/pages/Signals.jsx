@@ -324,9 +324,9 @@ const Signals = () => {
           time: Math.floor(k[0] / 1000) + shiftSec + PKT_OFFSET_SEC,
           open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]),
         }));
-        seriesRef.current.setData(candles.filter((c) => (c.time - shiftSec) <= cutoffSec));
-        candles.filter((c) => (c.time - shiftSec) > cutoffSec).forEach((c) => {
-          pending.push({ eventTime: (c.time - shiftSec) * 1000, candle: c });
+        seriesRef.current.setData(candles.filter((c) => (c.time - shiftSec - PKT_OFFSET_SEC) <= cutoffSec));
+        candles.filter((c) => (c.time - shiftSec - PKT_OFFSET_SEC) > cutoffSec).forEach((c) => {
+          pending.push({ eventTime: (c.time - shiftSec - PKT_OFFSET_SEC) * 1000, candle: c });
         });
         chartRef.current?.timeScale().fitContent();
       } catch { /* silent */ }
