@@ -610,10 +610,14 @@ const LiveChat = () => {
     } catch (err) { localStorage.setItem('kynex_push_dbg', `err:${err.message}`); }
   }, []);
 
+  // APK: register FCM token immediately on mount — don't wait for chat open
+  useEffect(() => {
+    if (window.KynexBridge) registerFcmToken();
+  }, []);
+
   // Request notification permission when chat first opens; subscribe to push
   useEffect(() => {
     if (!open) return;
-    // APK: native handles push — just register the FCM token with the server
     if (window.KynexBridge) { registerFcmToken(); return; }
     if (!('Notification' in window)) return;
     if (Notification.permission === 'granted') {

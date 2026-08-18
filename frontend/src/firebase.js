@@ -24,7 +24,7 @@ function getFirebaseMessaging() {
 }
 
 // Call this once after login — registers FCM token with the server
-export async function registerFcmToken() {
+export async function registerFcmToken(retries = 0) {
   try {
     // Store API_URL so native onPageFinished injection can use it
     try { localStorage.setItem('kynex_api_url', API_URL); } catch (_) {}
@@ -34,7 +34,10 @@ export async function registerFcmToken() {
       let fcmToken = '';
       try { fcmToken = window.KynexBridge.getFcmToken(); } catch (_) {}
       if (!fcmToken) fcmToken = window.KYNEX_FCM_TOKEN || '';
-      if (!fcmToken) return;
+      if (!fcmToken) {
+        if (retries < 5) setTimeout(() => registerFcmToken(retries + 1), 3000);
+        return;
+      }
 
       const stored = localStorage.getItem('kynex_fcm_token');
       if (stored === fcmToken) return;

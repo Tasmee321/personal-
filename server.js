@@ -678,18 +678,18 @@ async function sendWebPushAll(title, body) {
 }
 
 async function sendFcmNotification(userId, title, body) {
-  if (!fcmMessaging) { console.warn('FCM: firebase-admin not initialized — FIREBASE_SERVICE_ACCOUNT env var missing?'); return; }
+  if (!fcmMessaging) { console.warn('FCM: not initialized'); return; }
   try {
     const users = await readUsers();
     const user = users.find(u => u.id === userId);
     const fcmToken = user?.fcmToken;
-    if (!fcmToken) return;
+    if (!fcmToken) { console.log('FCM: no token for', userId); return; }
     await fcmMessaging.send({
       token: fcmToken,
-      notification: { title, body },
       data: { title, body, type: 'chat' },
-      android: { priority: 'high', notification: { channelId: 'kynex_messages', sound: 'default' } },
+      android: { priority: 'high' },
     });
+    console.log('FCM: sent to', userId);
   } catch (e) {
     console.error('FCM send error:', e.code || e.message);
     if (e.code === 'messaging/registration-token-not-registered') {
@@ -1836,18 +1836,6 @@ app.post('/api/push/subscribe', authenticate, async (req, res) => {
     subs[uid].push(sub);
     await writePushSubs(subs);
   }
-  res.json({ ok: true });
-});
-
-app.post('/api/fcm-token', authenticate, async (req, res) => {
-  const { token } = req.body;
-  if (!token) return res.status(400).json({ error: 'Token required.' });
-  const users = await readUsers();
-  const user = users.find(u => u.id === req.user.sub);
-  if (!user) return res.status(404).json({ error: 'User not found.' });
-  if (user.fcmToken === token) return res.json({ ok: true });
-  user.fcmToken = token;
-  await writeUsers(users);
   res.json({ ok: true });
 });
 
