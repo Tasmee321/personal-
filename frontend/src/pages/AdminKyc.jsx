@@ -1630,7 +1630,7 @@ This cannot be undone!`)) return;
                   style={{ ...inputStyle, width: 'auto', minWidth: '160px', flex: '1 1 160px' }}>
                   <option value="">Select user...</option>
                   {activeReferrers.map(u => (
-                    <option key={u.id} value={u.id}>{u.name} ({u.email}) — {u.referredCount} referral(s)</option>
+                    <option key={u.id} value={u.id}>{u.name} ({u.email}) — {u.referredCount} pending referral(s)</option>
                   ))}
                 </select>
                 <input type="number" min="1" max="100" placeholder="Bonus signals" value={referralBonusAmount}
@@ -1639,10 +1639,10 @@ This cannot be undone!`)) return;
               </div>
 
               <div style={{ fontWeight: '600', fontSize: '12px', color: theme.text, marginBottom: '8px' }}>
-                Active Referrers (referred users who deposited)
+                Pending Referral Rewards (new depositing referrals not yet rewarded)
               </div>
               {activeReferrers.length === 0 && (
-                <div style={{ color: theme.faint, fontSize: '12px' }}>No active referrers yet</div>
+                <div style={{ color: theme.faint, fontSize: '12px' }}>No pending referral rewards</div>
               )}
               <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
                 {activeReferrers.map(r => (
@@ -1667,13 +1667,18 @@ This cannot be undone!`)) return;
                       </div>
                     </div>
                     <div style={{ fontSize: '11px', color: theme.subtext }}>
-                      {r.referredCount} referred user(s):
+                      {r.referredCount} pending referral(s):
                       {r.referred.map((ref, i) => (
                         <span key={i} style={{ marginLeft: '6px' }}>
                           <b>{ref.name}</b> (${ref.totalDeposited} deposited)
                           {i < r.referred.length - 1 ? ',' : ''}
                         </span>
                       ))}
+                      {r.rewardedCount > 0 && (
+                        <span style={{ marginLeft: '8px', color: theme.faint }}>
+                          · {r.rewardedCount} already rewarded ({r.totalBonusGranted} signals granted so far)
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}

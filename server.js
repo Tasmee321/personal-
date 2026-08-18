@@ -2587,32 +2587,56 @@ app.get("/api/candle-overrides/active", async (req, res) => {
   res.json({ ok: true, overrides: active });
 });
 
-// Today's active referrers (referred someone who has deposited)
+// Referred users (of referrer `u`) who have deposited — these are the ones eligible for a reward
+function getActiveReferred(u, users, accounts) {
+  return users.filter(r => {
+    if (r.referredByUid !== u.uid) return false;
+    const acct = accounts[r.id];
+    return acct && (acct.totalDeposited || 0) > 0;
+  });
+}
+
+// Referrers with PENDING (not yet rewarded) depositing referrals.
+// Once the admin grants a bonus, every active referral at that moment is recorded in
+// account.referralRewardedUids, so the referrer disappears from this list until a NEW
+// referred user deposits.
 app.get("/api/admin/referral-active", requireAdmin, async (req, res) => {
   const users = await readUsers();
   const accounts = await readDemoAccounts();
-  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
   const result = [];
+  let dirty = false;
   for (const u of users) {
-    const referred = users.filter(r => r.referredByUid === u.uid);
-    const activeReferred = referred.filter(r => {
-      const acct = accounts[r.id];
-      return acct && (acct.totalDeposited || 0) > 0;
-    });
-    if (activeReferred.length > 0) {
-      const acct = accounts[u.id] || {};
-      if ((acct.totalBonusGranted || 0) > 0 && (acct.referralBonusSignals || 0) <= 0) continue;
-      result.push({
-        id: u.id, uid: u.uid, name: u.name, email: u.email,
-        referralBonusSignals: acct.referralBonusSignals || 0,
-        referredCount: activeReferred.length,
-        referred: activeReferred.map(r => {
-          const ra = accounts[r.id] || {};
-          return { uid: r.uid, name: r.name, email: r.email, totalDeposited: Math.round((ra.totalDeposited || 0) * 100) / 100, createdAt: r.createdAt };
-        }),
-      });
+    const activeReferred = getActiveReferred(u, users, accounts);
+    if (activeReferred.length === 0) continue;
+    const acct = accounts[u.id] || {};
+
+    // Legacy migration: accounts granted before referralRewardedUids existed —
+    // treat all currently-active referrals as already rewarded (one-time, persisted).
+    if (!Array.isArray(acct.referralRewardedUids) && (acct.totalBonusGranted || 0) > 0) {
+      acct.referralRewardedUids = activeReferred.map(r => r.uid);
+      accounts[u.id] = acct;
+      dirty = true;
     }
+
+    const rewarded = new Set(acct.referralRewardedUids || []);
+    const pending = activeReferred.filter(r => !rewarded.has(r.uid));
+    if (pending.length === 0) continue; // fully granted — hide until a new referral deposits
+
+    const toRow = r => {
+      const ra = accounts[r.id] || {};
+      return { uid: r.uid, name: r.name, email: r.email, totalDeposited: Math.round((ra.totalDeposited || 0) * 100) / 100, createdAt: r.createdAt };
+    };
+    result.push({
+      id: u.id, uid: u.uid, name: u.name, email: u.email,
+      referralBonusSignals: acct.referralBonusSignals || 0,
+      totalBonusGranted: acct.totalBonusGranted || 0,
+      referredCount: pending.length,          // pending (un-rewarded) referrals
+      totalReferredCount: activeReferred.length,
+      rewardedCount: activeReferred.length - pending.length,
+      referred: pending.map(toRow),
+    });
   }
+  if (dirty) await writeDemoAccounts(accounts);
   res.json({ ok: true, referrers: result });
 });
 
@@ -2631,6 +2655,12 @@ app.post("/api/admin/referral-bonus", requireAdmin, async (req, res) => {
   // Signals expire after N days from now (one per day, missed days are forfeit)
   const newExpiry = Date.now() + n * 24 * 60 * 60 * 1000;
   account.referralBonusExpireAt = Math.max(account.referralBonusExpireAt || 0, newExpiry);
+  // Mark every currently-active (deposited) referral as rewarded so this user drops off
+  // the pending list until a NEW referred user deposits.
+  const rewarded = new Set(Array.isArray(account.referralRewardedUids) ? account.referralRewardedUids : []);
+  for (const r of getActiveReferred(user, users, accounts)) rewarded.add(r.uid);
+  account.referralRewardedUids = [...rewarded];
+  account.referralLastGrantedAt = Date.now();
   await writeDemoAccounts(accounts);
   await pushMessage(userId, "Referral Reward", `You earned ${n} bonus signal(s) as a referral reward! Valid for ${n} days.`);
   res.json({ ok: true, referralBonusSignals: account.referralBonusSignals });
