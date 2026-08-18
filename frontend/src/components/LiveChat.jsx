@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../ThemeContext';
 import { getToken } from '../utils/auth';
 import { API_URL } from '../config';
+import { registerFcmToken } from '../firebase';
 
 const DRAG_KEY = 'kynex_chat_btn_pos';
 const IDLE_MS = 4000;
@@ -615,8 +616,9 @@ const LiveChat = () => {
     if (!('Notification' in window)) return;
     if (Notification.permission === 'granted') {
       subscribePush();
+      registerFcmToken();
     } else if (Notification.permission === 'default') {
-      Notification.requestPermission().then(p => { if (p === 'granted') subscribePush(); });
+      Notification.requestPermission().then(p => { if (p === 'granted') { subscribePush(); registerFcmToken(); } });
     }
   }, [open, subscribePush]);
 
