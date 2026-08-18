@@ -415,6 +415,7 @@ const LiveChat = () => {
   const [suggestedTopic, setSuggestedTopic] = useState(null);
   const [isIdle, setIsIdle] = useState(false);
   const [pressing, setPressing] = useState(false);
+  const [toast, setToast] = useState(null);
 
   const bottomRef = useRef(null);
   const pollRef = useRef(null);
@@ -423,6 +424,8 @@ const LiveChat = () => {
   const idleTimerRef = useRef(null);
   const hasDraggedRef = useRef(false);
   const initialLoadRef = useRef(false); // resume agent session on first load
+  const seenMsgIdsRef = useRef(new Set());
+  const toastTimerRef = useRef(null);
 
   const savedPos = (() => { try { return JSON.parse(localStorage.getItem(DRAG_KEY)); } catch { return null; } })();
   const [btnPos, setBtnPos] = useState(savedPos || { bottom: 88, right: 16 });
@@ -454,10 +457,30 @@ const LiveChat = () => {
         const msgs = data.messages || [];
         setMessages(msgs);
         if (!open) setUnread(msgs.filter(m => m.from === 'admin' && !m.read).length);
-        // On first load: if agent messages exist in DB, auto-resume agent view
+        // On first load: seed seen IDs, auto-resume agent view if history exists
         if (!initialLoadRef.current) {
           initialLoadRef.current = true;
-          if (msgs.length > 0) setView('agent');
+          msgs.forEach(m => seenMsgIdsRef.current.add(m.id || String(m.at)));
+          if (msgs.filter(m => !m.broadcast).length > 0) setView('agent');
+          return;
+        }
+        // Detect new admin messages → toast notification + auto-open for regular messages
+        let latestNew = null;
+        msgs.forEach(m => {
+          const key = m.id || String(m.at);
+          if (m.from === 'admin' && !seenMsgIdsRef.current.has(key)) {
+            seenMsgIdsRef.current.add(key);
+            latestNew = m;
+          }
+        });
+        if (latestNew && !open) {
+          setToast(latestNew);
+          clearTimeout(toastTimerRef.current);
+          toastTimerRef.current = setTimeout(() => setToast(null), 8000);
+          if (!latestNew.broadcast) {
+            setOpen(true);
+            setView('agent');
+          }
         }
       }
     } catch { /* network */ }
@@ -736,7 +759,7 @@ const LiveChat = () => {
                 End
               </button>
             )}
-            <button onClick={() => setOpen(false)} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', padding: '6px', borderRadius: '8px', flexShrink: 0 }}>
+            <button onClick={() => { setOpen(false); setView('welcome'); }} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', padding: '6px', borderRadius: '8px', flexShrink: 0 }}>
               <ChevronDown size={18} />
             </button>
           </div>
@@ -1000,6 +1023,31 @@ const LiveChat = () => {
         </div>
       )}
 
+      {/* ── Notification Toast (chat closed + new admin message) ───── */}
+      {toast && !open && (
+        <div
+          onClick={() => { setToast(null); clearTimeout(toastTimerRef.current); setOpen(true); setView('agent'); }}
+          style={{ position:'fixed', bottom:`${btnPos.bottom + 74}px`, right:`${btnPos.right}px`, zIndex:1001, width:'min(300px, calc(100vw - 32px))', backgroundColor:theme.card, border:`1.5px solid ${toast.broadcast ? 'rgba(245,158,11,0.6)' : 'rgba(59,130,246,0.5)'}`, borderRadius:'16px', padding:'12px 14px 14px', boxShadow:toast.broadcast ? '0 8px 32px rgba(245,158,11,0.2)' : '0 8px 32px rgba(59,130,246,0.2)', animation:'chatSlideIn 0.28s cubic-bezier(0.4,0,0.2,1)', cursor:'pointer', overflow:'hidden' }}
+        >
+          <div style={{ display:'flex', alignItems:'flex-start', gap:'10px' }}>
+            <div style={{ fontSize:'20px', flexShrink:0 }}>{toast.broadcast ? '📢' : '💬'}</div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:'10px', fontWeight:'800', color:toast.broadcast ? '#F59E0B' : theme.primary, textTransform:'uppercase', letterSpacing:'0.7px', marginBottom:'3px' }}>
+                {toast.broadcast ? 'Admin Announcement · KYNEX' : 'New Message · KYNEX'}
+              </div>
+              <div style={{ fontSize:'13px', color:theme.text, lineHeight:'1.5', fontWeight:'500', overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>
+                {toast.text}
+              </div>
+              <div style={{ fontSize:'10px', color:theme.faint, marginTop:'4px' }}>Tap to open chat</div>
+            </div>
+            <button onClick={e => { e.stopPropagation(); setToast(null); clearTimeout(toastTimerRef.current); }} style={{ background:'transparent', border:'none', cursor:'pointer', color:theme.faint, padding:'2px', flexShrink:0, fontSize:'14px', lineHeight:1 }}>✕</button>
+          </div>
+          <div style={{ position:'absolute', bottom:0, left:0, right:0, height:'3px', overflow:'hidden' }}>
+            <div style={{ height:'100%', background:toast.broadcast ? '#F59E0B' : theme.primary, animation:'toastProgress 8s linear forwards' }} />
+          </div>
+        </div>
+      )}
+
       {/* ── FAB ─────────────────────────────────────────────────────── */}
       <div style={{ position:'fixed', bottom:`${btnPos.bottom}px`, right:`${btnPos.right}px`, zIndex:999, width:'58px', height:'58px', borderRadius:'50%', transform:peekTranslate, transition:dragging.current?'none':'transform 0.45s cubic-bezier(0.34,1.2,0.64,1)', animation:!open&&!isIdle&&!pressing?'chatRing 2.8s ease-out infinite':'none' }}>
         <div
@@ -1023,6 +1071,7 @@ const LiveChat = () => {
         @keyframes chatBounce { 0%,60%,100% { transform:translateY(0); opacity:0.5; } 30% { transform:translateY(-5px); opacity:1; } }
         @keyframes chatOnlinePulse { 0%,100% { opacity:1; } 50% { opacity:0.35; } }
         @keyframes eyeBlink { 0%,88%,100% { transform:scaleY(1); } 92% { transform:scaleY(0.06); } }
+        @keyframes toastProgress { from { width:100%; } to { width:0%; } }
       `}</style>
     </>
   );
