@@ -412,6 +412,7 @@ const Assets = () => {
     const ws = new WebSocket(buildWsStreamUrl());
     ws.onmessage = (event) => {
       const { data } = JSON.parse(event.data);
+      if (!data || !data.s) return;
       setLivePrices((prev) => ({ ...prev, [data.s]: parseFloat(data.c) }));
     };
     return () => ws.close();

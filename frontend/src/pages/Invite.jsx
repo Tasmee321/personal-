@@ -263,6 +263,18 @@ const Invite = () => {
       <div style={{ padding: '20px', maxWidth: '520px', margin: '0 auto', paddingBottom: '40px' }}>
         {error && <div style={{ color: theme.down, fontSize: '13px', marginBottom: '16px', padding: '10px 14px', backgroundColor: theme.downSoft, borderRadius: '10px' }}>{error}</div>}
 
+        {!summary && !error && (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '60px 0' }}>
+            <style>{`@keyframes kynexSpin { to { transform: rotate(360deg); } }`}</style>
+            <div style={{
+              width: '40px', height: '40px', borderRadius: '50%',
+              border: `3px solid ${theme.cardBorder}`,
+              borderTop: `3px solid ${theme.primary}`,
+              animation: 'kynexSpin 0.8s linear infinite',
+            }} />
+          </div>
+        )}
+
         {summary && (
           <>
             {/* UID card */}

@@ -201,6 +201,17 @@ const Verification = () => {
       </div>
 
       <div style={{ padding: '20px', maxWidth: '480px', margin: '0 auto' }}>
+        {kyc === null && (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '60px 0' }}>
+            <style>{`@keyframes kynexSpin { to { transform: rotate(360deg); } }`}</style>
+            <div style={{
+              width: '40px', height: '40px', borderRadius: '50%',
+              border: `3px solid ${theme.cardBorder}`,
+              borderTop: `3px solid ${theme.primary}`,
+              animation: 'kynexSpin 0.8s linear infinite',
+            }} />
+          </div>
+        )}
         {kyc && <StatusBadge status={kyc.status} theme={theme} iconBadges={iconBadges} />}
 
         {(kyc?.status === 'not_started' || kyc?.status === 'rejected') && <Tiers theme={theme} />}

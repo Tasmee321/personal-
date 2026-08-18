@@ -28,7 +28,9 @@ const BottomNav = () => {
     }}>
       {NAV_ITEMS.map((item) => {
         const Icon = item.icon;
-        const isActive = location.pathname === item.path;
+        const isActive = item.path === '/assets'
+          ? ['/assets', '/deposit', '/withdraw', '/transfer', '/transactions'].some((p) => location.pathname.startsWith(p))
+          : location.pathname === item.path;
 
         if (item.center) {
           return (

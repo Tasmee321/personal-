@@ -208,7 +208,7 @@ const Trade = () => {
   const { theme, mode } = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
-  const [riskAccepted, setRiskAccepted] = useState(false);
+  const [riskAccepted, setRiskAccepted] = useState(() => sessionStorage.getItem('kynex_risk_ok') === '1');
   const [tab, setTab] = useState('spot');
   const [selectedCoin, setSelectedCoin] = useState(() => COINS.find((c) => c.pair === location.state?.pair) || COINS[0]);
   const [livePrices, setLivePrices] = useState({});
@@ -457,7 +457,7 @@ const Trade = () => {
       <div style={{ padding: '16px', paddingBottom: '90px', color: theme.text, backgroundColor: theme.bg, minHeight: '100vh' }}>
         <RiskWarningModal
           theme={theme}
-          onAccept={() => setRiskAccepted(true)}
+          onAccept={() => { sessionStorage.setItem('kynex_risk_ok', '1'); setRiskAccepted(true); }}
           onCancel={() => navigate('/dashboard')}
         />
         <BottomNav />

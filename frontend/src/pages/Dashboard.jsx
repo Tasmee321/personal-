@@ -71,7 +71,7 @@ const QUICK_ACTIONS = [
   { to: '/invite',             label: 'Invite',      SvgIcon: InviteSVG,   gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
   { to: '/download',           label: 'Download',    SvgIcon: DownloadSVG, gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
   { to: '/legal/member-guide', label: 'Guide',       SvgIcon: GuideSVG,    gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
-  { to: '/certificates',       label: 'Certificate', SvgIcon: CertSVG,     gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
+  { to: '/certificates',       label: 'Certificate', SvgIcon: CertSVG,     gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)', disabled: true  },
 ];
 
 function fmtPrice(n) {
@@ -299,7 +299,7 @@ const Dashboard = () => {
         {QUICK_ACTIONS.map((action) => {
           const { SvgIcon } = action;
           return (
-            <Link key={action.label} to={action.to} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '7px', color: theme.text, textDecoration: 'none', flex: 1, minWidth: 0 }}>
+            <Link key={action.label} to={action.to} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '7px', color: theme.text, textDecoration: 'none', flex: 1, minWidth: 0, ...(action.disabled ? { opacity: 0.4, pointerEvents: 'none' } : {}) }}>
               <div style={{
                 width: '48px', height: '48px', borderRadius: '16px',
                 background: action.gradient,

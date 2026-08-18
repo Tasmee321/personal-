@@ -177,9 +177,11 @@ const TransferPage = () => {
           )}
 
           {/* Notice */}
-          <div style={{ padding: '10px 14px', borderRadius: '10px', backgroundColor: 'rgba(99,102,241,0.06)', border: `1px solid rgba(99,102,241,0.12)` }}>
+          <div style={{ padding: '10px 14px', borderRadius: '10px', backgroundColor: direction === 'toSpot' ? 'rgba(245,158,11,0.06)' : 'rgba(99,102,241,0.06)', border: `1px solid ${direction === 'toSpot' ? 'rgba(245,158,11,0.18)' : 'rgba(99,102,241,0.12)'}` }}>
             <p style={{ fontSize: '11px', color: theme.subtext, lineHeight: '1.6', margin: 0 }}>
-              Instant transfer between accounts. No fees charged.
+              {direction === 'toSpot'
+                ? '⚠️ 20% penalty applies if signal volume is not complete.'
+                : '✅ No fees charged.'}
             </p>
           </div>
 

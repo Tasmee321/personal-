@@ -203,7 +203,7 @@ const WithdrawPage = () => {
                   <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
                       <span style={{ color: theme.subtext }}>Date</span>
-                      <span style={{ color: theme.text, fontWeight: '600' }}>{new Date(wr.createdAt || wr.requestedAt).toLocaleString('en-GB', { timeZone: 'Asia/Karachi', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                      <span style={{ color: theme.text, fontWeight: '600' }}>{new Date(wr.createdAt || wr.requestedAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
                       <span style={{ color: theme.subtext }}>Network</span>

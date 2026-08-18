@@ -24,6 +24,7 @@ const Messages = () => {
   const { theme, iconBadges } = useTheme();
   const [messages, setMessages] = useState([]);
   const [selectedMsg, setSelectedMsg] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   const load = async () => {
     try {
@@ -31,6 +32,7 @@ const Messages = () => {
       const data = await res.json();
       if (res.ok) setMessages(data.messages);
     } catch {}
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -85,7 +87,7 @@ const Messages = () => {
       </div>
 
       <div style={{ padding: '20px', maxWidth: '520px', margin: '0 auto' }}>
-        {messages.length === 0 && (
+        {!loading && messages.length === 0 && (
           <div style={{ textAlign: 'center', padding: '50px 0' }}>
             <div style={{
               width: '56px', height: '56px', borderRadius: '16px', backgroundColor: iconBadges.teal.bg,

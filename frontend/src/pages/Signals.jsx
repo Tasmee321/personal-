@@ -376,6 +376,10 @@ const Signals = () => {
 
   const startPlacing = (direction) => {
     setActionError('');
+    if (signalBalance < 200) {
+      setActionError('Minimum $200 signal balance required to trade.');
+      return;
+    }
     if (!signalBalance || signalBalance <= 0) {
       setActionError('Your balance is empty. Transfer funds first.');
       return;
@@ -470,7 +474,7 @@ const Signals = () => {
       )}
 
       {/* Chart */}
-      <div ref={chartContainerRef} style={{ ...glassCard(theme), marginBottom: '14px', overflow: 'hidden' }} />
+      <div ref={chartContainerRef} style={{ ...glassCard(theme), marginBottom: '14px', overflow: 'hidden', minHeight: '260px' }} />
 
       {/* Trade size */}
       <div style={{ ...glassCard(theme), padding: '12px 16px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
