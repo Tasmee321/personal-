@@ -1837,6 +1837,18 @@ app.post('/api/push/subscribe', authenticate, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/fcm-token', authenticate, async (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ error: 'Token required.' });
+  const users = await readUsers();
+  const user = users.find(u => u.id === req.user.sub);
+  if (!user) return res.status(404).json({ error: 'User not found.' });
+  if (user.fcmToken === token) return res.json({ ok: true });
+  user.fcmToken = token;
+  await writeUsers(users);
+  res.json({ ok: true });
+});
+
 // ---- Typing indicators (in-memory, no persistence needed) ----
 const typingState = {}; // { uid: { userTypingUntil, adminTypingUntil } }
 
