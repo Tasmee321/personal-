@@ -32,6 +32,7 @@ import { ThemeProvider } from './ThemeContext';
 import LiveChat from './components/LiveChat';
 import WhatsNewModal from './components/WhatsNewModal';
 import UpdateChecker from './components/UpdateChecker';
+import AppLock from './components/AppLock';
 
 function ProtectedRoute({ children }) {
   return isAuthenticated() ? children : <Navigate to="/auth" replace />;
@@ -100,6 +101,7 @@ function App() {
 
         {/* Global overlays — rendered outside AnimatedRoutes so they don't re-animate on navigation */}
         {isAuthenticated() && <LiveChat />}
+        {isAuthenticated() && <AppLock />}
         <UpdateChecker onPendingChange={setUpdatePending} />
         <WhatsNewModal updatePending={updatePending} />
       </Router>

@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { registerBiometric, clearBiometric } from '../components/AppLock';
 import { Link, useNavigate } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { ArrowLeft, ChevronRight, Shield, Mail, Smartphone, Key, Lock, AlertTriangle, Ban } from 'lucide-react';
@@ -165,15 +166,52 @@ const Security = () => {
 
   const toggle = (panel) => { setOpen(open === panel ? null : panel); setMsg(''); };
 
-  const toggleAppLock = () => {
-    const next = !appLock;
-    setAppLock(next);
-    localStorage.setItem('kynex_app_lock', String(next));
-    // Tell native Android layer via postMessage
-    if (window.KynexBridge && window.KynexBridge.setAppLock) {
-      window.KynexBridge.setAppLock(String(next));
+  const [lockBusy, setLockBusy] = useState(false);
+
+  const toggleAppLock = useCallback(async () => {
+    if (lockBusy) return;
+
+    if (appLock) {
+      // ── Turn OFF ──
+      if (window.KynexBridge?.setAppLock) window.KynexBridge.setAppLock('false');
+      clearBiometric();
+      // reset first-load flag so next session starts clean
+      localStorage.removeItem('kynex_lock_first_load');
+      setAppLock(false);
+      setMsg('App Lock disabled.');
+      return;
     }
-  };
+
+    // ── Turn ON ──
+    if (window.KynexBridge?.setAppLock) {
+      // APK: native layer handles the actual lock
+      window.KynexBridge.setAppLock('true');
+      localStorage.setItem('kynex_app_lock', 'true');
+      setAppLock(true);
+      setMsg('App Lock enabled. Screen will lock when you leave the app.');
+      return;
+    }
+
+    // PWA / browser: use WebAuthn (Face ID / fingerprint / device PIN)
+    if (!window.PublicKeyCredential) {
+      setMsg('Biometric lock is not supported on this browser or device.');
+      return;
+    }
+    setLockBusy(true);
+    setMsg('');
+    try {
+      await registerBiometric();
+      setAppLock(true);
+      setMsg('App Lock enabled. Biometric registered — app will lock when you switch away.');
+    } catch (err) {
+      const m = err?.name === 'NotAllowedError'
+        ? 'Permission denied. Please allow biometric access and try again.'
+        : err?.message || 'Could not register biometric. Try again.';
+      setMsg(m);
+    } finally {
+      setLockBusy(false);
+    }
+  }, [appLock, lockBusy]);
 
   /* security level helpers */
   const levelColor = security
@@ -347,33 +385,40 @@ const Security = () => {
 
               {/* App Lock */}
               <Divider theme={theme} />
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '14px 6px',
-              }}>
-                <RowIcon name="identity" theme={theme} color={theme.primarySoft} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '14px', fontWeight: 600 }}>App Lock</div>
-                  <div style={{ fontSize: '11px', color: theme.faint, marginTop: '2px' }}>Require fingerprint or PIN when opening KYNEX.</div>
+              <div style={{ padding: '14px 6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <RowIcon name="identity" theme={theme} color={theme.primarySoft} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '14px', fontWeight: 600 }}>App Lock</div>
+                    <div style={{ fontSize: '11px', color: theme.faint, marginTop: '2px' }}>
+                      {window.KynexBridge
+                        ? 'Lock screen when leaving the app (Android).'
+                        : 'Face ID / fingerprint / device PIN when app resumes (PWA).'}
+                    </div>
+                  </div>
+                  <div
+                    onClick={lockBusy ? undefined : toggleAppLock}
+                    style={{
+                      width: 44, height: 24, borderRadius: 12,
+                      cursor: lockBusy ? 'not-allowed' : 'pointer',
+                      backgroundColor: appLock ? '#F59E0B' : theme.cardBorder,
+                      position: 'relative', transition: 'background 0.2s',
+                      flexShrink: 0, opacity: lockBusy ? 0.6 : 1,
+                    }}
+                  >
+                    <div style={{
+                      position: 'absolute', top: 3, left: appLock ? 23 : 3,
+                      width: 18, height: 18, borderRadius: '50%',
+                      backgroundColor: 'white', transition: 'left 0.2s',
+                      boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+                    }} />
+                  </div>
                 </div>
-                <div
-                  onClick={toggleAppLock}
-                  style={{
-                    width: 44, height: 24, borderRadius: 12, cursor: 'pointer',
-                    backgroundColor: appLock ? '#F59E0B' : theme.cardBorder,
-                    position: 'relative', transition: 'background 0.2s',
-                    flexShrink: 0,
-                  }}
-                >
-                  <div style={{
-                    position: 'absolute', top: 3, left: appLock ? 23 : 3,
-                    width: 18, height: 18, borderRadius: '50%',
-                    backgroundColor: 'white', transition: 'left 0.2s',
-                    boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
-                  }} />
-                </div>
+                {lockBusy && (
+                  <div style={{ fontSize: '11px', color: theme.primary, marginTop: '8px', paddingLeft: '46px' }}>
+                    Waiting for biometric…
+                  </div>
+                )}
               </div>
 
               <Divider theme={theme} />
