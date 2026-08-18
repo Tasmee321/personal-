@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Search, ArrowLeftRight, Headset, Globe, User, TrendingUp, TrendingDown, BarChart3, Eye, EyeOff } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
@@ -6,6 +6,8 @@ import { CoinIcon } from '../components/CoinIcons';
 import { getToken } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
 import NotificationBell from '../components/NotificationBell';
+import PullIndicator from '../components/PullToRefresh';
+import { usePullToRefresh } from '../utils/usePullToRefresh';
 import ALL_COINS, { buildWsStreamUrl } from '../config/coins';
 import { API_URL } from '../config';
 
@@ -121,6 +123,8 @@ const Dashboard = () => {
     return () => ws.close();
   }, []);
 
+  const loadBalanceRef = useRef(null);
+  const { pull: ptrPull, refreshing: ptrRefreshing } = usePullToRefresh(() => loadBalanceRef.current?.());
   useEffect(() => {
     const loadBalance = async () => {
       try {
@@ -138,6 +142,7 @@ const Dashboard = () => {
         }
       } catch { /* next poll */ }
     };
+    loadBalanceRef.current = loadBalance;
     const initial = setTimeout(loadBalance, 0);
     const poll = setInterval(loadBalance, 10000);
     return () => { clearTimeout(initial); clearInterval(poll); };
@@ -210,6 +215,7 @@ const Dashboard = () => {
 
   return (
     <div style={{ padding: '20px', paddingBottom: '90px', color: theme.text, backgroundColor: theme.bg, minHeight: '100vh' }}>
+      <PullIndicator pull={ptrPull} refreshing={ptrRefreshing} />
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>

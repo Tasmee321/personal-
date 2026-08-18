@@ -882,6 +882,29 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// ---- Admin action log ----
+// Every admin mutation is recorded (who/when/what) so disputes can be traced.
+// Stored in kv 'admin_log' as a capped array (newest first). Never throws — logging must not
+// break the action it records.
+const ADMIN_LOG_MAX = 3000;
+async function adminLog(req, action, details = {}) {
+  try {
+    const list = (await dbRead('admin_log')) || [];
+    const arr = Array.isArray(list) ? list : [];
+    arr.unshift({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      at: Date.now(),
+      action,
+      ip: req?.ip || null,
+      details,
+    });
+    if (arr.length > ADMIN_LOG_MAX) arr.length = ADMIN_LOG_MAX;
+    await dbWrite('admin_log', arr);
+  } catch (e) {
+    console.error('[AdminLog] failed:', e?.message || e);
+  }
+}
+
 // Generic short-lived OTP used to add an extra "prove you own this inbox" step to sensitive
 // account actions (changing email/password, toggling 2FA) — always sent to the CURRENT email.
 const pendingSecurityOtps = new Map(); // `${userId}:${purpose}` -> { otp, expiresAt }
@@ -1737,6 +1760,7 @@ app.post("/api/admin/whitelist/remove", requireAdmin, async (req, res) => {
   if (!user) return res.status(404).json({ error: "User not found." });
   user.whitelistedAddresses = (user.whitelistedAddresses || []).filter(a => a !== address);
   await writeUsers(users);
+  await adminLog(req, 'whitelist.remove', { userId, address });
   res.json({ ok: true, whitelistedAddresses: user.whitelistedAddresses });
 });
 
@@ -1843,6 +1867,7 @@ app.post("/api/admin/kyc/:userId/decide", requireAdmin, async (req, res) => {
       ? "Your identity verification was approved. Your account is now Certified."
       : "Your identity verification was rejected. Please check your details and submit again."
   );
+  await adminLog(req, approve ? 'kyc.approve' : 'kyc.reject', { userId: req.params.userId, email: user.email });
   res.json({ ok: true, kyc: user.kyc });
 });
 
@@ -1900,9 +1925,7 @@ app.get("/api/livechat/history", authenticate, async (req, res) => {
 });
 
 // Admin: list all active chat threads (needs admin key)
-app.get("/api/admin/livechat", async (req, res) => {
-  const key = req.headers['x-admin-key'];
-  if (!key || key !== ADMIN_KEY) return res.status(403).json({ error: "Forbidden." });
+app.get("/api/admin/livechat", requireAdmin, async (req, res) => {
   const chats = await readLiveChats();
   const users = await dbRead('users') || [];
   const threads = Object.entries(chats).map(([uid, chat]) => {
@@ -1921,9 +1944,7 @@ app.get("/api/admin/livechat", async (req, res) => {
 });
 
 // Admin: get full chat for a specific user
-app.get("/api/admin/livechat/:uid", async (req, res) => {
-  const key = req.headers['x-admin-key'];
-  if (!key || key !== ADMIN_KEY) return res.status(403).json({ error: "Forbidden." });
+app.get("/api/admin/livechat/:uid", requireAdmin, async (req, res) => {
   const chats = await readLiveChats();
   const uid = req.params.uid;
   const chat = chats[uid] || { messages: [], unreadAdmin: 0 };
@@ -1937,9 +1958,7 @@ app.get("/api/admin/livechat/:uid", async (req, res) => {
 });
 
 // Admin: reply to a user
-app.post("/api/admin/livechat/:uid/reply", async (req, res) => {
-  const key = req.headers['x-admin-key'];
-  if (!key || key !== ADMIN_KEY) return res.status(403).json({ error: "Forbidden." });
+app.post("/api/admin/livechat/:uid/reply", requireAdmin, async (req, res) => {
   const { text } = req.body || {};
   if (!text || !String(text).trim()) return res.status(400).json({ error: "Message cannot be empty." });
   const chats = await readLiveChats();
@@ -1990,18 +2009,14 @@ app.get("/api/livechat/typing-status", authenticate, async (req, res) => {
   res.json({ ok: true, adminTyping });
 });
 
-app.post("/api/admin/livechat/:uid/typing", async (req, res) => {
-  const key = req.headers['x-admin-key'];
-  if (!key || key !== ADMIN_KEY) return res.status(403).json({ error: "Forbidden." });
+app.post("/api/admin/livechat/:uid/typing", requireAdmin, async (req, res) => {
   const uid = req.params.uid;
   if (!typingState[uid]) typingState[uid] = {};
   typingState[uid].adminTypingUntil = Date.now() + 4000;
   res.json({ ok: true });
 });
 
-app.get("/api/admin/livechat/:uid/typing-status", async (req, res) => {
-  const key = req.headers['x-admin-key'];
-  if (!key || key !== ADMIN_KEY) return res.status(403).json({ error: "Forbidden." });
+app.get("/api/admin/livechat/:uid/typing-status", requireAdmin, async (req, res) => {
   const uid = req.params.uid;
   const state = typingState[uid] || {};
   const userTyping = (state.userTypingUntil || 0) > Date.now();
@@ -2284,6 +2299,7 @@ app.post("/api/admin/deposit-wallets", requireAdmin, async (req, res) => {
     bep20: (bep20 || '').trim(),
   };
   await writeSignalConfig(cfg);
+  await adminLog(req, 'deposit-wallets.update', { wallets: cfg.adminWallets });
   res.json({ ok: true, wallets: cfg.adminWallets });
 });
 
@@ -2415,6 +2431,7 @@ app.post("/api/admin/deposits/:requestId/process", requireAdmin, async (req, res
     }
   }
   if (!found) return res.status(404).json({ error: "Pending deposit not found." });
+  await adminLog(req, approve ? 'deposit.approve' : 'deposit.reject', { requestId: req.params.requestId });
   res.json({ ok: true });
 });
 
@@ -2429,18 +2446,87 @@ app.get("/api/demo/withdrawals", authenticate, async (req, res) => {
 app.get("/api/admin/withdrawals/pending", requireAdmin, async (req, res) => {
   const accounts = await readDemoAccounts();
   const users = await readUsers();
+  const now = Date.now();
+  const DAY = 24 * 60 * 60 * 1000;
+
+  // Index: which users have used each withdrawal address (to flag shared wallets)
+  const addrUsers = new Map(); // lowercased address -> Set(userId)
+  for (const [uid, acct] of Object.entries(accounts)) {
+    for (const w of acct.withdrawalRequests || []) {
+      const a = String(w.walletAddress || '').trim().toLowerCase();
+      if (!a) continue;
+      if (!addrUsers.has(a)) addrUsers.set(a, new Set());
+      addrUsers.get(a).add(uid);
+    }
+  }
+
   const pending = [];
   for (const [userId, account] of Object.entries(accounts)) {
     if (!account.withdrawalRequests) continue;
     const user = users.find(u => u.id === userId);
     for (const wr of account.withdrawalRequests) {
-      if (wr.status === 'pending') {
-        pending.push({ ...wr, userId, email: user?.email, name: user?.name });
-      }
+      if (wr.status !== 'pending') continue;
+      // Risk snapshot — read-only context to help the admin decide; no rule is enforced here
+      const totalDeposited = Math.round((account.totalDeposited || 0) * 100) / 100;
+      const totalWithdrawn = Math.round((account.withdrawalRequests || [])
+        .filter(w => w.status === 'completed').reduce((s, w) => s + (w.netPayout || 0), 0) * 100) / 100;
+      const addrKey = String(wr.walletAddress || '').trim().toLowerCase();
+      const sharedWith = addrKey ? [...(addrUsers.get(addrKey) || [])].filter(id => id !== userId) : [];
+      const createdMs = user?.createdAt ? new Date(user.createdAt).getTime() : NaN; // stored as ISO string
+      const flags = [];
+      if (!user?.kyc || user.kyc.status !== 'certified') flags.push('KYC not certified');
+      if (Number.isFinite(createdMs) && now - createdMs < 3 * DAY) flags.push('Account < 3 days old');
+      if (user?.emailChangedAt && now - user.emailChangedAt < 2 * DAY) flags.push('Email changed recently');
+      if (user?.passwordChangedAt && now - user.passwordChangedAt < 2 * DAY) flags.push('Password changed recently');
+      if (sharedWith.length) flags.push(`Wallet shared with ${sharedWith.length} other account(s)`);
+      if (totalDeposited > 0 && (totalWithdrawn + (wr.netPayout || wr.amount || 0)) > totalDeposited * 3) flags.push('Withdrawing > 3× total deposited');
+      if (totalDeposited === 0) flags.push('Never deposited');
+      pending.push({
+        ...wr, userId, email: user?.email, name: user?.name, uid: user?.uid,
+        risk: {
+          kycStatus: user?.kyc?.status || 'not_started',
+          accountAgeDays: Number.isFinite(createdMs) ? Math.floor((now - createdMs) / DAY) : null,
+          level: user?.level || 0,
+          totalDeposited, totalWithdrawn,
+          balance: Math.round((account.balance || 0) * 100) / 100,
+          signalBalance: Math.round((account.signalBalance || 0) * 100) / 100,
+          emailChangedAt: user?.emailChangedAt || null,
+          passwordChangedAt: user?.passwordChangedAt || null,
+          lastLoginIp: user?.lastLoginIp || null,
+          sharedWalletUsers: sharedWith.length,
+          flags,
+        },
+      });
     }
   }
   pending.sort((a, b) => b.createdAt - a.createdAt);
   res.json({ ok: true, pending });
+});
+
+// ---- Admin action log ----
+app.get("/api/admin/logs", requireAdmin, async (req, res) => {
+  const list = (await dbRead('admin_log')) || [];
+  const arr = Array.isArray(list) ? list : [];
+  const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 1000);
+  const q = String(req.query.q || '').trim().toLowerCase();
+  const filtered = q ? arr.filter(e => JSON.stringify(e).toLowerCase().includes(q)) : arr;
+  res.json({ ok: true, total: filtered.length, logs: filtered.slice(0, limit) });
+});
+
+// ---- Blocked (deleted) emails: list & unblock ----
+app.get("/api/admin/blocked-emails", requireAdmin, async (req, res) => {
+  const blocked = await readBlockedEmails();
+  res.json({ ok: true, emails: Array.isArray(blocked) ? blocked : [] });
+});
+app.post("/api/admin/blocked-emails/unblock", requireAdmin, async (req, res) => {
+  const email = String((req.body || {}).email || '').trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: "Email required." });
+  const blocked = (await readBlockedEmails()) || [];
+  const next = blocked.filter(e => e !== email);
+  if (next.length === blocked.length) return res.status(404).json({ error: "Email is not blocked." });
+  await writeBlockedEmails(next);
+  await adminLog(req, 'blocked-email.unblock', { email });
+  res.json({ ok: true, emails: next });
 });
 
 app.post("/api/admin/withdrawals/:requestId/process", requireAdmin, async (req, res) => {
@@ -2482,6 +2568,7 @@ app.post("/api/admin/withdrawals/:requestId/process", requireAdmin, async (req, 
   }
   if (!found) return res.status(404).json({ error: "Pending withdrawal not found." });
   await writeDemoAccounts(accounts);
+  await adminLog(req, approve ? 'withdrawal.approve' : 'withdrawal.reject', { requestId: req.params.requestId, txid: txid || null });
   res.json({ ok: true });
 });
 
@@ -2497,6 +2584,7 @@ app.post("/api/admin/signal-limit", requireAdmin, async (req, res) => {
   if (!account) return res.status(404).json({ error: "User account not found." });
   account.dailySignalLimit = limit;
   await writeDemoAccounts(accounts);
+  await adminLog(req, 'signal-limit.set', { userId, dailyLimit: limit });
   res.json({ ok: true, userId, dailySignalLimit: limit });
 });
 
@@ -2511,6 +2599,7 @@ app.post("/api/admin/set-level", requireAdmin, async (req, res) => {
   if (!user) return res.status(404).json({ error: "User not found." });
   user.level = lvl;
   await writeUsers(users);
+  await adminLog(req, 'level.set', { userId, level: lvl });
   res.json({ ok: true, userId, level: lvl });
 });
 
@@ -2565,6 +2654,7 @@ app.post("/api/admin/signal-release", requireAdmin, async (req, res) => {
     }
   }
 
+  await adminLog(req, 'signal-release', { active: !!cfg.signalActive });
   res.json({ ok: true, signalActive: cfg.signalActive });
 });
 
@@ -2614,6 +2704,7 @@ app.post("/api/admin/referral-signal-time", requireAdmin, async (req, res) => {
   // Note: referral signals are settled from cfg.referralDirection (and always win — see
   // settleDuePositions), so no candle override entry is needed here.
 
+  await adminLog(req, 'referral-signal.set', { time, windowMinutes: win, direction, symbol: sym });
   res.json({ ok: true, referralSignalTime: time, referralSignalWindow: win, referralDirection: direction, referralSymbol: sym });
 });
 
@@ -2625,6 +2716,7 @@ app.post("/api/admin/global-signal-limit", requireAdmin, async (req, res) => {
   const cfg = await readSignalConfig();
   cfg.globalDailyLimit = n;
   await writeSignalConfig(cfg);
+  await adminLog(req, 'global-signal-limit.set', { limit: n });
   res.json({ ok: true, globalDailyLimit: n });
 });
 
@@ -2665,6 +2757,7 @@ app.post("/api/admin/candle-override", requireAdmin, async (req, res) => {
   const overrides = [];
   overrides.push({ symbol, direction, startsAt, endsAt: startsAt + dur * 60 * 1000 });
   await writeCandleOverrides(overrides);
+  await adminLog(req, 'candle-override.set', overrides[0]);
   res.json({ ok: true, override: overrides[0] });
 });
 
@@ -2697,6 +2790,7 @@ app.delete("/api/admin/candle-override", requireAdmin, async (req, res) => {
     console.error("Admin cancel positions error:", e);
   }
 
+  await adminLog(req, 'candle-override.cancel', { index: req.body?.index ?? null });
   res.json({ ok: true, overrides });
 });
 
@@ -2789,6 +2883,7 @@ app.post("/api/admin/referral-bonus", requireAdmin, async (req, res) => {
   account.referralLastGrantedAt = Date.now();
   await writeDemoAccounts(accounts);
   await pushMessage(userId, "Referral Reward", `You earned ${n} bonus signal(s) as a referral reward! Valid for ${n} days.`);
+  await adminLog(req, 'referral-bonus.grant', { userId, bonusSignals: n, email: user.email });
   res.json({ ok: true, referralBonusSignals: account.referralBonusSignals });
 });
 
@@ -2844,6 +2939,7 @@ app.post("/api/admin/user/:userId/balance", requireAdmin, async (req, res) => {
   const users = await readUsers();
   const user = users.find(u => u.id === req.params.userId);
   if (user) await pushMessage(user.id, "Balance updated", `Your ${wallet === 'signal' ? 'Signal' : 'Spot'} balance was adjusted by ${amt > 0 ? '+' : ''}${amt.toFixed(2)} USDT.`);
+  await adminLog(req, 'balance.adjust', { userId: req.params.userId, amount: Number(amount), wallet, newBalance: account.balance, newSignalBalance: account.signalBalance });
   res.json({ ok: true, balance: account.balance, signalBalance: account.signalBalance });
 });
 
@@ -2851,6 +2947,7 @@ app.post("/api/admin/user/:userId/message", requireAdmin, async (req, res) => {
   const { title, body } = req.body || {};
   if (!title?.trim() || !body?.trim()) return res.status(400).json({ error: "Title and body required." });
   await pushMessage(req.params.userId, title.trim(), body.trim());
+  await adminLog(req, 'user.message', { userId: req.params.userId, title: title.trim() });
   res.json({ ok: true });
 });
 
@@ -2864,6 +2961,7 @@ app.post("/api/admin/user/:userId/block", requireAdmin, async (req, res) => {
     const blocked = await readBlockedEmails();
     if (!blocked.includes(user.email.toLowerCase())) { blocked.push(user.email.toLowerCase()); await writeBlockedEmails(blocked); }
   }
+  await adminLog(req, user.closed ? 'user.block' : 'user.unblock', { userId: req.params.userId, email: user.email });
   res.json({ ok: true, closed: user.closed });
 });
 
@@ -2887,6 +2985,7 @@ app.delete("/api/admin/user/:userId", requireAdmin, async (req, res) => {
   try { const chats = await readLiveChats(); if (chats && chats[req.params.userId]) { delete chats[req.params.userId]; await writeLiveChats(chats); } } catch (_) {}
   const blocked = await readBlockedEmails();
   if (!blocked.includes(user.email.toLowerCase())) { blocked.push(user.email.toLowerCase()); await writeBlockedEmails(blocked); }
+  await adminLog(req, 'user.delete', { userId: req.params.userId, email: user.email, uid: user.uid });
   res.json({ ok: true });
 });
 
@@ -2918,6 +3017,7 @@ app.post("/api/admin/user/:userId/reset", requireAdmin, async (req, res) => {
   };
   await writeDemoAccounts(accounts);
   await pushMessage(userId, "Account Reset", "Your account has been reset by admin. All balances and history have been cleared.");
+  await adminLog(req, 'user.reset', { userId });
   res.json({ ok: true });
 });
 
@@ -3410,9 +3510,7 @@ app.post("/api/demo/futures/close", authenticate, financialRateLimit, userLock, 
 });
 
 // ---- Broadcast: send to all deposited users live chats ----
-app.post("/api/admin/livechat/broadcast", async (req, res) => {
-  const key = req.headers['x-admin-key'];
-  if (!key || key !== ADMIN_KEY) return res.status(403).json({ error: "Forbidden." });
+app.post("/api/admin/livechat/broadcast", requireAdmin, async (req, res) => {
   const { text } = req.body || {};
   if (!text || !String(text).trim()) return res.status(400).json({ error: "Message cannot be empty." });
 
@@ -3442,6 +3540,7 @@ app.post("/api/admin/livechat/broadcast", async (req, res) => {
   }
   await writeLiveChats(chats);
   sendWebPushAll('📢 KYNEX Announcement', String(text).trim()).catch(() => {});
+  await adminLog(req, 'chat.broadcast', { sent, text: String(text).trim().slice(0, 200) });
   res.json({ ok: true, sent });
 });
 
@@ -3484,6 +3583,118 @@ function scheduleDailyChatClear() {
   }, msUntilNext);
 }
 
+// ---- Auto re-verify pending deposits ----
+// A user often pastes the TXID seconds after sending, before the chain has enough confirmations,
+// so the instant check fails and the deposit sits in "pending" until an admin approves it.
+// This job re-runs the exact same blockchain verification every few minutes and credits the
+// deposit the moment it passes — identical crediting logic to /api/demo/deposit/request.
+// Anything that still doesn't verify stays pending for admin review (no rule change).
+const DEPOSIT_RECHECK_INTERVAL_MS = 3 * 60 * 1000;
+const DEPOSIT_RECHECK_MAX_AGE_MS = 48 * 60 * 60 * 1000;   // after 48h leave it to the admin
+const DEPOSIT_RECHECK_BATCH = 20;                          // be gentle with explorer APIs
+let _depositRecheckRunning = false;
+
+async function creditVerifiedDeposit(userId, requestId, onChainAmount, note) {
+  // Per-user lock + fresh read so we never clobber a concurrent request by the same user
+  const unlock = await acquireTransferLock(userId);
+  try {
+    const accounts = await readDemoAccounts();
+    const account = accounts[userId];
+    const dr = (account?.depositRequests || []).find(d => d.id === requestId);
+    if (!dr || dr.status !== 'pending') return false; // admin already handled it
+    const amt = dr.amount;
+    dr.status = 'done';
+    dr.processedAt = Date.now();
+    dr.autoVerified = true;
+    dr.onChainAmount = onChainAmount;
+    dr.verificationNote = note || 'Auto-verified on re-check';
+    account.balance = Math.round((account.balance + amt) * 100) / 100;
+    account.totalDeposited = Math.round(((account.totalDeposited || 0) + amt) * 100) / 100;
+    addLedgerEntry(account, 'deposit', 'spot', amt, `Deposit ${amt.toFixed(2)} USDT via ${dr.network.toUpperCase()} (auto-verified)`, dr.id);
+    const users = await readUsers();
+    await checkAndRewardLevelUp(userId, users, accounts);
+    await writeUsers(users);
+    await writeDemoAccounts(accounts);
+    await pushMessage(userId, "Deposit confirmed", `${amt.toFixed(2)} USDT deposited to your Spot wallet via ${dr.network.toUpperCase()}. Auto-verified on blockchain.`);
+    const user = users.find(u => u.id === userId);
+    if (user) {
+      sendNotificationEmail(user.email, user.name, "Deposit Confirmed", "Deposit Confirmed",
+        `<p>Your deposit has been confirmed automatically.</p><p><b>Amount:</b> ${amt.toFixed(2)} USDT<br/><b>Network:</b> ${dr.network.toUpperCase()}<br/><b>Date:</b> ${new Date().toLocaleString()}</p><p>Your updated Spot balance: <b>${account.balance.toFixed(2)} USDT</b></p>`
+      );
+    }
+    console.log(`[DepositRecheck] Auto-credited ${amt} USDT (${dr.network}) for user ${userId}, tx ${dr.txHash}`);
+    return true;
+  } finally { unlock(); }
+}
+
+async function noteDepositRecheck(userId, requestId, reason) {
+  const unlock = await acquireTransferLock(userId);
+  try {
+    const accounts = await readDemoAccounts();
+    const dr = (accounts[userId]?.depositRequests || []).find(d => d.id === requestId);
+    if (!dr || dr.status !== 'pending') return;
+    dr.lastRecheckAt = Date.now();
+    dr.recheckCount = (dr.recheckCount || 0) + 1;
+    if (reason) dr.verificationNote = reason;
+    await writeDemoAccounts(accounts);
+  } finally { unlock(); }
+}
+
+async function recheckPendingDeposits() {
+  if (_depositRecheckRunning) return;
+  _depositRecheckRunning = true;
+  try {
+    const accounts = await readDemoAccounts();
+    const cfg = await readSignalConfig();
+    const wallets = cfg.adminWallets || {};
+    const now = Date.now();
+    const candidates = [];
+    for (const [userId, account] of Object.entries(accounts)) {
+      for (const dr of account.depositRequests || []) {
+        if (dr.status !== 'pending') continue;
+        if (now - dr.createdAt > DEPOSIT_RECHECK_MAX_AGE_MS) continue;
+        if (!wallets[dr.network]) continue; // can't verify without our wallet address
+        candidates.push({ userId, dr });
+      }
+    }
+    if (!candidates.length) return;
+    // Oldest first so nobody starves; cap per run
+    candidates.sort((a, b) => a.dr.createdAt - b.dr.createdAt);
+    let credited = 0;
+    for (const { userId, dr } of candidates.slice(0, DEPOSIT_RECHECK_BATCH)) {
+      let v;
+      try { v = await verifyDeposit(dr.txHash, dr.network, wallets[dr.network], dr.amount); }
+      catch (e) { v = { verified: false, reason: "Verification error", apiError: true }; }
+      if (v.verified) {
+        if (await creditVerifiedDeposit(userId, dr.id, v.onChainAmount, 'Auto-verified on re-check')) credited++;
+      } else {
+        // Don't overwrite a meaningful note with a transient API error
+        await noteDepositRecheck(userId, dr.id, v.apiError ? null : v.reason);
+      }
+    }
+    if (credited) console.log(`[DepositRecheck] ${credited} pending deposit(s) auto-credited`);
+  } catch (e) {
+    console.error('[DepositRecheck] failed:', e);
+  } finally {
+    _depositRecheckRunning = false;
+  }
+}
+
+// Admin: re-verify all pending deposits right now (same logic as the background job)
+app.post("/api/admin/deposits/recheck", requireAdmin, async (req, res) => {
+  const before = await countPendingDeposits();
+  await recheckPendingDeposits();
+  const after = await countPendingDeposits();
+  await adminLog(req, 'deposits.recheck', { before, after, credited: before - after });
+  res.json({ ok: true, before, after, credited: Math.max(0, before - after) });
+});
+async function countPendingDeposits() {
+  const accounts = await readDemoAccounts();
+  let n = 0;
+  for (const a of Object.values(accounts)) for (const d of a.depositRequests || []) if (d.status === 'pending') n++;
+  return n;
+}
+
 initDb().then(() => initVapid()).then(() => {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`KYNEX backend running on http://0.0.0.0:${PORT}`);
@@ -3491,6 +3702,9 @@ initDb().then(() => initVapid()).then(() => {
       fetch(`https://kynex-backend-9w8t.onrender.com/api/health`).catch(() => {});
     }, 14 * 60 * 1000);
     scheduleDailyChatClear();
+    // Auto re-verify pending deposits (first pass 30s after boot, then every 3 min)
+    setTimeout(() => recheckPendingDeposits().catch(() => {}), 30 * 1000);
+    setInterval(() => recheckPendingDeposits().catch(() => {}), DEPOSIT_RECHECK_INTERVAL_MS);
   });
 }).catch(err => {
   console.error("Database init failed:", err);

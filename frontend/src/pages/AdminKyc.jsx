@@ -65,6 +65,15 @@ const AdminKyc = () => {
   const [showDepositDetail, setShowDepositDetail] = useState(false);
   const [showWithdrawDetail, setShowWithdrawDetail] = useState(false);
 
+  // Admin log / blocked emails / users pagination / deposit recheck
+  const [adminLogs, setAdminLogs] = useState([]);
+  const [logSearch, setLogSearch] = useState('');
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [blockedEmails, setBlockedEmails] = useState([]);
+  const [usersPage, setUsersPage] = useState(1);
+  const USERS_PER_PAGE = 50;
+  const [recheckingDeposits, setRecheckingDeposits] = useState(false);
+
   // Live Chat
   const [chatThreads, setChatThreads] = useState([]);
   const [activeChatUid, setActiveChatUid] = useState(null);
@@ -244,6 +253,17 @@ const AdminKyc = () => {
     }, 30000);
     return () => clearInterval(interval);
   }, [authed, adminKey, loadAll, loadChatThreads]);
+
+  // Lazy-load tab-specific data (logs / blocked emails) when the tab is opened
+  useEffect(() => {
+    if (!authed) return;
+    if (activeTab === 'logs') loadLogs('');
+    if (activeTab === 'users') loadBlockedEmails();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, authed]);
+
+  // Reset pagination when the user list filter/search changes
+  useEffect(() => { setUsersPage(1); }, [userSearch, userFilter]);
 
   const decide = async (userId, approve) => {
     setBusyId(userId);
@@ -513,6 +533,84 @@ This cannot be undone!`)) return;
     finally { setSavingWallets(false); }
   };
 
+  // ---- Admin log ----
+  const loadLogs = async (q = logSearch) => {
+    setLogsLoading(true);
+    try {
+      const r = await safeFetch(`${API_URL}/api/admin/logs?limit=300&q=${encodeURIComponent(q || '')}`, { headers: adminHeaders(adminKey) });
+      if (r.ok) setAdminLogs(r.data.logs || []);
+    } finally { setLogsLoading(false); }
+  };
+
+  // ---- Blocked emails ----
+  const loadBlockedEmails = async () => {
+    const r = await safeFetch(`${API_URL}/api/admin/blocked-emails`, { headers: adminHeaders(adminKey) });
+    if (r.ok) setBlockedEmails(r.data.emails || []);
+  };
+  const unblockEmail = async (email) => {
+    if (!confirm(`Unblock ${email}? They will be able to register again.`)) return;
+    try {
+      const res = await fetch(`${API_URL}/api/admin/blocked-emails/unblock`, {
+        method: 'POST', headers: adminHeaders(adminKey), body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setBlockedEmails(data.emails || []);
+      showToast(`Unblocked ${email}`);
+    } catch (err) { setError(err.message); }
+  };
+
+  // ---- Re-check pending deposits on the blockchain now ----
+  const recheckDeposits = async () => {
+    setRecheckingDeposits(true);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/deposits/recheck`, { method: 'POST', headers: adminHeaders(adminKey) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      showToast(data.credited > 0 ? `Re-check done — ${data.credited} deposit(s) auto-credited` : 'Re-check done — nothing new confirmed yet');
+      loadAll(adminKey);
+    } catch (err) { setError(err.message); }
+    finally { setRecheckingDeposits(false); }
+  };
+
+  // ---- CSV export (client-side, from already-loaded data) ----
+  const downloadCsv = (filename, rows, columns) => {
+    const esc = (v) => {
+      const s = v == null ? '' : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [columns.map(c => esc(c.label)).join(',')];
+    for (const r of rows) lines.push(columns.map(c => esc(typeof c.get === 'function' ? c.get(r) : r[c.key])).join(','));
+    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const exportUsersCsv = () => downloadCsv(`kynex-users-${new Date().toISOString().slice(0, 10)}.csv`, filteredUsers, [
+    { label: 'UID', key: 'uid' }, { label: 'Name', key: 'name' }, { label: 'Email', key: 'email' },
+    { label: 'KYC', key: 'kycStatus' }, { label: 'Level', key: 'level' },
+    { label: 'Spot Balance', key: 'balance' }, { label: 'Signal Balance', key: 'signalBalance' },
+    { label: 'Total Deposited', key: 'totalDeposited' }, { label: 'Total Withdrawn', key: 'totalWithdrawn' },
+    { label: 'Referred By UID', key: 'referredByUid' }, { label: 'Invite Code', key: 'inviteCode' },
+    { label: '2FA', get: (u) => u.twoFactorEnabled ? 'yes' : 'no' }, { label: 'Closed', get: (u) => u.closed ? 'yes' : 'no' },
+    { label: 'Created', get: (u) => u.createdAt ? new Date(u.createdAt).toISOString() : '' },
+    { label: 'Last Login', get: (u) => u.lastLoginAt ? new Date(u.lastLoginAt).toISOString() : '' },
+    { label: 'Last IP', key: 'lastLoginIp' },
+  ]);
+  const exportDepositsCsv = () => downloadCsv(`kynex-pending-deposits-${new Date().toISOString().slice(0, 10)}.csv`, pendingDeposits, [
+    { label: 'Request ID', key: 'id' }, { label: 'User', key: 'userName' }, { label: 'Email', key: 'userEmail' }, { label: 'UID', key: 'userUid' },
+    { label: 'Amount', key: 'amount' }, { label: 'Network', key: 'network' }, { label: 'TX Hash', key: 'txHash' },
+    { label: 'Status', key: 'status' }, { label: 'Note', key: 'verificationNote' },
+    { label: 'Submitted', get: (d) => d.createdAt ? new Date(d.createdAt).toISOString() : '' },
+  ]);
+  const exportWithdrawalsCsv = () => downloadCsv(`kynex-pending-withdrawals-${new Date().toISOString().slice(0, 10)}.csv`, withdrawals, [
+    { label: 'Request ID', key: 'id' }, { label: 'User', key: 'name' }, { label: 'Email', key: 'email' }, { label: 'UID', key: 'uid' },
+    { label: 'Amount', key: 'amount' }, { label: 'Fee', key: 'fee' }, { label: 'Net Payout', key: 'netPayout' },
+    { label: 'Network', key: 'network' }, { label: 'Wallet', key: 'walletAddress' },
+    { label: 'Risk Flags', get: (w) => (w.risk?.flags || []).join(' | ') },
+    { label: 'Submitted', get: (w) => w.createdAt ? new Date(w.createdAt).toISOString() : '' },
+  ]);
+
   const processDeposit = async (requestId, approve) => {
     setBusyId(requestId);
     try {
@@ -550,6 +648,7 @@ This cannot be undone!`)) return;
     { key: 'withdrawals', label: 'Withdrawals' },
     { key: 'signals', label: 'Signals' },
     { key: 'livechat', label: 'Live Chat' },
+    { key: 'logs', label: 'Logs' },
   ];
 
   const card = {
@@ -805,6 +904,10 @@ This cannot be undone!`)) return;
                   border: `1px solid ${userFilter === f ? theme.primary : theme.cardBorder}`,
                 }}>{f === 'all' ? 'All Users' : f === 'deposited' ? 'Deposited' : 'KYC Verified'}</button>
               ))}
+              <button onClick={exportUsersCsv} title="Download the currently filtered list as CSV" style={{
+                marginLeft: 'auto', padding: '8px 14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer',
+                backgroundColor: theme.card, color: theme.text, border: `1px solid ${theme.cardBorder}`,
+              }}>⬇ CSV ({filteredUsers.length})</button>
             </div>
             <div className="admin-table-wrap" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '800px' }}>
@@ -816,7 +919,7 @@ This cannot be undone!`)) return;
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredUsers.map(u => (
+                  {filteredUsers.slice((usersPage - 1) * USERS_PER_PAGE, usersPage * USERS_PER_PAGE).map(u => (
                     <tr key={u.id} style={{ borderBottom: `1px solid ${theme.cardBorder}`, cursor: 'pointer' }}
                       onClick={() => { setSelectedUser(u); setNewLevel(String(u.level || 0)); setNewLimit(String(u.dailySignalLimit || 3)); setUserDetailTab('info'); setUserDeposits([]); setUserWithdrawals([]); setUserSignals([]); setTeamTree(null); setTeamData(null); setTeamUser(null); }}>
                       <td style={{ padding: '10px 8px', fontFamily: 'monospace', fontSize: '12px' }}>{u.uid}</td>
@@ -850,7 +953,52 @@ This cannot be undone!`)) return;
                 </tbody>
               </table>
             </div>
-            <div style={{ marginTop: '12px', fontSize: '12px', color: theme.faint }}>{filteredUsers.length} users</div>
+            {(() => {
+              const totalPages = Math.max(1, Math.ceil(filteredUsers.length / USERS_PER_PAGE));
+              const page = Math.min(usersPage, totalPages);
+              const from = filteredUsers.length === 0 ? 0 : (page - 1) * USERS_PER_PAGE + 1;
+              const to = Math.min(page * USERS_PER_PAGE, filteredUsers.length);
+              const pageBtn = (label, target, disabled) => (
+                <button key={label} onClick={() => setUsersPage(target)} disabled={disabled} style={{
+                  padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: disabled ? 'default' : 'pointer',
+                  backgroundColor: theme.card, color: disabled ? theme.faint : theme.text, border: `1px solid ${theme.cardBorder}`, opacity: disabled ? 0.6 : 1,
+                }}>{label}</button>
+              );
+              return (
+                <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '12px', color: theme.faint }}>
+                  <span>Showing {from}–{to} of {filteredUsers.length} users</span>
+                  {totalPages > 1 && (
+                    <span style={{ marginLeft: 'auto', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      {pageBtn('« First', 1, page === 1)}
+                      {pageBtn('‹ Prev', page - 1, page === 1)}
+                      <span style={{ color: theme.text, fontWeight: '600', padding: '0 6px' }}>Page {page} / {totalPages}</span>
+                      {pageBtn('Next ›', page + 1, page === totalPages)}
+                      {pageBtn('Last »', totalPages, page === totalPages)}
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Blocked (deleted) emails */}
+            <div style={{ ...card, marginTop: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                <div style={{ fontWeight: 'bold', fontSize: '13px' }}>Blocked Emails ({blockedEmails.length})</div>
+                <button onClick={loadBlockedEmails} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: theme.primary, cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>Refresh</button>
+              </div>
+              <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '10px' }}>
+                Emails of deleted accounts — they cannot register again until unblocked.
+              </div>
+              {blockedEmails.length === 0 && <div style={{ color: theme.faint, fontSize: '12px' }}>No blocked emails</div>}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: '220px', overflowY: 'auto' }}>
+                {blockedEmails.map(em => (
+                  <span key={em} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '4px 8px 4px 10px', borderRadius: '8px', backgroundColor: theme.bg, border: `1px solid ${theme.cardBorder}`, fontSize: '12px' }}>
+                    {em}
+                    <button onClick={() => unblockEmail(em)} title="Unblock" style={{ background: 'none', border: 'none', color: theme.down, cursor: 'pointer', fontWeight: 'bold', fontSize: '12px', padding: 0 }}>Unblock</button>
+                  </span>
+                ))}
+              </div>
+            </div>
           </>
         )}
 
@@ -1477,8 +1625,15 @@ This cannot be undone!`)) return;
             </div>
 
             {/* Pending Deposits */}
-            <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '16px' }}>
-              Pending Deposit Requests ({pendingDeposits.length})
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+              <div style={{ fontSize: '14px', fontWeight: 'bold' }}>Pending Deposit Requests ({pendingDeposits.length})</div>
+              <span style={{ fontSize: '11px', color: theme.faint }}>· auto re-checked on the blockchain every 3 min</span>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+                <button onClick={recheckDeposits} disabled={recheckingDeposits || pendingDeposits.length === 0} style={{ ...btnPrimary, padding: '6px 12px', fontSize: '11px', opacity: pendingDeposits.length === 0 ? 0.6 : 1 }}>
+                  {recheckingDeposits ? 'Checking…' : '⟳ Re-check now'}
+                </button>
+                <button onClick={exportDepositsCsv} disabled={pendingDeposits.length === 0} style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', backgroundColor: theme.card, color: theme.text, border: `1px solid ${theme.cardBorder}` }}>⬇ CSV</button>
+              </div>
             </div>
             {pendingDeposits.length === 0 && (
               <div style={{ ...card, color: theme.faint, textAlign: 'center', padding: '40px' }}>No pending deposit requests</div>
@@ -1499,7 +1654,10 @@ This cannot be undone!`)) return;
                         Auto-verify: {d.verificationNote}
                       </div>
                     )}
-                    <div style={{ fontSize: '11px', color: theme.faint }}>Submitted: {fmtDate(d.createdAt)}</div>
+                    <div style={{ fontSize: '11px', color: theme.faint }}>
+                      Submitted: {fmtDate(d.createdAt)}
+                      {d.lastRecheckAt && <> · Last auto-check: {fmtDate(d.lastRecheckAt)}{d.recheckCount ? ` (${d.recheckCount}×)` : ''}</>}
+                    </div>
                   </div>
                   <div style={{ display: 'flex', gap: '8px', flexShrink: 0, marginLeft: '12px' }}>
                     <button onClick={() => processDeposit(d.id, true)} disabled={busyId === d.id} style={btnSuccess}>Approve</button>
@@ -1513,13 +1671,32 @@ This cannot be undone!`)) return;
 
         {activeTab === 'withdrawals' && (
           <>
-            <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '16px' }}>Pending Withdrawals ({withdrawals.length})</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+              <div style={{ fontSize: '14px', fontWeight: 'bold' }}>Pending Withdrawals ({withdrawals.length})</div>
+              <button onClick={exportWithdrawalsCsv} disabled={withdrawals.length === 0} style={{ marginLeft: 'auto', padding: '6px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', backgroundColor: theme.card, color: theme.text, border: `1px solid ${theme.cardBorder}` }}>⬇ CSV</button>
+            </div>
             {withdrawals.length === 0 && <div style={{ ...card, color: theme.faint, textAlign: 'center', padding: '40px' }}>No pending withdrawals</div>}
             {withdrawals.map(w => (
               <div key={w.id} style={{ ...card, marginBottom: '12px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
-                    <div style={{ fontWeight: 'bold', fontSize: '15px', marginBottom: '4px' }}>{w.name || w.email || 'Unknown'}</div>
+                    <div style={{ fontWeight: 'bold', fontSize: '15px', marginBottom: '4px' }}>
+                      {w.name || w.email || 'Unknown'}
+                      {w.uid && <span style={{ fontWeight: '400', fontSize: '11px', color: theme.faint, marginLeft: '8px' }}>UID {w.uid}</span>}
+                    </div>
+                    {w.risk && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+                        {(w.risk.flags || []).length === 0 && (
+                          <span style={{ fontSize: '10px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '6px', backgroundColor: theme.upSoft, color: theme.up }}>No risk flags</span>
+                        )}
+                        {(w.risk.flags || []).map(f => (
+                          <span key={f} style={{ fontSize: '10px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '6px', backgroundColor: theme.downSoft, color: theme.down }}>⚠ {f}</span>
+                        ))}
+                        <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '6px', backgroundColor: theme.bg, border: `1px solid ${theme.cardBorder}`, color: theme.subtext }}>
+                          KYC {w.risk.kycStatus} · L{w.risk.level} · {w.risk.accountAgeDays ?? '?'}d old · Dep ${Number(w.risk.totalDeposited).toFixed(0)} · Wd ${Number(w.risk.totalWithdrawn).toFixed(0)} · Bal ${Number(w.risk.balance).toFixed(0)}/{Number(w.risk.signalBalance).toFixed(0)}{w.risk.lastLoginIp ? ` · IP ${w.risk.lastLoginIp}` : ''}
+                        </span>
+                      </div>
+                    )}
                     <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '2px' }}>
                       Amount: <b>{Number(w.amount).toFixed(2)} USDT</b> · Net Payout: <b style={{ color: theme.up }}>{Number(w.netPayout).toFixed(2)} USDT</b>
                     </div>
@@ -1689,6 +1866,55 @@ This cannot be undone!`)) return;
           </>
         )}
       </div>
+
+        {/* ── Admin Action Log Tab ── */}
+        {activeTab === 'logs' && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
+              <div style={{ fontSize: '14px', fontWeight: 'bold' }}>Admin Action Log</div>
+              <input type="text" placeholder="Filter (action, email, uid, request id)…" value={logSearch}
+                onChange={(e) => setLogSearch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') loadLogs(logSearch); }}
+                style={{ ...inputStyle, maxWidth: '320px' }} />
+              <button onClick={() => loadLogs(logSearch)} disabled={logsLoading} style={{ ...btnPrimary, padding: '8px 14px', fontSize: '12px' }}>{logsLoading ? 'Loading…' : 'Search / Refresh'}</button>
+              <span style={{ fontSize: '11px', color: theme.faint }}>{adminLogs.length} entries (newest first)</span>
+            </div>
+            {adminLogs.length === 0 && (
+              <div style={{ ...card, color: theme.faint, textAlign: 'center', padding: '40px' }}>{logsLoading ? 'Loading…' : 'No admin actions recorded yet'}</div>
+            )}
+            <div className="admin-table-wrap" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              {adminLogs.length > 0 && (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '700px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: `2px solid ${theme.cardBorder}`, textAlign: 'left' }}>
+                      {['Time', 'Action', 'Details', 'IP'].map(h => (
+                        <th key={h} style={{ padding: '10px 8px', color: theme.subtext, fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adminLogs.map(l => (
+                      <tr key={l.id} style={{ borderBottom: `1px solid ${theme.cardBorder}` }}>
+                        <td style={{ padding: '8px', whiteSpace: 'nowrap', color: theme.subtext }}>{fmtDate(l.at)}</td>
+                        <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
+                          <span style={{
+                            padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold',
+                            backgroundColor: /reject|delete|block|cancel/.test(l.action) && !/unblock/.test(l.action) ? theme.downSoft : /approve|grant|unblock/.test(l.action) ? theme.upSoft : theme.primarySoft,
+                            color: /reject|delete|block|cancel/.test(l.action) && !/unblock/.test(l.action) ? theme.down : /approve|grant|unblock/.test(l.action) ? theme.up : theme.primary,
+                          }}>{l.action}</span>
+                        </td>
+                        <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: '11px', wordBreak: 'break-all', color: theme.text }}>
+                          {Object.entries(l.details || {}).map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`).join('  ')}
+                        </td>
+                        <td style={{ padding: '8px', whiteSpace: 'nowrap', color: theme.faint }}>{l.ip || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </>
+        )}
 
         {/* ── Live Chat Tab ── */}
         {activeTab === 'livechat' && (

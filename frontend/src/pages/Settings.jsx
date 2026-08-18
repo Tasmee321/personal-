@@ -129,6 +129,9 @@ const Settings = () => {
                   <span style={{ fontSize: '18px' }}>{lang.flag}</span><span>{lang.label}</span>
                 </button>
               ))}
+              <div style={{ fontSize: '11px', color: theme.faint, padding: '6px 12px 0', lineHeight: 1.5 }}>
+                Applies to the login &amp; sign-up screens and text direction. Full in-app translation is coming soon.
+              </div>
             </div>
           )}
 

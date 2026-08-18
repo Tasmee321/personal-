@@ -82,7 +82,7 @@ const NotificationBell = () => {
 
       {open && (
         <div style={{
-          position: 'absolute', top: '100%', right: 0, width: '320px', marginTop: '8px', zIndex: 200,
+          position: 'absolute', top: '100%', right: 0, width: '320px', marginTop: '8px', zIndex: 1200,
           backgroundColor: theme.card, borderRadius: '16px', border: `1px solid ${theme.cardBorder}`,
           boxShadow: theme.shadowElevated || theme.shadow,
           backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)',

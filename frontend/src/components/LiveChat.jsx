@@ -545,14 +545,19 @@ const LiveChat = () => {
     } catch { /* network */ }
   }, []);
 
+  // History polling: 5s while the chat is open, 20s while closed (only the unread badge needs it),
+  // and paused entirely while the tab/app is in the background — saves battery + server load.
   useEffect(() => {
-    fetchHistory();
-    pollRef.current = setInterval(fetchHistory, 5000);
-    return () => clearInterval(pollRef.current);
-  }, [fetchHistory]);
+    const tick = () => { if (document.visibilityState === 'visible') fetchHistory(); };
+    tick();
+    pollRef.current = setInterval(tick, open ? 5000 : 20000);
+    const onVis = () => { if (document.visibilityState === 'visible') fetchHistory(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { clearInterval(pollRef.current); document.removeEventListener('visibilitychange', onVis); };
+  }, [fetchHistory, open]);
 
   useEffect(() => {
-    if (open) typingPollRef.current = setInterval(fetchTyping, 2000);
+    if (open) typingPollRef.current = setInterval(() => { if (document.visibilityState === 'visible') fetchTyping(); }, 2000);
     else { clearInterval(typingPollRef.current); setAdminTyping(false); }
     return () => clearInterval(typingPollRef.current);
   }, [open, fetchTyping]);

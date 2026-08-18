@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import PullIndicator from '../components/PullToRefresh';
+import { usePullToRefresh } from '../utils/usePullToRefresh';
 import { useNavigate, Link } from 'react-router-dom';
 import { ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Receipt, AlertTriangle, Settings } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
@@ -407,6 +409,7 @@ const Assets = () => {
     const initial = setTimeout(loadAccount, 0);
     return () => { clearInterval(poll); clearTimeout(initial); };
   }, []);
+  const { pull: ptrPull, refreshing: ptrRefreshing } = usePullToRefresh(loadAccount);
 
   useEffect(() => {
     const ws = new WebSocket(buildWsStreamUrl());
@@ -509,6 +512,7 @@ const Assets = () => {
 
   return (
     <div style={{ padding: '20px', paddingBottom: '90px', color: theme.text, backgroundColor: theme.bg, minHeight: '100vh' }}>
+      <PullIndicator pull={ptrPull} refreshing={ptrRefreshing} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
         <h3 style={{ margin: 0, fontSize: '20px', fontWeight: '700', color: theme.text }}>Balance</h3>
         <Link to="/settings" style={{ color: theme.subtext, display: 'flex' }}><Settings size={20} /></Link>

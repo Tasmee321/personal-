@@ -218,6 +218,9 @@ const DepositPage = () => {
                   placeholder={`Amount (min ${net.min} USDT)`} style={inputStyle} />
                 <input type="text" value={txHash} onChange={(e) => { setTxHash(e.target.value); setDepError(''); }}
                   placeholder="Transaction Hash (TXID)" style={{ ...inputStyle, fontFamily: 'monospace', fontSize: '12px' }} />
+                <div style={{ fontSize: '11px', color: theme.subtext, lineHeight: 1.5, marginTop: '-4px' }}>
+                  💡 Tip: wait 1–2 minutes after sending, then paste the TXID — confirmed transactions are credited <b>instantly</b>. If it's still confirming, we'll keep re-checking automatically and credit it as soon as it confirms.
+                </div>
                 <button onClick={submitDeposit} disabled={submitting} style={{
                   padding: '14px', borderRadius: '12px', border: 'none', fontWeight: '700', fontSize: '14px',
                   cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.7 : 1,
@@ -376,9 +379,8 @@ const DepositPage = () => {
           backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)',
         }} onClick={() => setDepPopup(null)}>
           <div style={{
-            background: depPopup.type === 'credited'
-              ? 'linear-gradient(135deg, #0f1f0f 0%, #1a3a1a 100%)'
-              : 'linear-gradient(135deg, #1a1500 0%, #2a2200 100%)',
+            background: theme.card,
+            backdropFilter: theme.cardGlass, WebkitBackdropFilter: theme.cardGlass,
             border: depPopup.type === 'credited' ? '1.5px solid rgba(16,185,129,0.5)' : '1.5px solid rgba(245,158,11,0.5)',
             borderRadius: '24px', padding: '36px 28px',
             maxWidth: '300px', width: '90%', textAlign: 'center',
@@ -401,14 +403,14 @@ const DepositPage = () => {
             }}>
               {depPopup.type === 'credited' ? '✓' : '⏳'}
             </div>
-            <div style={{ fontWeight: '800', fontSize: '18px', color: '#fff', marginBottom: '8px' }}>
+            <div style={{ fontWeight: '800', fontSize: '18px', color: theme.text, marginBottom: '8px' }}>
               {depPopup.type === 'credited' ? '💚 Deposit Credited!' : '⏳ Deposit Submitted!'}
             </div>
             <div style={{ fontSize: '22px', fontWeight: '800', color: depPopup.type === 'credited' ? '#10B981' : '#F59E0B', marginBottom: '8px' }}>
               +{depPopup.amount?.toFixed(2)} USDT
             </div>
-            <div style={{ fontSize: '12px', color: '#9CA3AF', marginBottom: '6px' }}>via {depPopup.network}</div>
-            <div style={{ fontSize: '13px', color: '#9CA3AF', lineHeight: '1.6', marginBottom: '24px' }}>
+            <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '6px' }}>via {depPopup.network}</div>
+            <div style={{ fontSize: '13px', color: theme.subtext, lineHeight: '1.6', marginBottom: '24px' }}>
               {depPopup.type === 'credited'
                 ? 'Your deposit has been verified and credited to your Spot wallet instantly.'
                 : 'Your deposit is under review. It will be credited within 30 minutes.'}

@@ -23,7 +23,8 @@ const BottomNav = () => {
       WebkitBackdropFilter: theme.cardGlass || 'blur(18px)',
       borderTop: `1px solid ${theme.navBorder}`,
       display: 'flex', justifyContent: 'space-around', alignItems: 'center',
-      padding: '8px 0 14px',
+      // Keep the nav above the iPhone home indicator / Android gesture bar
+      padding: '8px 0 calc(14px + env(safe-area-inset-bottom, 0px))',
       boxShadow: '0 -4px 24px rgba(0,0,0,0.08)',
     }}>
       {NAV_ITEMS.map((item) => {

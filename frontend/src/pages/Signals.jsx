@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createChart, CandlestickSeries } from 'lightweight-charts';
+import PullIndicator from '../components/PullToRefresh';
+import { usePullToRefresh } from '../utils/usePullToRefresh';
 import { Link } from 'react-router-dom';
 import { ChevronDown, Search, X, Settings } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
@@ -193,6 +195,7 @@ const Signals = () => {
     const poll = setInterval(loadAccount, 5000);
     return () => clearInterval(poll);
   }, []);
+  const { pull: ptrPull, refreshing: ptrRefreshing } = usePullToRefresh(loadAccount);
 
   useEffect(() => {
     const loadBonusStatus = async () => {
@@ -450,6 +453,7 @@ const Signals = () => {
 
   return (
     <div style={{ padding: '16px', paddingBottom: '90px', color: theme.text, backgroundColor: theme.bg, minHeight: '100vh' }}>
+      <PullIndicator pull={ptrPull} refreshing={ptrRefreshing} />
       <style>{`@keyframes kynexSlideIn { from { opacity: 0; transform: translateY(-12px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }`}</style>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>

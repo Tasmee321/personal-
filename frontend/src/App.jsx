@@ -1,39 +1,56 @@
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+// Eager: the first screens a user sees (fast first paint)
 import Home from './pages/Home';
 import KynexAuth from './KynexAuth';
 import Dashboard from './pages/Dashboard';
-import Markets from './pages/Markets';
-import Trade from './pages/Trade';
-import Assets from './pages/Assets';
-import LegalLayout from './pages/legal/LegalLayout';
-import AboutUs from './pages/legal/AboutUs';
-import UserAgreement from './pages/legal/UserAgreement';
-import PrivacyPolicy from './pages/legal/PrivacyPolicy';
-import Disclaimer from './pages/legal/Disclaimer';
-import ContactUs from './pages/legal/ContactUs';
-import MemberGuide from './pages/legal/MemberGuide';
-import Download from './pages/Download';
-import Signals from './pages/Signals';
-import Invite from './pages/Invite';
-import Profile from './pages/Profile';
-import Security from './pages/Security';
-import Settings from './pages/Settings';
-import Messages from './pages/Messages';
-import Verification from './pages/Verification';
-import AdminKyc from './pages/AdminKyc';
-import Certificates from './pages/Certificates';
-import DepositPage from './pages/DepositPage';
-import WithdrawPage from './pages/WithdrawPage';
-import TransactionPage from './pages/TransactionPage';
-import TransferPage from './pages/TransferPage';
 import NotFound from './pages/NotFound';
+import OfflineBanner from './components/OfflineBanner';
 import { isAuthenticated } from './utils/auth';
-import { ThemeProvider } from './ThemeContext';
+import { ThemeProvider, useTheme } from './ThemeContext';
 import LiveChat from './components/LiveChat';
 import WhatsNewModal from './components/WhatsNewModal';
 import UpdateChecker from './components/UpdateChecker';
 import AppLock from './components/AppLock';
+
+// Lazy: everything else is downloaded only when the user opens it. This splits the ~1.1 MB
+// bundle so the login/dashboard load is much lighter (charts, admin panel, legal pages, etc.
+// no longer ship on first load). Vite emits one small chunk per page.
+const Markets = lazy(() => import('./pages/Markets'));
+const Trade = lazy(() => import('./pages/Trade'));
+const Assets = lazy(() => import('./pages/Assets'));
+const Signals = lazy(() => import('./pages/Signals'));
+const Invite = lazy(() => import('./pages/Invite'));
+const Download = lazy(() => import('./pages/Download'));
+const Profile = lazy(() => import('./pages/Profile'));
+const Security = lazy(() => import('./pages/Security'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Messages = lazy(() => import('./pages/Messages'));
+const Verification = lazy(() => import('./pages/Verification'));
+const AdminKyc = lazy(() => import('./pages/AdminKyc'));
+const Certificates = lazy(() => import('./pages/Certificates'));
+const DepositPage = lazy(() => import('./pages/DepositPage'));
+const WithdrawPage = lazy(() => import('./pages/WithdrawPage'));
+const TransactionPage = lazy(() => import('./pages/TransactionPage'));
+const TransferPage = lazy(() => import('./pages/TransferPage'));
+const LegalLayout = lazy(() => import('./pages/legal/LegalLayout'));
+const AboutUs = lazy(() => import('./pages/legal/AboutUs'));
+const UserAgreement = lazy(() => import('./pages/legal/UserAgreement'));
+const PrivacyPolicy = lazy(() => import('./pages/legal/PrivacyPolicy'));
+const Disclaimer = lazy(() => import('./pages/legal/Disclaimer'));
+const ContactUs = lazy(() => import('./pages/legal/ContactUs'));
+const MemberGuide = lazy(() => import('./pages/legal/MemberGuide'));
+
+// Minimal theme-aware placeholder shown for the split-second a page chunk is downloading
+function PageLoader() {
+  const { theme } = useTheme();
+  return (
+    <div style={{ minHeight: '100vh', backgroundColor: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: '28px', height: '28px', borderRadius: '50%', border: `3px solid ${theme.cardBorder}`, borderTopColor: theme.primary, animation: 'kynexSpin 0.8s linear infinite' }} />
+      <style>{`@keyframes kynexSpin { to { transform: rotate(360deg) } }`}</style>
+    </div>
+  );
+}
 
 function ProtectedRoute({ children }) {
   return isAuthenticated() ? children : <Navigate to="/auth" replace />;
@@ -64,7 +81,7 @@ function App() {
   return (
     <ThemeProvider>
       <Router>
-        <AnimatedRoutes><Routes>
+        <AnimatedRoutes><Suspense fallback={<PageLoader />}><Routes>
           <Route path="/" element={authed ? <Navigate to="/dashboard" /> : <Home />} />
           <Route path="/auth" element={authed ? <Navigate to="/dashboard" /> : <KynexAuth />} />
 
@@ -101,9 +118,10 @@ function App() {
 
           {/* Catch-all — mistyped URLs get a proper page instead of a blank screen */}
           <Route path="*" element={<NotFound />} />
-        </Routes></AnimatedRoutes>
+        </Routes></Suspense></AnimatedRoutes>
 
         {/* Global overlays — rendered outside AnimatedRoutes so they don't re-animate on navigation */}
+        <OfflineBanner />
         {isAuthenticated() && <LiveChat />}
         {isAuthenticated() && <AppLock />}
         <UpdateChecker onPendingChange={setUpdatePending} />

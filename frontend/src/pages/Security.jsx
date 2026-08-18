@@ -452,7 +452,8 @@ const Security = () => {
                 backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)',
               }} onClick={() => setMsg('')}>
                 <div style={{
-                  background: 'linear-gradient(135deg, #0f1f0f 0%, #1a3a1a 100%)',
+                  background: theme.card,
+                  backdropFilter: theme.cardGlass, WebkitBackdropFilter: theme.cardGlass,
                   border: '1.5px solid rgba(16,185,129,0.5)',
                   borderRadius: '24px',
                   padding: '36px 32px',
@@ -469,13 +470,13 @@ const Security = () => {
                     boxShadow: '0 8px 24px rgba(16,185,129,0.5)',
                     fontSize: '28px',
                   }}>✓</div>
-                  <div style={{ fontWeight: '800', fontSize: '18px', color: '#fff', marginBottom: '10px' }}>
+                  <div style={{ fontWeight: '800', fontSize: '18px', color: theme.text, marginBottom: '10px' }}>
                     {msg.includes('Fund password') ? '🔐 Fund Password' :
                      msg.includes('Google') ? '📱 Google Authenticator' :
                      msg.includes('Email') ? '✉️ Email Updated' :
                      msg.includes('Password changed') ? '🔑 Password Changed' : '✅ Done'}
                   </div>
-                  <div style={{ fontSize: '13px', color: '#9CA3AF', lineHeight: '1.6', marginBottom: '24px' }}>{msg}</div>
+                  <div style={{ fontSize: '13px', color: theme.subtext, lineHeight: '1.6', marginBottom: '24px' }}>{msg}</div>
                   <button onClick={() => setMsg('')} style={{
                     padding: '12px 32px', borderRadius: '12px', border: 'none',
                     background: 'linear-gradient(135deg, #10B981, #059669)',
