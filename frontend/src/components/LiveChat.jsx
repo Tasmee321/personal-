@@ -473,13 +473,28 @@ const LiveChat = () => {
             latestNew = m;
           }
         });
-        if (latestNew && !open) {
-          setToast(latestNew);
-          clearTimeout(toastTimerRef.current);
-          toastTimerRef.current = setTimeout(() => setToast(null), 8000);
-          if (!latestNew.broadcast) {
-            setOpen(true);
-            setView('agent');
+        if (latestNew) {
+          // OS-level notification when page is not focused (tab background / phone minimized)
+          if ('Notification' in window && Notification.permission === 'granted' && !document.hasFocus()) {
+            try {
+              const n = new Notification(latestNew.broadcast ? '📢 KYNEX Announcement' : 'KYNEX Support', {
+                body: latestNew.text,
+                icon: '/icons/icon-192.png',
+                tag: 'kynex-chat',
+                renotify: true,
+              });
+              n.onclick = () => { window.focus(); setOpen(true); setView('agent'); };
+            } catch { /* permission or browser issue */ }
+          }
+          // In-app toast + auto-open when chat is closed
+          if (!open) {
+            setToast(latestNew);
+            clearTimeout(toastTimerRef.current);
+            toastTimerRef.current = setTimeout(() => setToast(null), 8000);
+            if (!latestNew.broadcast) {
+              setOpen(true);
+              setView('agent');
+            }
           }
         }
       }
@@ -601,7 +616,7 @@ const LiveChat = () => {
   // ── 5-minute idle auto-reset to welcome ───────────────────────────────
   useEffect(() => {
     if (view !== 'agent' || !open) return;
-    const timer = setTimeout(() => { setView('welcome'); setOpen(false); }, 2 * 60 * 1000);
+    const timer = setTimeout(() => setView('welcome'), 2 * 60 * 1000);
     return () => clearTimeout(timer);
   }, [view, open, messages.length]);
 
