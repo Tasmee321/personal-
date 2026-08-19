@@ -3457,7 +3457,40 @@ app.post("/api/demo/predict", authenticate, financialRateLimit, userLock, async 
 
     const entryPrice = await getLivePrice(pair);
     const now = Date.now();
-    const settleAt = now + duration * 60 * 1000;
+
+    // settleAt logic:
+    // A user WINS only if they placed their signal within the valid broadcast window
+    // (within 1 minute before the candle override startsAt). If they placed early or
+    // late — i.e. not following the broadcast — their settleAt falls outside the
+    // override window so overrideAt() returns nothing and they automatically lose.
+    //
+    // Rule: snap settleAt to scheduledOverride.startsAt ONLY when the user placed
+    // within [startsAt - 60s, startsAt]. Otherwise use client duration so the
+    // position settles outside the override window → loss.
+    let settleAt;
+    const overrideList = await readOverrideList();
+    const symbol = PAIR_TO_SYMBOL[pair] || pair.replace('/', '').toUpperCase();
+    const scheduledOverride = overrideList
+      .filter(o => o && o.symbol === symbol && o.startsAt > now)
+      .sort((a, b) => a.startsAt - b.startsAt)[0];
+
+    if (scheduledOverride) {
+      const msUntilOverride = scheduledOverride.startsAt - now;
+      const ONE_MINUTE_MS = 60 * 1000;
+      // Valid window: user placed within 1 minute before override fires
+      const placedInWindow = msUntilOverride >= 0 && msUntilOverride <= ONE_MINUTE_MS;
+      if (placedInWindow) {
+        // Correct timing — snap settleAt to override so they participate in win/loss
+        settleAt = scheduledOverride.startsAt;
+      } else {
+        // Too early (or any other timing) — settleAt from their duration lands
+        // outside the override window → overrideAt() returns nothing → loss
+        settleAt = now + duration * 60 * 1000;
+      }
+    } else {
+      // No override scheduled — use client duration as fallback
+      settleAt = now + duration * 60 * 1000;
+    }
 
     account.signalBalance = Math.round((account.signalBalance - stake) * 100) / 100;
     if (account.volumeData) {
@@ -3971,6 +4004,214 @@ async function countPendingDeposits() {
   return n;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTO SIGNAL SCHEDULER
+// Three daily windows (PKT): 3 PM, 5 PM, 7 PM
+// Each window fires a broadcast + activates signal at a random time within
+// the first 5 minutes (e.g. 3:00–3:05 PM). Signal auto-deactivates after a
+// random 15–20 min settlement window. Candle override is set simultaneously.
+// Admin can switch between Auto and Manual mode from the admin panel.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Signal schedule config key in DB: 'auto_signal_config'
+// Shape: { mode: 'auto'|'manual', windows: [{ hourPKT: 15 }, ...], coins: ['BTCUSDT',...] }
+async function readAutoSignalConfig() {
+  const d = await dbRead('auto_signal_config');
+  return d || {
+    mode: 'manual',
+    windows: [
+      { hourPKT: 15 },  // 3 PM PKT
+      { hourPKT: 17 },  // 5 PM PKT
+      { hourPKT: 19 },  // 7 PM PKT
+    ],
+    settlementMinMin: 15,
+    settlementMinMax: 20,
+  };
+}
+async function writeAutoSignalConfig(cfg) { await dbWrite('auto_signal_config', cfg); }
+
+// Track which windows already fired today (keyed by "YYYY-MM-DD:HH" in PKT)
+const _autoSignalFired = new Set();
+
+function pktNow() {
+  const PKT_MS = 5 * 60 * 60 * 1000;
+  return new Date(Date.now() + PKT_MS);
+}
+
+// Returns a PKT date string "YYYY-MM-DD"
+function pktDateStr() {
+  return pktNow().toISOString().slice(0, 10);
+}
+
+// Pick a random coin from PAIR_TO_SYMBOL values
+function randomCoin() {
+  const coins = Object.values(PAIR_TO_SYMBOL);
+  return coins[Math.floor(Math.random() * coins.length)];
+}
+
+// Friendly short name for broadcast message (e.g. BTCUSDT → BTC)
+function symbolShort(sym) {
+  return sym.replace('USDT', '');
+}
+
+// Format current PKT time as "H:MM AM/PM"
+function fmtPKTTime() {
+  return pktNow().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+// Core auto-scheduler — called every 30 seconds
+async function runAutoSignalScheduler() {
+  const cfg = await readAutoSignalConfig();
+  if (cfg.mode !== 'auto') return;
+
+  const now = pktNow();
+  const pktHour = now.getUTCHours();   // pktNow() is already shifted +5h so getUTCHours() = PKT hour
+  const pktMin  = now.getUTCMinutes();
+  const dateStr = pktDateStr();
+
+  for (const win of (cfg.windows || [])) {
+    const { hourPKT } = win;
+    // Fire only within the first 5-minute window (minute 0–4)
+    if (pktHour !== hourPKT) continue;
+    if (pktMin >= 5) continue;
+
+    const fireKey = `${dateStr}:${hourPKT}`;
+    if (_autoSignalFired.has(fireKey)) continue;  // already fired today
+
+    // Mark fired immediately to prevent double-fire
+    _autoSignalFired.add(fireKey);
+
+    // Random delay 0–300 seconds so signal doesn't always land exactly on the hour
+    const delayMs = Math.floor(Math.random() * 5 * 60 * 1000);
+    console.log(`[AutoSignal] Window ${hourPKT}:00 PKT — firing in ${Math.round(delayMs/1000)}s`);
+
+    setTimeout(async () => {
+      try {
+        await fireAutoSignal(cfg);
+      } catch (e) {
+        console.error('[AutoSignal] Fire error:', e);
+      }
+    }, delayMs);
+  }
+
+  // Clean up old fire keys (keep only today's)
+  for (const key of _autoSignalFired) {
+    if (!key.startsWith(dateStr)) _autoSignalFired.delete(key);
+  }
+}
+
+async function fireAutoSignal(cfg) {
+  const coin      = 'BTCUSDT'; // always BTC
+  const direction = Math.random() > 0.5 ? 'up' : 'down';
+  const dirEmoji  = direction === 'up' ? '📈' : '📉';
+  const dirLabel  = direction === 'up' ? 'Up ⬆️' : 'Down ⬇️';
+  const short     = symbolShort(coin);
+
+  const now = Date.now();
+
+  // Settlement time = exactly 15 minutes from NOW (minimum, as required)
+  // e.g. broadcast at 3:05 → settlement shown as 3:20
+  const settlementMinutes = 15;
+  const signalStartsAt    = now + settlementMinutes * 60 * 1000;
+
+  // Candle override duration after signal time: random 15–20 min (for chart to settle)
+  const minMin     = cfg.settlementMinMin || 15;
+  const maxMin     = cfg.settlementMinMax || 20;
+  const overrideDur = minMin + Math.floor(Math.random() * (maxMin - minMin + 1));
+  const signalEndsAt = signalStartsAt + overrideDur * 60 * 1000;
+
+  // Format signal time in PKT for broadcast display
+  const signalTimePKT = new Date(signalStartsAt + 5 * 60 * 60 * 1000);
+  const signalTimeLabel = signalTimePKT.toLocaleTimeString('en-US', {
+    hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'UTC',
+  });
+
+  console.log(`[AutoSignal] Broadcast now — ${short} ${direction} | Signal time: ${signalTimeLabel} PKT | Override: ${overrideDur} min`);
+
+  // 1) Broadcast immediately — shows FUTURE settlement time
+  const broadcastText =
+    `📊 KYNEX AI SIGNAL ALERT\n━━━━━━━━━━━━━━━\n🕒 Time: ${signalTimeLabel} (PKT)\n${dirEmoji} Asset: ${short}\n📉 Direction: ${dirLabel}`;
+
+  await sendBroadcastMessage(broadcastText);
+
+  // 2) Activate signal NOW — users can place their trade before signal time
+  const sigCfg = await readSignalConfig();
+  sigCfg.signalActive = true;
+  await writeSignalConfig(sigCfg);
+  console.log('[AutoSignal] Signal trading window opened');
+
+  // 3) Schedule candle override to start at EXACTLY signal time
+  const ended = (await readOverrideList()).filter(o => o && o.endsAt <= now && o.endsAt > now - 6 * 60 * 60 * 1000);
+  await writeCandleOverrides([...ended, { symbol: coin, direction, startsAt: signalStartsAt, endsAt: signalEndsAt }]);
+  console.log(`[AutoSignal] Candle override scheduled — ${coin} ${direction} starts at ${signalTimeLabel}`);
+
+  // 4) Auto-deactivate signal 1 minute AFTER signal time
+  // e.g. signal at 3:20 → deactivate at 3:21
+  const deactivateAfterMs = settlementMinutes * 60 * 1000 + 60 * 1000;
+  setTimeout(async () => {
+    try {
+      await autoDeactivateSignal();
+      console.log(`[AutoSignal] Signal deactivated at ${fmtPKTTime()} PKT`);
+    } catch (e) {
+      console.error('[AutoSignal] Deactivate error:', e);
+    }
+  }, deactivateAfterMs);
+}
+
+// Deactivate signal only — positions are settled by settleDuePositions() via candle override
+// Do NOT refund/cancel positions here — that would rob winners of their profit
+async function autoDeactivateSignal() {
+  const sigCfg = await readSignalConfig();
+  sigCfg.signalActive = false;
+  await writeSignalConfig(sigCfg);
+  console.log('[AutoSignal] Signal deactivated — positions will settle via candle override');
+}
+
+// Shared helper — send broadcast to all deposited users (chat + push)
+async function sendBroadcastMessage(text) {
+  const accounts = await readDemoAccounts();
+  const targetUids = Object.entries(accounts)
+    .filter(([, acc]) => (acc.totalDeposited || 0) > 0)
+    .map(([uid]) => uid);
+  if (!targetUids.length) return;
+
+  const clean = text.slice(0, 2000);
+  const now   = Date.now();
+  await withChatLock(async () => {
+    const chats = await readLiveChats();
+    for (const uid of targetUids) {
+      if (!chats[uid]) chats[uid] = { messages: [], unreadAdmin: 0 };
+      chats[uid].messages.push({
+        id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
+        from: 'admin', text: clean, at: now, read: false, broadcast: true,
+      });
+    }
+    await writeLiveChats(chats);
+  });
+  sendWebPushAll('📊 KYNEX Signal Alert', clean).catch(() => {});
+  for (const uid of targetUids) sendFcmNotification(uid, '📊 KYNEX Signal Alert', clean).catch(() => {});
+}
+
+// ── Admin API: get/set auto signal config ─────────────────────────────────
+app.get('/api/admin/auto-signal-config', requireAdmin, async (req, res) => {
+  const cfg = await readAutoSignalConfig();
+  res.json({ ok: true, ...cfg });
+});
+
+app.post('/api/admin/auto-signal-config', requireAdmin, async (req, res) => {
+  const { mode, settlementMinMin, settlementMinMax, windows } = req.body || {};
+  const cfg = await readAutoSignalConfig();
+  if (mode === 'auto' || mode === 'manual') cfg.mode = mode;
+  if (Number.isFinite(Number(settlementMinMin)) && settlementMinMin >= 5)  cfg.settlementMinMin = Number(settlementMinMin);
+  if (Number.isFinite(Number(settlementMinMax)) && settlementMinMax <= 60) cfg.settlementMinMax = Number(settlementMinMax);
+  if (Array.isArray(windows)) cfg.windows = windows;
+  await writeAutoSignalConfig(cfg);
+  await adminLog(req, 'auto-signal-config.set', cfg);
+  res.json({ ok: true, ...cfg });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 initDb().then(() => initVapid()).then(() => {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`KYNEX backend running on http://0.0.0.0:${PORT}`);
@@ -3985,6 +4226,8 @@ initDb().then(() => initVapid()).then(() => {
     setInterval(() => settleAllDuePositions().catch(() => {}), 60 * 1000);
     // Time-of-day jobs (checked every minute; each fires once per PKT day)
     setInterval(() => { sendReferralWindowReminder(); sendDailyAdminSummary(); }, 60 * 1000);
+    // Auto signal scheduler — fires every 30s, handles 3/5/7 PM PKT windows
+    setInterval(() => runAutoSignalScheduler().catch(() => {}), 30 * 1000);
   });
 }).catch(err => {
   console.error("Database init failed:", err);
