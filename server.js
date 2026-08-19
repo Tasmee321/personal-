@@ -3041,10 +3041,10 @@ app.post("/api/admin/referral-bonus", requireAdmin, async (req, res) => {
 
 // Read-only abuse signals for the admin Users list. Nothing is enforced — these only draw the
 // admin's eye to accounts worth a closer look (multi-accounting, deposit-and-run, shared wallets).
-function computeUserFlags(users, accounts) {
+function computeUserFlags(users, accounts, { trustedWallets = new Set(), dismissedFlags = {} } = {}) {
   const DAY = 24 * 3600 * 1000;
-  const ipUsers = new Map();      // ip -> Set(userId)
-  const walletUsers = new Map();  // wallet(lower) -> Set(userId)
+  const ipUsers = new Map();
+  const walletUsers = new Map();
   const add = (map, key, id) => { if (!key) return; if (!map.has(key)) map.set(key, new Set()); map.get(key).add(id); };
   for (const u of users) {
     add(ipUsers, u.lastLoginIp, u.id);
@@ -3054,30 +3054,41 @@ function computeUserFlags(users, accounts) {
     for (const w of a.withdrawalRequests || []) add(walletUsers, String(w.walletAddress || '').trim().toLowerCase(), id);
   }
   const flagsFor = (u, acct) => {
-    const flags = [];
+    const dismissed = new Set(dismissedFlags[u.id] || []);
+    const raw = [];
     const ips = new Set([u.lastLoginIp, ...(u.loginHistory || []).slice(0, 10).map(h => h.ip)].filter(Boolean));
     let sharedIp = 0;
     for (const ip of ips) { const set = ipUsers.get(ip); if (set && set.size > 1) sharedIp = Math.max(sharedIp, set.size - 1); }
-    if (sharedIp >= 2) flags.push(`IP shared with ${sharedIp} accounts`);
+    if (sharedIp >= 2) raw.push(`IP shared with ${sharedIp} accounts`);
     const wallets = new Set((acct.withdrawalRequests || []).map(w => String(w.walletAddress || '').trim().toLowerCase()).filter(Boolean));
     let sharedWallet = 0;
-    for (const w of wallets) { const set = walletUsers.get(w); if (set && set.size > 1) sharedWallet = Math.max(sharedWallet, set.size - 1); }
-    if (sharedWallet >= 1) flags.push(`Wallet shared with ${sharedWallet} account(s)`);
-    // Deposit-and-run: withdrawal requested within 48h of the first credited deposit
+    for (const w of wallets) {
+      if (trustedWallets.has(w)) continue;
+      const set = walletUsers.get(w); if (set && set.size > 1) sharedWallet = Math.max(sharedWallet, set.size - 1);
+    }
+    if (sharedWallet >= 1) raw.push(`Wallet shared with ${sharedWallet} account(s)`);
     const firstDep = (acct.depositRequests || []).filter(d => d.status === 'done').map(d => d.processedAt || d.createdAt).sort((x, y) => x - y)[0];
     const firstWd = (acct.withdrawalRequests || []).map(w => w.createdAt).sort((x, y) => x - y)[0];
-    if (firstDep && firstWd && firstWd - firstDep < 2 * DAY) flags.push('Withdrew within 48h of first deposit');
+    if (firstDep && firstWd && firstWd - firstDep < 2 * DAY) raw.push('Withdrew within 48h of first deposit');
     const totalWd = (acct.withdrawalRequests || []).filter(w => w.status === 'completed').reduce((s, w) => s + (w.netPayout || 0), 0);
-    if ((acct.totalDeposited || 0) > 0 && totalWd > (acct.totalDeposited || 0) * 3) flags.push('Withdrawn > 3× deposited');
-    return flags;
+    if ((acct.totalDeposited || 0) > 0 && totalWd > (acct.totalDeposited || 0) * 3) raw.push('Withdrawn > 3× deposited');
+    return raw.filter(f => !dismissed.has(f));
   };
   return flagsFor;
 }
 
+async function readFlagConfig() {
+  const d = await dbRead('admin_flag_config');
+  return d || { trustedWallets: [], dismissedFlags: {} };
+}
+async function writeFlagConfig(cfg) { await dbWrite('admin_flag_config', cfg); }
+
 app.get("/api/admin/users", requireAdmin, async (req, res) => {
   const users = await readUsers();
   const accounts = await readDemoAccounts();
-  const flagsFor = computeUserFlags(users, accounts);
+  const flagCfg = await readFlagConfig();
+  const trustedWallets = new Set((flagCfg.trustedWallets || []).map(w => w.toLowerCase()));
+  const flagsFor = computeUserFlags(users, accounts, { trustedWallets, dismissedFlags: flagCfg.dismissedFlags || {} });
   const list = users.map(u => {
     const acct = accounts[u.id] || {};
     const lvlInfo = calculateLevel(u.uid, users, accounts);
@@ -3235,6 +3246,97 @@ app.get("/api/admin/user/:userId/signals", requireAdmin, async (req, res) => {
   res.json({ ok: true, signals: positions });
 });
 
+
+// ── Admin: complete transaction history for a user ────────────────────────
+// Merges deposits, withdrawals, signal trades, transfers, rewards, bonuses
+// into one chronological list with normalized fields for the admin panel.
+app.get("/api/admin/user/:userId/transactions", requireAdmin, async (req, res) => {
+  const accounts = await readDemoAccounts();
+  const users = await readUsers();
+  const account = accounts[req.params.userId] || {};
+  const user = users.find(u => u.id === req.params.userId);
+  if (!user) return res.status(404).json({ error: "User not found." });
+
+  const txns = [];
+
+  // 1) Ledger entries — deposits, withdrawals, transfers, rewards, penalties, level rewards
+  for (const e of (account.ledger || [])) {
+    txns.push({
+      id: e.id || `ledger-${e.at}`,
+      at: e.at,
+      category: e.type,           // deposit | withdrawal_lock | transfer | reward | penalty | level_reward
+      wallet: e.wallet,           // spot | signal
+      amount: e.amount,
+      description: e.description || '',
+      status: 'completed',
+      source: 'ledger',
+    });
+  }
+
+  // 2) Deposit requests — pending ones not yet in ledger
+  for (const d of (account.depositRequests || [])) {
+    const alreadyInLedger = (account.ledger || []).some(e => e.ref === d.id);
+    if (alreadyInLedger) continue; // ledger entry covers it
+    txns.push({
+      id: d.id,
+      at: d.processedAt || d.createdAt,
+      category: 'deposit',
+      wallet: 'spot',
+      amount: d.amount || 0,
+      description: `Deposit ${(d.amount || 0).toFixed(2)} USDT via ${(d.network || '').toUpperCase()}`,
+      status: d.status,           // pending | done | rejected
+      txHash: d.txHash || null,
+      network: d.network || null,
+      source: 'deposit',
+    });
+  }
+
+  // 3) Withdrawal requests
+  for (const w of (account.withdrawalRequests || [])) {
+    txns.push({
+      id: w.id,
+      at: w.createdAt,
+      category: 'withdrawal',
+      wallet: 'spot',
+      amount: -(w.amount || 0),
+      netPayout: w.netPayout || 0,
+      fee: w.fee || 0,
+      description: `Withdrawal ${(w.amount || 0).toFixed(2)} USDT → ${(w.network || '').toUpperCase()}`,
+      status: w.status,           // pending | completed | rejected
+      walletAddress: w.walletAddress || null,
+      network: w.network || null,
+      source: 'withdrawal',
+      processedAt: w.processedAt || null,
+    });
+  }
+
+  // 4) Signal positions — open, settled, cancelled, timedOut
+  for (const p of (account.positions || [])) {
+    const statusLabel = p.timedOut ? 'timed_out' : p.cancelled ? 'cancelled' : p.settled ? (p.won ? 'won' : 'lost') : 'open';
+    txns.push({
+      id: p.id,
+      at: p.openedAt,
+      settleAt: p.settleAt,
+      category: p.isReferralBonus ? 'referral_signal' : 'signal',
+      wallet: 'signal',
+      amount: -p.stake,
+      profit: p.profit || 0,
+      description: `Signal ${p.direction?.toUpperCase()} · ${p.pair} · ${(p.stake || 0).toFixed(2)} USDT stake`,
+      status: statusLabel,
+      direction: p.direction,
+      pair: p.pair,
+      entryPrice: p.entryPrice || null,
+      closePrice: p.closePrice || null,
+      source: 'signal',
+    });
+  }
+
+  // Sort newest first
+  txns.sort((a, b) => (b.at || 0) - (a.at || 0));
+
+  res.json({ ok: true, transactions: txns, total: txns.length });
+});
+
 app.get("/api/admin/user/:userId/team", requireAdmin, async (req, res) => {
   const users = await readUsers();
   const accounts = await readDemoAccounts();
@@ -3308,6 +3410,65 @@ app.get("/api/admin/user/:userId/team", requireAdmin, async (req, res) => {
       reason: m.kyc?.status !== 'certified' ? 'KYC not certified' : `Balance $${Math.round(((m.acct.balance || 0) + (m.acct.signalBalance || 0)) * 100) / 100} < $${TEAM_MEMBER_MIN_BALANCE}`,
     })),
   });
+});
+
+// ── Admin: dismiss a flag for a specific user ────────────────────────────
+app.post("/api/admin/user/:userId/dismiss-flag", requireAdmin, async (req, res) => {
+  const { flag } = req.body || {};
+  if (!flag || typeof flag !== 'string') return res.status(400).json({ error: "flag text required." });
+  const cfg = await readFlagConfig();
+  if (!cfg.dismissedFlags) cfg.dismissedFlags = {};
+  if (!cfg.dismissedFlags[req.params.userId]) cfg.dismissedFlags[req.params.userId] = [];
+  if (!cfg.dismissedFlags[req.params.userId].includes(flag)) {
+    cfg.dismissedFlags[req.params.userId].push(flag);
+  }
+  await writeFlagConfig(cfg);
+  await adminLog(req, 'flag.dismissed', { userId: req.params.userId, flag });
+  res.json({ ok: true, dismissed: cfg.dismissedFlags[req.params.userId] });
+});
+
+// ── Admin: restore a dismissed flag for a specific user ───────────────────
+app.post("/api/admin/user/:userId/restore-flag", requireAdmin, async (req, res) => {
+  const { flag } = req.body || {};
+  if (!flag || typeof flag !== 'string') return res.status(400).json({ error: "flag text required." });
+  const cfg = await readFlagConfig();
+  if (cfg.dismissedFlags && cfg.dismissedFlags[req.params.userId]) {
+    cfg.dismissedFlags[req.params.userId] = cfg.dismissedFlags[req.params.userId].filter(f => f !== flag);
+  }
+  await writeFlagConfig(cfg);
+  await adminLog(req, 'flag.restored', { userId: req.params.userId, flag });
+  res.json({ ok: true, dismissed: (cfg.dismissedFlags || {})[req.params.userId] || [] });
+});
+
+// ── Admin: trust a wallet address globally ────────────────────────────────
+app.post("/api/admin/trust-wallet", requireAdmin, async (req, res) => {
+  const { address } = req.body || {};
+  if (!address || typeof address !== 'string') return res.status(400).json({ error: "address required." });
+  const clean = address.trim().toLowerCase();
+  const cfg = await readFlagConfig();
+  if (!cfg.trustedWallets) cfg.trustedWallets = [];
+  if (!cfg.trustedWallets.includes(clean)) cfg.trustedWallets.push(clean);
+  await writeFlagConfig(cfg);
+  await adminLog(req, 'wallet.trusted', { address: clean });
+  res.json({ ok: true, trustedWallets: cfg.trustedWallets });
+});
+
+// ── Admin: remove a wallet from trusted list ──────────────────────────────
+app.post("/api/admin/untrust-wallet", requireAdmin, async (req, res) => {
+  const { address } = req.body || {};
+  if (!address || typeof address !== 'string') return res.status(400).json({ error: "address required." });
+  const clean = address.trim().toLowerCase();
+  const cfg = await readFlagConfig();
+  cfg.trustedWallets = (cfg.trustedWallets || []).filter(w => w !== clean);
+  await writeFlagConfig(cfg);
+  await adminLog(req, 'wallet.untrusted', { address: clean });
+  res.json({ ok: true, trustedWallets: cfg.trustedWallets });
+});
+
+// ── Admin: get full flag config (dismissed + trusted wallets) ─────────────
+app.get("/api/admin/flag-config", requireAdmin, async (req, res) => {
+  const cfg = await readFlagConfig();
+  res.json({ ok: true, ...cfg });
 });
 
 app.get("/api/signal-status", authenticate, userLock, async (req, res) => {
