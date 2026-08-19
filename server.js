@@ -4296,7 +4296,7 @@ async function runAutoSignalScheduler() {
     const { hourPKT } = win;
     // Fire only within the first 5-minute window (minute 0–4)
     if (pktHour !== hourPKT) continue;
-    if (pktMin >= 5) continue;
+    if (pktMin >= 10) continue;
 
     const fireKey = `${dateStr}:${hourPKT}`;
     if (_autoSignalFired.has(fireKey)) continue;  // already fired today
@@ -4441,7 +4441,7 @@ initDb().then(() => initVapid()).then(() => {
     console.log(`KYNEX backend running on http://0.0.0.0:${PORT}`);
     setInterval(() => {
       fetch(`https://kynex-backend-9w8t.onrender.com/api/health`).catch(() => {});
-    }, 14 * 60 * 1000);
+    }, 5 * 60 * 1000);
     // (daily chat clear runs from the 5 AM PKT interval near the top of the file — single scheduler)
     // Auto re-verify pending deposits (first pass 30s after boot, then every 3 min)
     setTimeout(() => recheckPendingDeposits().catch(() => {}), 30 * 1000);
