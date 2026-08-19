@@ -2704,6 +2704,11 @@ app.get("/api/admin/user-lookup", requireAdmin, async (req, res) => {
 async function readSignalConfig() { return await dbRead('signal_config'); }
 async function writeSignalConfig(cfg) { await dbWrite('signal_config', cfg); }
 async function readCandleOverrides() { return await dbRead('candle_overrides'); }
+// Always an array (tolerates the legacy { items: [] } wrapper)
+async function readOverrideList() {
+  let d; try { d = await readCandleOverrides(); } catch (_) { d = []; }
+  return Array.isArray(d) ? d : (d?.items || []);
+}
 async function writeCandleOverrides(list) { await dbWrite('candle_overrides', list); }
 
 app.post("/api/admin/signal-release", requireAdmin, async (req, res) => {
@@ -2839,22 +2844,24 @@ app.post("/api/admin/candle-override", requireAdmin, async (req, res) => {
   }
 
   const now = Date.now();
-  // FIX 2: Only one active override allowed at a time — clear all existing before adding new
-  // This prevents multiple conflicting signals
-  const overrides = [];
-  overrides.push({ symbol, direction, startsAt, endsAt: startsAt + dur * 60 * 1000 });
-  await writeCandleOverrides(overrides);
-  await adminLog(req, 'candle-override.set', overrides[0]);
-  res.json({ ok: true, override: overrides[0] });
+  // FIX 2: Only one active/scheduled override allowed at a time — replace any existing live one.
+  // Recently-ended overrides are kept (bounded) so charts can still shape that history.
+  const ended = (await readOverrideList()).filter(o => o && o.endsAt <= now && o.endsAt > now - 6 * 60 * 60 * 1000);
+  const next = { symbol, direction, startsAt, endsAt: startsAt + dur * 60 * 1000 };
+  await writeCandleOverrides([...ended, next]);
+  await adminLog(req, 'candle-override.set', next);
+  res.json({ ok: true, override: next });
 });
 
 // FIX 3: Admin cancel override — also cancel all unsettled user positions and refund stakes
 app.delete("/api/admin/candle-override", requireAdmin, async (req, res) => {
   const { index } = req.body || {};
   const now = Date.now();
-  const overrides = (await readCandleOverrides()).filter(o => o.endsAt > now);
+  const all = await readOverrideList();
+  const ended = all.filter(o => o && o.endsAt <= now && o.endsAt > now - 6 * 60 * 60 * 1000);
+  const overrides = all.filter(o => o && o.endsAt > now); // same ordering as the admin list
   if (index >= 0 && index < overrides.length) overrides.splice(index, 1);
-  await writeCandleOverrides(overrides);
+  await writeCandleOverrides([...ended, ...overrides]);
 
   // Mark all unsettled signal positions as timedOut — no win, no loss, no cancel, stake refunded
   try {
@@ -2883,15 +2890,20 @@ app.delete("/api/admin/candle-override", requireAdmin, async (req, res) => {
 
 app.get("/api/admin/candle-overrides", requireAdmin, async (req, res) => {
   const now = Date.now();
-  const active = (await readCandleOverrides()).filter(o => o.endsAt > now);
+  const active = (await readOverrideList()).filter(o => o && o.endsAt > now);
   res.json({ ok: true, overrides: active });
 });
 
-// Public endpoint for frontend chart to check active overrides
+// Public endpoint for the frontend chart. Returns SCHEDULED + ACTIVE + RECENTLY-ENDED overrides
+// (not just active) plus the server clock, so the chart can:
+//   - start the effect at exactly startsAt (to the second) instead of waiting for the next poll
+//   - re-shape recent history for a user who opens the chart after the window started/ended
+// Settlement (settleDuePositions) still uses its own startsAt<=now<endsAt filter — unchanged.
+const OVERRIDE_HISTORY_MS = 6 * 60 * 60 * 1000;
 app.get("/api/candle-overrides/active", async (req, res) => {
   const now = Date.now();
-  const active = (await readCandleOverrides()).filter(o => o.startsAt <= now && o.endsAt > now);
-  res.json({ ok: true, overrides: active });
+  const list = (await readOverrideList()).filter(o => o.endsAt > now - OVERRIDE_HISTORY_MS);
+  res.json({ ok: true, overrides: list, serverTime: now });
 });
 
 // Referred users (of referrer `u`) who have deposited — these are the ones eligible for a reward

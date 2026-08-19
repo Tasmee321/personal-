@@ -1813,7 +1813,8 @@ This cannot be undone!`)) return;
               <div style={card}>
                 <div style={{ fontWeight: 'bold', fontSize: '13px', marginBottom: '10px' }}>Candle Control</div>
                 <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '10px' }}>
-                  Schedule a coin's candle direction at a specific time. Leave time empty to start now.
+                  Schedule a coin's candle direction at a specific time (PKT). Leave time empty to start now.
+                  Every full candle from that exact minute closes in the chosen direction, with a natural-looking trend; the chart eases back to the real market after the window.
                 </div>
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                   <select value={candleSymbol} onChange={(e) => setCandleSymbol(e.target.value)} style={{ ...inputStyle, width: 'auto' }}>
@@ -1839,7 +1840,7 @@ This cannot be undone!`)) return;
                       const isActive = o.startsAt <= now && o.endsAt > now;
                       const isScheduled = o.startsAt > now;
                       const remaining = isActive ? Math.max(0, Math.ceil((o.endsAt - now) / 60000)) : 0;
-                      const startTime = new Date(o.startsAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                      const startTime = new Date(o.startsAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Karachi' });
                       return (
                         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                           <span style={{ color: o.direction === 'up' ? theme.up : theme.down, fontWeight: '600' }}>

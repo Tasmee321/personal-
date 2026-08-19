@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PullIndicator from '../components/PullToRefresh';
 import { usePullToRefresh } from '../utils/usePullToRefresh';
-import { buildChartStreamUrl, applyOverrideDrift, mergeTradeTick } from '../utils/liveCandles';
+import { buildChartStreamUrl, mergeTradeTick, createOverrideEngine } from '../utils/liveCandles';
+import { noteServerTime, serverNow } from '../utils/serverClock';
 import { attachHistoryLoader, klineToCandle } from '../utils/candleHistory';
 import { createCandleChart } from '../utils/candleChart';
 import { Link } from 'react-router-dom';
@@ -173,7 +174,8 @@ const Signals = () => {
   const pendingKlinesRef = useRef(null);
   const lastRawCandleRef = useRef(null);   // last real (kline/tick-merged) candle for the selected coin
   const latestTickRef = useRef(null);      // coalesced latest aggTrade tick
-  const candleOverridesRef = useRef([]);
+  const candleOverridesRef = useRef([]);   // scheduled + active + recent overrides (all symbols)
+  const overrideEngineRef = useRef(null);  // createOverrideEngine() for the selected coin
 
   const getEndpoint = (path) => {
     const base = '/api/demo';
@@ -224,9 +226,21 @@ const Signals = () => {
   useEffect(() => {
     const poll = async () => {
       try {
+        const t0 = Date.now();
         const res = await fetch(`${API_URL}/api/candle-overrides/active`);
         const data = await res.json();
-        if (data.ok) candleOverridesRef.current = data.overrides || [];
+        if (!data.ok) return;
+        noteServerTime(data.serverTime, Date.now() - t0);
+        candleOverridesRef.current = data.overrides || [];
+        // An override that already started (or ended recently) arrived after history was drawn →
+        // re-shape the remembered raw candles so the chart tells the same story as live viewers saw.
+        const eng = overrideEngineRef.current;
+        const api = chartRef.current;
+        if (eng && api && eng.needsReplay(candleOverridesRef.current, serverNow())) {
+          const first = eng.firstRawTime();
+          const prefix = api.getData().filter((c) => c.time < first);
+          api.setAll([...prefix, ...eng.replay(candleOverridesRef.current, serverNow())]);
+        }
       } catch { /* silent */ }
     };
     poll();
@@ -320,6 +334,8 @@ const Signals = () => {
     latestTickRef.current = null;
     const shiftSec = Math.floor(MARKET_DATA_DELAY_MS / 1000);
     const toCandle = (k) => klineToCandle(k, shiftSec + PKT_OFFSET_SEC);
+    const engine = createOverrideEngine({ symbol: selectedCoin.symbol, tfSec: 60, timeOffsetSec: shiftSec + PKT_OFFSET_SEC });
+    overrideEngineRef.current = engine;
 
     // Combined stream: kline_1m (source of truth every ~2s) + aggTrade (every trade → fluid candle).
     // Auto-reconnects so the chart never silently freezes on a dropped connection.
@@ -361,7 +377,8 @@ const Signals = () => {
         candles.filter((c) => (c.time - shiftSec - PKT_OFFSET_SEC) > cutoffSec).forEach((c) => {
           pending.push({ eventTime: (c.time - shiftSec - PKT_OFFSET_SEC) * 1000, candle: c });
         });
-        return shown;
+        // Shape recent history with any admin override (exact window, same model as live)
+        return engine.seedHistory(shown, candleOverridesRef.current, serverNow());
       },
     });
 
@@ -371,15 +388,17 @@ const Signals = () => {
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (ws) { ws.onclose = null; ws.onerror = null; ws.close(); }
       pendingKlinesRef.current = null;
+      if (overrideEngineRef.current === engine) overrideEngineRef.current = null;
     };
   }, [selectedCoin, themeMode]);
 
   useEffect(() => {
+    let lastIdleRedraw = 0;
     const interval = setInterval(() => {
       const pending = pendingKlinesRef.current;
-      if (!pending || !chartRef.current) return;
+      const engine = overrideEngineRef.current;
+      if (!pending || !chartRef.current || !engine) return;
       const cutoff = Date.now() - MARKET_DATA_DELAY_MS;
-      const override = candleOverridesRef.current.find(o => o.symbol === selectedCoin.symbol);
       let toDraw = null;
       // 1) kline updates (authoritative OHLC) — keep the raw candle so ticks merge into real data
       // (with no artificial delay, don't gate on the client clock — phone clocks are often behind
@@ -397,10 +416,17 @@ const Signals = () => {
         const merged = mergeTradeTick(lastRawCandleRef.current, tick.price, tick.bucketTime, tick.qty);
         if (merged) { lastRawCandleRef.current = merged; toDraw = merged; }
       }
-      if (!toDraw) return;
-      // Admin override bias — deterministic per candle (no per-tick jitter), gentle wobble
-      const c = override ? applyOverrideDrift(toDraw, override) : toDraw;
-      chartRef.current.update(c);
+      const nowSrv = serverNow();
+      if (!toDraw) {
+        // No new data — but an admin override (or its fade-out) is animating: keep the candle alive
+        const last = lastRawCandleRef.current;
+        if (!last || !engine.animating(candleOverridesRef.current, nowSrv)) return;
+        if (Date.now() - lastIdleRedraw < 250) return;
+        lastIdleRedraw = Date.now();
+        toDraw = last;
+      }
+      // Admin override: realistic, exact-to-the-second display model (see liveCandles.js)
+      chartRef.current.update(engine.display(toDraw, candleOverridesRef.current, nowSrv));
     }, 80);
     return () => clearInterval(interval);
   }, [selectedCoin]);

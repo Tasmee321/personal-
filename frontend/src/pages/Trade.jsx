@@ -27,7 +27,8 @@ function fmt(n, digits = 2) {
 }
 
 const PKT_OFFSET_SEC = 5 * 60 * 60;
-import { buildChartStreamUrl, applyOverrideDrift, mergeTradeTick, TF_SECONDS } from '../utils/liveCandles';
+import { buildChartStreamUrl, mergeTradeTick, TF_SECONDS, createOverrideEngine } from '../utils/liveCandles';
+import { noteServerTime, serverNow } from '../utils/serverClock';
 import { attachHistoryLoader, klineToCandle } from '../utils/candleHistory';
 import { createCandleChart } from '../utils/candleChart';
 
@@ -229,7 +230,8 @@ const Trade = () => {
 
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null); // createCandleChart() api
-  const candleOverridesRef = useRef([]);
+  const candleOverridesRef = useRef([]);   // scheduled + active + recent overrides (all symbols)
+  const overrideEngineRef = useRef(null);  // createOverrideEngine() for the selected coin/timeframe
 
   const loadAccount = useCallback(async () => {
     try {
@@ -262,9 +264,20 @@ const Trade = () => {
   useEffect(() => {
     const poll = async () => {
       try {
+        const t0 = Date.now();
         const res = await fetch(`${API_URL}/api/candle-overrides/active`);
         const data = await res.json();
-        if (data.ok) candleOverridesRef.current = data.overrides || [];
+        if (!data.ok) return;
+        noteServerTime(data.serverTime, Date.now() - t0);
+        candleOverridesRef.current = data.overrides || [];
+        // Late-arriving override that already started → re-shape remembered raw history
+        const eng = overrideEngineRef.current;
+        const api = chartRef.current;
+        if (eng && api && eng.needsReplay(candleOverridesRef.current, serverNow())) {
+          const first = eng.firstRawTime();
+          const prefix = api.getData().filter((c) => c.time < first);
+          api.setAll([...prefix, ...eng.replay(candleOverridesRef.current, serverNow())]);
+        }
       } catch { /* silent */ }
     };
     poll();
@@ -285,6 +298,9 @@ const Trade = () => {
     // Shared Binance/OKX-style chart: candles + MA(7/25/99) + volume pane + OHLC legend
     const api = createCandleChart(container, { theme, height: 320 });
     chartRef.current = api;
+    // Admin override display model (realistic, exact-to-the-second) — see liveCandles.js
+    const engine = createOverrideEngine({ symbol: selectedCoin.symbol, tfSec, timeOffsetSec: PKT_OFFSET_SEC });
+    overrideEngineRef.current = engine;
 
     // Resize observer — more reliable than window resize for mobile
     const ro = new ResizeObserver(() => {
@@ -296,12 +312,17 @@ const Trade = () => {
     // of trades a second; repainting on every frame made low-end phones lag while still looking
     // no smoother than ~12fps for a single moving candle.
     const DRAW_EVERY_MS = 80;
+    const IDLE_REDRAW_MS = 250; // keep an override's trend/fade animating even without ticks
     let lastDrawAt = 0;
     const drainLoop = (now) => {
-      if (pendingUpdate && chartRef.current && now - lastDrawAt >= DRAW_EVERY_MS) {
-        chartRef.current.update(pendingUpdate);
-        pendingUpdate = null;
-        lastDrawAt = now;
+      if (chartRef.current && now - lastDrawAt >= DRAW_EVERY_MS) {
+        let raw = pendingUpdate;
+        if (!raw && lastRawCandle && now - lastDrawAt >= IDLE_REDRAW_MS && engine.animating(candleOverridesRef.current, serverNow())) raw = lastRawCandle;
+        if (raw) {
+          chartRef.current.update(engine.display(raw, candleOverridesRef.current, serverNow()));
+          pendingUpdate = null;
+          lastDrawAt = now;
+        }
       }
       animFrameId = requestAnimationFrame(drainLoop);
     };
@@ -329,9 +350,7 @@ const Trade = () => {
           lastRawCandle = merged;
           c = merged;
         } else return;
-        const override = candleOverridesRef.current.find(o => o.symbol === selectedCoin.symbol);
-        // Deterministic per-candle bias (no per-tick jitter)
-        pendingUpdate = override ? applyOverrideDrift(c, override) : c; // buffer — rAF drains it
+        pendingUpdate = c; // raw — the drain loop applies the override display model
       };
       ws.onerror = () => {
         // auto-reconnect after 2s on error
@@ -349,6 +368,8 @@ const Trade = () => {
       target: api, symbol: selectedCoin.symbol, interval: timeframe, toCandle,
       onInitial: (hist) => {
         if (hist.length && (!lastRawCandle || hist[hist.length - 1].time >= lastRawCandle.time)) lastRawCandle = { ...hist[hist.length - 1] };
+        // Shape recent history with any admin override (exact window, same model as live)
+        return engine.seedHistory(hist, candleOverridesRef.current, serverNow());
       },
     });
 
@@ -360,6 +381,7 @@ const Trade = () => {
       if (ws) { try { ws.close(); } catch (_) {} }
       try { api.remove(); } catch (_) {}
       chartRef.current = null;
+      if (overrideEngineRef.current === engine) overrideEngineRef.current = null;
     };
   }, [theme, selectedCoin, timeframe]);
 
