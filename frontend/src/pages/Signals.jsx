@@ -159,12 +159,15 @@ const Signals = () => {
   const [livePrices, setLivePrices] = useState({});
 
   const [pendingDirection, setPendingDirection] = useState(null);
-  const [duration, setDuration] = useState(5);
+  // Absolute settle instant (epoch ms), always snapped to :00 seconds. Kept as a timestamp — not a
+  // duration — so the click's seconds never leak into settleAt. Two users who pick the same minute
+  // now send the exact same settle time, which is what makes their result identical.
+  const [settleAtTarget, setSettleAtTarget] = useState(() => Math.ceil((Date.now() + 5 * 60 * 1000) / 60000) * 60000);
   const [placing, setPlacing] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [activeTab, setActiveTab] = useState('current');
   const [actionError, setActionError] = useState('');
-  const [bonusInfo, setBonusInfo] = useState({ bonusSignals: 0, daysRemaining: 0, bonusUsedToday: 0, referralWindowOpen: false, referralSignalTime: null, referralDirection: null, referralSymbol: null, referralEndTime: null });
+  const [bonusInfo, setBonusInfo] = useState({ bonusSignals: 0, daysRemaining: 0, bonusUsedToday: 0, referralWindowOpen: false, referralSignalTime: null, referralDirection: null, referralSymbol: null, referralEndTime: null, signalActive: false, signalSettleAt: null });
   const [placingBonus, setPlacingBonus] = useState(false);
 
   const chartContainerRef = useRef(null);
@@ -210,7 +213,7 @@ const Signals = () => {
       try {
         const res = await fetch(`${API_URL}/api/signal-status`, { headers: authHeaders() });
         const data = await res.json();
-        if (res.ok) setBonusInfo({ bonusSignals: data.bonusSignals || 0, daysRemaining: data.daysRemaining || 0, bonusUsedToday: data.bonusUsedToday || 0, referralWindowOpen: !!data.referralWindowOpen, referralSignalTime: data.referralSignalTime, referralDirection: data.referralDirection, referralSymbol: data.referralSymbol, referralEndTime: data.referralEndTime, dailySignalLimit: data.dailySignalLimit ?? null, signalsUsedToday: data.signalsUsedToday ?? null, signalsLeftToday: data.signalsLeftToday ?? null });
+        if (res.ok) setBonusInfo({ bonusSignals: data.bonusSignals || 0, daysRemaining: data.daysRemaining || 0, bonusUsedToday: data.bonusUsedToday || 0, referralWindowOpen: !!data.referralWindowOpen, referralSignalTime: data.referralSignalTime, referralDirection: data.referralDirection, referralSymbol: data.referralSymbol, referralEndTime: data.referralEndTime, dailySignalLimit: data.dailySignalLimit ?? null, signalsUsedToday: data.signalsUsedToday ?? null, signalsLeftToday: data.signalsLeftToday ?? null, signalActive: !!data.signalActive, signalSettleAt: data.signalSettleAt || null });
       } catch { /* silent */ }
     };
     loadBonusStatus();
@@ -441,6 +444,12 @@ const Signals = () => {
       setActionError('Your balance is empty. Transfer funds first.');
       return;
     }
+    // Default the settle time to the signal time from the broadcast. Matching that minute is what
+    // counts as following the signal, so it must be the default — not a 5-minute guess.
+    const announced = bonusInfo.signalSettleAt;
+    setSettleAtTarget(announced && announced > Date.now()
+      ? announced
+      : Math.ceil((Date.now() + 5 * 60 * 1000) / 60000) * 60000);
     setPendingDirection(direction);
   };
 
@@ -450,7 +459,14 @@ const Signals = () => {
     try {
       const res = await fetch(getEndpoint('/predict'), {
         method: 'POST', headers: authHeaders(),
-        body: JSON.stringify({ pair: selectedCoin.pair, direction: pendingDirection, durationMinutes: duration }),
+        body: JSON.stringify({
+          pair: selectedCoin.pair,
+          direction: pendingDirection,
+          // Absolute settle instant — the server matches this against the announced signal time.
+          settleAtRequested: settleAtTarget,
+          // Kept for older server builds / as a fallback.
+          durationMinutes: Math.max(1, Math.round((settleAtTarget - Date.now()) / 60000)),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not place prediction.');
@@ -486,18 +502,23 @@ const Signals = () => {
   const selectedLive = livePrices[selectedCoin.symbol];
   const stakeAmount = signalBalance ? Math.round(signalBalance * 0.01 * 100) / 100 : 0;
 
-  const settlePreviewDate = new Date(now + duration * 60 * 1000);
+  const settlePreviewDate = new Date(settleAtTarget);
   const timeValue = `${String(settlePreviewDate.getHours()).padStart(2, '0')}:${String(settlePreviewDate.getMinutes()).padStart(2, '0')}`;
 
+  // Whole minutes only — seconds are zeroed so a trade lines up exactly with the signal time.
   const handleTimeChange = (e) => {
     if (!e.target.value) return;
     const [h, m] = e.target.value.split(':').map(Number);
-    const target = new Date(now);
-    target.setHours(h, m, target.getSeconds(), target.getMilliseconds());
-    let diffMins = Math.round((target.getTime() - now) / 60000);
-    if (diffMins <= 0) diffMins += 24 * 60;
-    setDuration(diffMins);
+    const target = new Date();
+    target.setHours(h, m, 0, 0);
+    if (target.getTime() <= Date.now()) target.setDate(target.getDate() + 1);
+    setSettleAtTarget(target.getTime());
   };
+
+  // The signal time announced in the broadcast (server-provided). Matching this minute is what
+  // makes a trade count as following the signal.
+  const announcedSettleAt = bonusInfo.signalSettleAt && bonusInfo.signalSettleAt > now ? bonusInfo.signalSettleAt : null;
+  const followsSignal = announcedSettleAt !== null && Math.abs(settleAtTarget - announcedSettleAt) < 60 * 1000;
 
   return (
     <div style={{ padding: '16px', paddingBottom: '90px', color: theme.text, backgroundColor: theme.bg, minHeight: '100vh' }}>
@@ -671,9 +692,39 @@ const Signals = () => {
               type="time"
               value={timeValue}
               onChange={handleTimeChange}
-              style={{ padding: '10px 14px', borderRadius: '10px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg, color: theme.text, boxSizing: 'border-box', fontWeight: 'bold', fontSize: '16px' }}
+              style={{ padding: '10px 14px', borderRadius: '10px', border: `1px solid ${followsSignal ? theme.up : theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg, color: theme.text, boxSizing: 'border-box', fontWeight: 'bold', fontSize: '16px' }}
             />
           </div>
+
+          {/* A trade only follows the signal when its settle time is the announced signal minute. */}
+          {announcedSettleAt !== null && (
+            <div style={{
+              fontSize: '12px', lineHeight: 1.5, padding: '10px 12px', borderRadius: '10px', marginBottom: '12px',
+              backgroundColor: followsSignal ? 'rgba(16,185,129,0.10)' : 'rgba(239,68,68,0.10)',
+              border: `1px solid ${followsSignal ? theme.up : theme.down}`,
+              color: followsSignal ? theme.up : theme.down,
+            }}>
+              {followsSignal
+                ? <>✅ Signal time <b>{fmtClock(announcedSettleAt)}</b> — you are following this signal.</>
+                : settleAtTarget < announcedSettleAt
+                  ? <>⚠️ Signal time is <b>{fmtClock(announcedSettleAt)}</b>. Your time is earlier — this does not follow the signal.</>
+                  : <>⚠️ Signal time is <b>{fmtClock(announcedSettleAt)}</b>. A later time does not follow the signal — the session closes at {fmtClock(announcedSettleAt + 60 * 1000)} and your stake is refunded.</>
+              }
+            </div>
+          )}
+
+          {announcedSettleAt !== null && !followsSignal && (
+            <button
+              onClick={() => setSettleAtTarget(announcedSettleAt)}
+              style={{
+                width: '100%', padding: '10px', borderRadius: '10px', marginBottom: '12px', cursor: 'pointer',
+                border: `1px solid ${theme.up}`, backgroundColor: 'transparent', color: theme.up,
+                fontWeight: 'bold', fontSize: '13px',
+              }}
+            >
+              Use signal time {fmtClock(announcedSettleAt)}
+            </button>
+          )}
 
           <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '14px' }}>
             Current time: <b style={{ color: theme.text }}>{fmtClock(now)}</b> · Settles at <b style={{ color: theme.text }}>{fmtClock(settlePreviewDate.getTime())}</b>

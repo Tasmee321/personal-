@@ -1057,6 +1057,22 @@ async function settleDuePositions(account, userId = null) {
 
   for (const pos of account.positions) {
     if (pos.settled || pos.settleAt > now) continue;
+
+    // Placed for a signal but with a settle time PAST the announced minute (e.g. announced 3:19,
+    // user picked 3:20). The session closes at 3:20, so this trade never had a signal to ride —
+    // owner rule: TIMEOUT + refund, not a loss. Decided here (from stamped data) so it can't
+    // depend on whether the settle sweep or the deactivate tick runs first.
+    if (Number.isFinite(Number(pos.announcedSettleAt)) && Number(pos.settleAt) > Number(pos.announcedSettleAt)) {
+      pos.settled = true;
+      pos.timedOut = true;
+      pos.won = null;
+      pos.profit = 0;
+      pos.settledAt = now;
+      account.signalBalance = Math.round(((account.signalBalance || 0) + pos.stake) * 100) / 100;
+      settledNow.push(pos);
+      continue;
+    }
+
     pos.settled = true;
     pos.settledAt = now;
     settledNow.push(pos);
@@ -1079,10 +1095,15 @@ async function settleDuePositions(account, userId = null) {
     const symbol = PAIR_TO_SYMBOL[pos.pair] || pos.pair.replace("/", "").toUpperCase();
     const override = activeOverrides.find(o => o.symbol === symbol || o.symbol === pos.pair);
 
-    // Owner rule (2026-08-19): a signal WINS only when an admin candle override for that coin is
-    // active at the signal's end time AND the user's direction matches it. No override on that
-    // coin, or opposite direction → LOSS. (Referral bonus signals are exempt above — always win.)
-    const userWins = !!override && pos.direction === override.direction;
+    // Owner rule (2026-08-19): a signal WINS only when the user FOLLOWED the broadcast — same coin,
+    // settle time set to the announced signal minute (pos.followedSignal, set in /api/demo/predict)
+    // — AND their direction matches the admin candle override active at that instant. Off-signal
+    // trades (shorter/longer time, other coin) are pinned to a loss so they cannot win by landing
+    // inside the window by accident. Positions from older app builds have followedSignal
+    // undefined → override match alone decides, exactly as before.
+    const userWins = pos.followedSignal === false
+      ? false
+      : (!!override && pos.direction === override.direction);
 
     pos.won = userWins;
     const nudge = pos.entryPrice * (0.001 + Math.random() * 0.004);
@@ -1108,8 +1129,13 @@ async function settleDuePositions(account, userId = null) {
   // Notify (after the loop so a notification failure can never affect balances)
   if (userId && settledNow.length) {
     for (const pos of settledNow) {
-      if (pos.cancelled || pos.timedOut || pos.notified) continue;
+      if (pos.notified) continue;
+      if (pos.cancelled) continue;
       pos.notified = true;
+      if (pos.timedOut) {
+        pushMessage(userId, "Signal refunded", "Your settle time was later than the announced signal time, so the signal timed out and your stake has been refunded.").catch(() => {});
+        continue;
+      }
       const { title, body } = describeSignalResult(pos);
       pushMessage(userId, title, body).catch(() => {});
     }
@@ -2718,30 +2744,30 @@ async function readOverrideList() {
 async function writeCandleOverrides(list) { await dbWrite('candle_overrides', list); }
 
 app.post("/api/admin/signal-release", requireAdmin, async (req, res) => {
-  const { active, symbol, direction, durationMinutes } = req.body || {};
-  const cfg = await readSignalConfig();
-  cfg.signalActive = !!active;
-  await writeSignalConfig(cfg);
+  // symbol/direction from the body are intentionally IGNORED — coin is always BTC and the
+  // direction is always picked by the server (owner rule), so admin can never bias it.
+  const { active, durationMinutes } = req.body || {};
 
-  // When admin ACTIVATES signals manually — broadcast to all deposited users + set candle override
+  // When admin ACTIVATES signals manually — same shape as an auto fire: broadcast + 1-minute
+  // candle override at the announced minute + persisted close deadline.
   if (active) {
+    const cfg = await readSignalConfig();
+    cfg.signalActive = true;
+    await writeSignalConfig(cfg);
     try {
-      const coin = symbol || 'BTCUSDT';
-      const dir  = ['up', 'down'].includes(direction) ? direction : 'up';
+      const coin = 'BTCUSDT';                                  // BTC only — owner rule
+      const dir  = Math.random() < 0.5 ? 'up' : 'down';         // server-random every time
       const dur  = Math.min(Math.max(Number(durationMinutes) || 15, 1), 30);
       const dirEmoji = dir === 'up' ? '📈' : '📉';
       const dirLabel = dir === 'up' ? 'Up ⬆️' : 'Down ⬇️';
       const short    = coin.replace('USDT', '');
 
       const now = Date.now();
-      const signalStartsAt = now + dur * 60 * 1000;
-      const signalEndsAt   = signalStartsAt + dur * 60 * 1000;
-
-      // Format signal time in PKT
-      const signalTimePKT = new Date(signalStartsAt + 5 * 60 * 60 * 1000);
-      const signalTimeLabel = signalTimePKT.toLocaleTimeString('en-US', {
-        hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'UTC',
-      });
+      // Snap to the next whole minute: the broadcast announces "3:32 PM", so the override must
+      // start at exactly 3:32:00 — otherwise matching a user's chosen time depends on seconds.
+      const signalStartsAt = ceilToMinute(now + dur * 60 * 1000);
+      const signalEndsAt   = signalStartsAt + 60 * 1000;   // override = exactly 1 minute
+      const signalTimeLabel = fmtPKT(signalStartsAt);
 
       // Broadcast to all deposited users
       const broadcastText =
@@ -2752,55 +2778,42 @@ app.post("/api/admin/signal-release", requireAdmin, async (req, res) => {
       const ended = (await readOverrideList()).filter(o => o && o.endsAt <= now && o.endsAt > now - 6 * 60 * 60 * 1000);
       await writeCandleOverrides([...ended, { symbol: coin, direction: dir, startsAt: signalStartsAt, endsAt: signalEndsAt }]);
 
-      // Auto-deactivate signal 1 minute after signal time
-      setTimeout(async () => {
-        try {
-          const sCfg = await readSignalConfig();
-          sCfg.signalActive = false;
-          await writeSignalConfig(sCfg);
-          console.log('[ManualSignal] Auto-deactivated after settlement window');
-        } catch (e) {
-          console.error('[ManualSignal] Deactivate error:', e);
-        }
-      }, dur * 60 * 1000 + 60 * 1000);
+      // Persist the close deadline so the 30s tick closes the session even if this process
+      // restarts or Render spins the free instance down before the timer below can run.
+      const live = await readSignalConfig();
+      live.livePlan = { announcedAt: signalStartsAt, deactivateAt: signalEndsAt, symbol: coin };
+      await writeSignalConfig(live);
+      setTimeout(() => {
+        enforceSignalLifecycle().catch(e => console.error('[ManualSignal] Deactivate error:', e?.message || e));
+      }, Math.max(signalEndsAt - Date.now(), 5000));
 
-      console.log(`[ManualSignal] Activated — ${coin} ${dir} | Settlement: ${signalTimeLabel} PKT | Override: ${dur} min`);
+      console.log(`[ManualSignal] Activated — ${coin} ${dir} | Settlement: ${signalTimeLabel} PKT | Override 1 min`);
     } catch (e) {
       console.error('[ManualSignal] Broadcast/override error:', e);
     }
   }
 
-  // When admin DEACTIVATES signals — mark all unsettled positions as timedOut, refund stakes
+  // When admin DEACTIVATES signals early — pay whoever is already due, refund the rest.
   if (!active) {
     try {
-      const accounts = await readDemoAccounts();
-      const affectedUserIds = [];
-      for (const [userId, account] of Object.entries(accounts)) {
-        if (!account || !Array.isArray(account.positions)) continue;
-        let userAffected = false;
-        for (const pos of account.positions) {
-          if (pos.settled || pos.cancelled || pos.timedOut) continue;
-          account.signalBalance = Math.round(((account.signalBalance || 0) + pos.stake) * 100) / 100;
-          pos.settled = true;
-          pos.timedOut = true;
-          pos.won = null;
-          pos.profit = 0;
-          userAffected = true;
-        }
-        if (userAffected) affectedUserIds.push(userId);
-      }
-      await writeDemoAccounts(accounts);
-      // Notify each affected user so their frontend updates immediately on next poll
-      for (const userId of affectedUserIds) {
-        await pushMessage(userId, "Signal ended", "The admin has ended the current signal session. Your active signal was cancelled and your stake has been refunded.");
-      }
+      // Settle everything that is already DUE first. Signals deactivate right after signal time,
+      // so without this a follower whose settle minute just passed would be refunded as "timedOut"
+      // instead of paid as a winner (background sweep only runs once a minute).
+      await settleAllDuePositions();
+      const timedOut = await timeoutOpenPositions();
+      console.log(`[ManualSignal] Deactivated by admin — ${timedOut} position(s) timed out/refunded`);
     } catch (e) {
       console.error("Signal deactivate — timedOut error:", e);
     }
+    const cfg = await readSignalConfig();
+    cfg.signalActive = false;
+    cfg.livePlan = null;
+    await writeSignalConfig(cfg);
   }
 
-  await adminLog(req, 'signal-release', { active: !!cfg.signalActive });
-  res.json({ ok: true, signalActive: cfg.signalActive });
+  const finalCfg = await readSignalConfig();
+  await adminLog(req, 'signal-release', { active: !!finalCfg.signalActive });
+  res.json({ ok: true, signalActive: !!finalCfg.signalActive });
 });
 
 app.get("/api/admin/signal-release", requireAdmin, async (req, res) => {
@@ -2956,7 +2969,12 @@ const OVERRIDE_HISTORY_MS = 6 * 60 * 60 * 1000;
 app.get("/api/candle-overrides/active", async (req, res) => {
   const now = Date.now();
   const list = (await readOverrideList()).filter(o => o.endsAt > now - OVERRIDE_HISTORY_MS);
-  res.json({ ok: true, overrides: list, serverTime: now });
+  // Never leak the direction of a window that has not started yet. The override is created ~15 min
+  // before signal time, so returning it raw let anyone read the winning direction from the network
+  // tab and never lose. The chart engine only uses overrides with startsAt <= now (liveCandles.js),
+  // so withholding it costs nothing — the real direction arrives on the next 5s poll at startsAt.
+  const safe = list.map(o => (o.startsAt > now ? { ...o, direction: null } : o));
+  res.json({ ok: true, overrides: safe, serverTime: now });
 });
 
 // Referred users (of referrer `u`) who have deposited — these are the ones eligible for a reward
@@ -3497,9 +3515,30 @@ app.get("/api/signal-status", authenticate, userLock, async (req, res) => {
   // Daily limit info (same computation as /api/demo/predict) — display only
   const dailySignalLimit = account.dailySignalLimit || cfg.globalDailyLimit || DEFAULT_DAILY_SIGNAL_LIMIT;
   const signalsUsedToday = todayPositions.filter(p => !p.cancelled).length;
+  // The announced settle time of the live signal (BTC only). The app prefills its time picker
+  // with this so a follower's settleAt matches the override to the second. Direction is NOT
+  // exposed here — users must read it from the broadcast.
+  let signalSettleAt = null;
+  let signalEndsAt = null;
+  if (cfg.signalActive) {
+    // Prefer the persisted plan (exact, survives restarts); fall back to scanning overrides.
+    const plan = cfg.livePlan;
+    if (plan && Number.isFinite(Number(plan.announcedAt)) && Number(plan.announcedAt) > nowMs) {
+      signalSettleAt = Number(plan.announcedAt);
+      signalEndsAt = Number(plan.deactivateAt) || null;
+    } else {
+      const next = (await readOverrideList())
+        .filter(o => o && o.symbol === 'BTCUSDT' && o.startsAt > nowMs)
+        .sort((a, b) => a.startsAt - b.startsAt)[0];
+      if (next) { signalSettleAt = next.startsAt; signalEndsAt = next.endsAt; }
+    }
+  }
   res.json({
     ok: true,
     signalActive: !!cfg.signalActive,
+    signalSettleAt,
+    signalEndsAt,
+    signalSymbol: 'BTCUSDT',
     bonusSignals,
     daysRemaining,
     bonusUsedToday,
@@ -3666,39 +3705,59 @@ app.post("/api/demo/predict", authenticate, financialRateLimit, userLock, async 
     const entryPrice = await getLivePrice(pair);
     const now = Date.now();
 
-    // settleAt logic:
-    // A user WINS only if they placed their signal within the valid broadcast window
-    // (within 1 minute before the candle override startsAt). If they placed early or
-    // late — i.e. not following the broadcast — their settleAt falls outside the
-    // override window so overrideAt() returns nothing and they automatically lose.
-    //
-    // Rule: snap settleAt to scheduledOverride.startsAt ONLY when the user placed
-    // within [startsAt - 60s, startsAt]. Otherwise use client duration so the
-    // position settles outside the override window → loss.
+    // settleAt logic — owner rule (2026-08-19):
+    // The broadcast announces coin + direction + an exact settle time (e.g. "3:32 PM").
+    // "Following the signal" = same coin AND settle time set to that announced minute.
+    // Everyone who follows gets settleAt = override.startsAt — the SAME instant for every user —
+    // so the result can never depend on the second they clicked or the duration they picked.
+    // Then settleDuePositions() decides: direction matches override → WIN, opposite → LOSS.
+    // Didn't follow (shorter/longer time, or another coin) → followedSignal = false → forced LOSS,
+    // so an off-time trade can never land inside the window and win by accident.
     let settleAt;
+    let followedSignal = false;
     const overrideList = await readOverrideList();
     const symbol = PAIR_TO_SYMBOL[pair] || pair.replace('/', '').toUpperCase();
     const scheduledOverride = overrideList
       .filter(o => o && o.symbol === symbol && o.startsAt > now)
       .sort((a, b) => a.startsAt - b.startsAt)[0];
 
-    if (scheduledOverride) {
-      const msUntilOverride = scheduledOverride.startsAt - now;
-      const ONE_MINUTE_MS = 60 * 1000;
-      // Valid window: user placed within 1 minute before override fires
-      const placedInWindow = msUntilOverride >= 0 && msUntilOverride <= ONE_MINUTE_MS;
-      if (placedInWindow) {
-        // Correct timing — snap settleAt to override so they participate in win/loss
-        settleAt = scheduledOverride.startsAt;
-      } else {
-        // Too early (or any other timing) — settleAt from their duration lands
-        // outside the override window → overrideAt() returns nothing → loss
-        settleAt = now + duration * 60 * 1000;
-      }
+    // The app sends the exact settle timestamp it is showing the user. Older app builds only send
+    // durationMinutes — reconstruct from that (minute-rounded, so keep the ±60s grace below).
+    const requestedSettleAt = Number(req.body?.settleAtRequested);
+    const intendedSettleAt = Number.isFinite(requestedSettleAt) && requestedSettleAt > now
+      ? requestedSettleAt
+      : now + duration * 60 * 1000;
+
+    // Grace: the announced time is minute-precision, so anyone whose chosen settle time lands
+    // inside the announced minute counts as following (this also absorbs client-clock skew).
+    // Strictly < 60s: picking the minute before/after (e.g. 5:19 when 5:20 was announced) is NOT
+    // following. Confirmed real case (2026-08-19, 5 PM signal): two users both picked 5:20 and both
+    // showed "05:06 PM → 05:20 PM", but their settleAt carried their click seconds (5:20:40 vs
+    // 5:20:10) while the override started at 5:20:30 → one WIN, one LOSS. Snapping every follower
+    // to startsAt removes the seconds from the equation entirely.
+    const FOLLOW_GRACE_MS = 60 * 1000;
+
+    if (scheduledOverride && Math.abs(intendedSettleAt - scheduledOverride.startsAt) < FOLLOW_GRACE_MS) {
+      followedSignal = true;
+      settleAt = scheduledOverride.startsAt;   // identical for every follower
     } else {
-      // No override scheduled — use client duration as fallback
-      settleAt = now + duration * 60 * 1000;
+      settleAt = intendedSettleAt;             // off-signal trade — cannot win (flag below)
     }
+
+    // Whole-minute discipline (owner rule): seconds must not exist anywhere in a position's
+    // timeline. The override already starts on a whole minute (ceilToMinute in signal-release /
+    // fireAutoSignal); here the user's side is snapped too — settle time up to the next whole
+    // minute, open time down to the minute it was placed in. Two users placing in the same minute
+    // now get byte-identical timestamps, so the result cannot differ by seconds.
+    settleAt = ceilToMinute(settleAt);
+    const openedAt = Math.floor(now / 60000) * 60000;
+
+    // The announced signal minute this trade was placed against. Stamped on the position so
+    // settlement is decided from data, not from whichever timer happens to run first:
+    //   settleAt <  announcedSettleAt  → LOSS  (user cut the time short)
+    //   settleAt == announcedSettleAt  → direction vs override decides WIN / LOSS
+    //   settleAt >  announcedSettleAt  → TIMEOUT + refund (session already closed)
+    const announcedSettleAt = scheduledOverride ? scheduledOverride.startsAt : null;
 
     account.signalBalance = Math.round((account.signalBalance - stake) * 100) / 100;
     if (account.volumeData) {
@@ -3709,10 +3768,12 @@ app.post("/api/demo/predict", authenticate, financialRateLimit, userLock, async 
       id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
       source: "prediction",
       pair, direction, stake, entryPrice,
-      openedAt: now,
+      openedAt,
       settleAt,
       settled: false,
       isReferralBonus,
+      followedSignal,
+      announcedSettleAt,
     });
     await writeDemoAccounts(accounts);
     res.json({ ok: true, signalBalance: account.signalBalance, positions: account.positions });
@@ -4222,18 +4283,38 @@ async function countPendingDeposits() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Signal schedule config key in DB: 'auto_signal_config'
-// Shape: { mode: 'auto'|'manual', windows: [{ hourPKT: 15 }, ...], coins: ['BTCUSDT',...] }
+// Shape: { mode: 'auto'|'manual', windows: [{ hourPKT: 15 }, ...] }
+const DEFAULT_AUTO_WINDOWS = [
+  { hourPKT: 15 },  // 3 PM PKT
+  { hourPKT: 17 },  // 5 PM PKT
+  { hourPKT: 19 },  // 7 PM PKT
+];
+
+// NOTE (bug fix): dbRead() returns {} — never null — for a key that isn't in kv_store yet
+// (see db.js). The old `return d || {defaults}` therefore NEVER fell back to the defaults:
+// the very first admin save persisted { mode:'auto', settlementMin* } with NO `windows` array,
+// so runAutoSignalScheduler() looped over `cfg.windows || []` = [] and silently never fired a
+// single window. Always rebuild the config from defaults + whatever is stored — this also heals
+// the already-broken row in the live DB with no migration.
 async function readAutoSignalConfig() {
-  const d = await dbRead('auto_signal_config');
-  return d || {
-    mode: 'manual',
-    windows: [
-      { hourPKT: 15 },  // 3 PM PKT
-      { hourPKT: 17 },  // 5 PM PKT
-      { hourPKT: 19 },  // 7 PM PKT
-    ],
-    settlementMinMin: 15,
-    settlementMinMax: 20,
+  let raw = null;
+  try { raw = await dbRead('auto_signal_config'); } catch (_) { raw = null; }
+  const d = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+
+  const windows = (Array.isArray(d.windows) ? d.windows : [])
+    .map(w => ({ hourPKT: Number(w?.hourPKT) }))
+    .filter(w => Number.isInteger(w.hourPKT) && w.hourPKT >= 0 && w.hourPKT <= 23);
+
+  const minM = Number(d.settlementMinMin);
+  const maxM = Number(d.settlementMinMax);
+  const settlementMinMin = Number.isFinite(minM) && minM >= 5 && minM <= 60 ? minM : 15;
+  const settlementMinMax = Number.isFinite(maxM) && maxM >= settlementMinMin && maxM <= 60 ? maxM : Math.max(20, settlementMinMin);
+
+  return {
+    mode: d.mode === 'auto' ? 'auto' : 'manual',
+    windows: windows.length ? windows : DEFAULT_AUTO_WINDOWS,
+    settlementMinMin,
+    settlementMinMax,
   };
 }
 async function writeAutoSignalConfig(cfg) { await dbWrite('auto_signal_config', cfg); }
@@ -4282,113 +4363,236 @@ function fmtPKTTime() {
   return pktNow().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
-// Core auto-scheduler — called every 30 seconds
+// Format any epoch-ms instant as PKT "H:MM AM/PM" (used in broadcasts and logs)
+function fmtPKT(ms) {
+  return new Date(Number(ms) + 5 * 60 * 60 * 1000)
+    .toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'UTC' });
+}
+
+// Round a timestamp UP to the next whole minute. Signal times are announced to the minute
+// ("3:32 PM"), so the override must start at exactly :00 seconds of that minute — otherwise a
+// user who picks 3:32 in the app is compared against 3:32:07 and the match depends on seconds.
+function ceilToMinute(ms) { return Math.ceil(ms / 60000) * 60000; }
+
+// Core auto-scheduler — called every 30 seconds.
+//
+// Render FREE plan constraints this is built around:
+//   • the instance can be restarted at any time, and spins down after 15 min without inbound
+//     traffic → in-process setTimeout() is NOT a reliable clock. Every deadline is therefore
+//     persisted in the DB and re-evaluated on each 30s tick.
+//   • AUTO_FIRE_WINDOW_MIN: the owner's spec is "fire somewhere inside 3:00–3:05". The chosen
+//     minute is persisted (autoPlan) so a restart mid-window resumes the SAME planned minute
+//     instead of re-rolling or skipping.
+//   • AUTO_CATCHUP_MIN: if the box was asleep/restarting through the whole window, the signal
+//     still goes out (late) up to this many minutes past the hour rather than being lost.
+const AUTO_FIRE_WINDOW_MIN = 5;    // 3:00–3:05 → fire minute is one of :00 :01 :02 :03 :04
+const AUTO_CATCHUP_MIN = 30;
+const _autoSignalClaimed = new Set();   // in-flight in THIS process (not persisted)
+
 async function runAutoSignalScheduler() {
   const cfg = await readAutoSignalConfig();
-  if (cfg.mode !== 'auto') return;
-
-  const now = pktNow();
-  const pktHour = now.getUTCHours();   // pktNow() is already shifted +5h so getUTCHours() = PKT hour
-  const pktMin  = now.getUTCMinutes();
   const dateStr = pktDateStr();
 
-  for (const win of (cfg.windows || [])) {
-    const { hourPKT } = win;
-    // Fire only within the first 5-minute window (minute 0–4)
-    if (pktHour !== hourPKT) continue;
-    if (pktMin >= 10) continue;
-
-    const fireKey = `${dateStr}:${hourPKT}`;
-    if (_autoSignalFired.has(fireKey)) continue;  // already fired today
-
-    // Mark fired immediately to prevent double-fire — persist so restarts don't re-fire
-    _autoSignalFired.add(fireKey);
-    saveAutoSignalFired().catch(() => {});
-
-    // Random delay 0–300 seconds so signal doesn't always land exactly on the hour
-    const delayMs = Math.floor(Math.random() * 5 * 60 * 1000);
-    console.log(`[AutoSignal] Window ${hourPKT}:00 PKT — firing in ${Math.round(delayMs/1000)}s`);
-
-    setTimeout(async () => {
-      try {
-        await fireAutoSignal(cfg);
-      } catch (e) {
-        console.error('[AutoSignal] Fire error:', e);
-      }
-    }, delayMs);
-  }
-
-  // Clean up old fire keys (keep only today's)
+  // Clean up old fire keys (keep only today's) — runs in both modes
   for (const key of _autoSignalFired) {
     if (!key.startsWith(dateStr)) _autoSignalFired.delete(key);
   }
+  if (cfg.mode !== 'auto') return;
+
+  const nowPkt   = pktNow();
+  const pktHour  = nowPkt.getUTCHours();   // pktNow() is shifted +5h so getUTCHours() = PKT hour
+  const pktMin   = nowPkt.getUTCMinutes();
+
+  for (const win of (cfg.windows || [])) {
+    const { hourPKT } = win;
+    if (pktHour !== hourPKT) continue;
+    if (pktMin >= AUTO_CATCHUP_MIN) continue;
+
+    const fireKey = `${dateStr}:${hourPKT}`;
+    if (_autoSignalFired.has(fireKey)) continue;    // already fired today (persisted)
+    if (_autoSignalClaimed.has(fireKey)) continue;  // fire in flight right now
+
+    // Plan the exact fire minute once, and persist it. Restart-safe: the plan survives a Render
+    // restart or spin-down, so the signal still lands on the minute that was rolled originally.
+    const plan = await ensureAutoFirePlan(fireKey, hourPKT);
+    if (!plan) continue;
+    if (Date.now() < plan.plannedFireAt) continue;  // not yet — wait for a later tick
+
+    // Claim in memory only. The persisted "fired" mark is written by fireAutoSignal() AFTER the
+    // signal is actually live — so a crash/deploy mid-fire retries instead of skipping the day.
+    _autoSignalClaimed.add(fireKey);
+    const lateBy = Math.round((Date.now() - plan.plannedFireAt) / 1000);
+    console.log(`[AutoSignal] Window ${hourPKT}:00 PKT — firing now (planned ${fmtPKT(plan.plannedFireAt)}, ${lateBy}s late)`);
+    try {
+      await fireAutoSignal(cfg, fireKey);
+    } catch (e) {
+      console.error('[AutoSignal] Fire error — window will retry on the next tick:', e?.message || e);
+    } finally {
+      _autoSignalClaimed.delete(fireKey);
+    }
+  }
 }
 
-async function fireAutoSignal(cfg) {
-  const coin      = 'BTCUSDT'; // always BTC
-  const direction = Math.random() > 0.5 ? 'up' : 'down';
+// Roll (once) and persist the minute inside 3:00–3:05 at which this window will fire.
+// Returns { fireKey, plannedFireAt } or null if the roll could not be stored.
+async function ensureAutoFirePlan(fireKey, hourPKT) {
+  const sig = await readSignalConfig();
+  const existing = sig.autoFirePlan;
+  if (existing && existing.fireKey === fireKey && Number.isFinite(Number(existing.plannedFireAt))) {
+    return { fireKey, plannedFireAt: Number(existing.plannedFireAt) };
+  }
+
+  // Start of this PKT hour, expressed in real (UTC) epoch ms
+  const nowPkt = pktNow();
+  const hourStartUtc = Date.UTC(
+    nowPkt.getUTCFullYear(), nowPkt.getUTCMonth(), nowPkt.getUTCDate(), hourPKT, 0, 0, 0
+  ) - 5 * 60 * 60 * 1000;
+  const offsetMin = Math.floor(Math.random() * AUTO_FIRE_WINDOW_MIN);   // 0..4
+  const plannedFireAt = hourStartUtc + offsetMin * 60 * 1000;
+
+  sig.autoFirePlan = { fireKey, plannedFireAt };
+  await writeSignalConfig(sig);
+  console.log(`[AutoSignal] Window ${hourPKT}:00 PKT — planned fire at ${fmtPKT(plannedFireAt)} PKT (+${offsetMin} min)`);
+  return { fireKey, plannedFireAt };
+}
+
+// fireKey (optional) is persisted as "fired" once the signal is actually live, so a failure
+// before that point leaves the window retryable.
+async function fireAutoSignal(cfg, fireKey = null) {
+  const coin      = 'BTCUSDT'; // BTC only — owner rule
+  const direction = Math.random() < 0.5 ? 'up' : 'down';   // server-random every time
   const dirEmoji  = direction === 'up' ? '📈' : '📉';
   const dirLabel  = direction === 'up' ? 'Up ⬆️' : 'Down ⬇️';
   const short     = symbolShort(coin);
 
   const now = Date.now();
 
-  // Settlement time = exactly 15 minutes from NOW (minimum, as required)
-  // e.g. broadcast at 3:05 → settlement shown as 3:20
-  const settlementMinutes = 15;
-  const signalStartsAt    = now + settlementMinutes * 60 * 1000;
+  // Settlement time = random 15–20 minutes after the fire moment (owner spec), snapped UP to a
+  // whole minute so the announced clock time and the override start are the SAME instant.
+  // Example: fires 3:03 → +16 → announced 3:19 PM.
+  const minMin  = cfg.settlementMinMin || 15;
+  const maxMin  = Math.max(cfg.settlementMinMax || 20, minMin);
+  const settlementMinutes = minMin + Math.floor(Math.random() * (maxMin - minMin + 1));
+  const signalStartsAt    = ceilToMinute(now + settlementMinutes * 60 * 1000);
 
-  // Candle override duration after signal time: random 15–20 min (for chart to settle)
-  const minMin     = cfg.settlementMinMin || 15;
-  const maxMin     = cfg.settlementMinMax || 20;
-  const overrideDur = minMin + Math.floor(Math.random() * (maxMin - minMin + 1));
+  // Candle override = exactly ONE minute, starting at signal time (3:19:00 → 3:20:00).
+  const overrideDur  = 1;
   const signalEndsAt = signalStartsAt + overrideDur * 60 * 1000;
+  const deactivateAt = signalEndsAt;   // 3:20 → signal closes until the next window
 
-  // Format signal time in PKT for broadcast display
-  const signalTimePKT = new Date(signalStartsAt + 5 * 60 * 60 * 1000);
-  const signalTimeLabel = signalTimePKT.toLocaleTimeString('en-US', {
-    hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'UTC',
-  });
+  const signalTimeLabel = fmtPKT(signalStartsAt);
 
-  console.log(`[AutoSignal] Broadcast now — ${short} ${direction} | Signal time: ${signalTimeLabel} PKT | Override: ${overrideDur} min`);
+  console.log(`[AutoSignal] ${short} ${direction} | Settlement: ${signalTimeLabel} PKT (+${settlementMinutes} min) | Override 1 min`);
 
-  // 1) Broadcast immediately — shows FUTURE settlement time
-  const broadcastText =
-    `📊 KYNEX AI SIGNAL ALERT\n━━━━━━━━━━━━━━━\n🕒 Time: ${signalTimeLabel} (PKT)\n${dirEmoji} Asset: ${short}\n📉 Direction: ${dirLabel}`;
+  // 1) Schedule the candle override to start at EXACTLY signal time
+  const ended = (await readOverrideList()).filter(o => o && o.endsAt <= now && o.endsAt > now - 6 * 60 * 60 * 1000);
+  await writeCandleOverrides([...ended, { symbol: coin, direction, startsAt: signalStartsAt, endsAt: signalEndsAt }]);
 
-  await sendBroadcastMessage(broadcastText);
-
-  // 2) Activate signal NOW — users can place their trade before signal time
+  // 2) Activate signal NOW — users can place their trade any time before signal time.
+  //    livePlan persists the deadline so deactivation is driven by the 30s tick, NOT by an
+  //    in-process setTimeout (which a Render free-plan restart / spin-down would silently lose).
+  //    Direction is deliberately NOT stored here — signal_config feeds /api/signal-status.
   const sigCfg = await readSignalConfig();
   sigCfg.signalActive = true;
+  sigCfg.livePlan = { announcedAt: signalStartsAt, deactivateAt, symbol: coin };
+  sigCfg.autoFirePlan = null;          // this window's plan is consumed
   await writeSignalConfig(sigCfg);
   console.log('[AutoSignal] Signal trading window opened');
 
-  // 3) Schedule candle override to start at EXACTLY signal time
-  const ended = (await readOverrideList()).filter(o => o && o.endsAt <= now && o.endsAt > now - 6 * 60 * 60 * 1000);
-  await writeCandleOverrides([...ended, { symbol: coin, direction, startsAt: signalStartsAt, endsAt: signalEndsAt }]);
-  console.log(`[AutoSignal] Candle override scheduled — ${coin} ${direction} starts at ${signalTimeLabel}`);
+  // 3) Signal is live → mark the window fired (idempotency barrier: no double broadcast on retry)
+  if (fireKey) {
+    _autoSignalFired.add(fireKey);
+    await saveAutoSignalFired().catch(() => {});
+  }
 
-  // 4) Auto-deactivate signal 1 minute AFTER signal time
-  // e.g. signal at 3:20 → deactivate at 3:21
-  const deactivateAfterMs = settlementMinutes * 60 * 1000 + 60 * 1000;
-  setTimeout(async () => {
-    try {
-      await autoDeactivateSignal();
-      console.log(`[AutoSignal] Signal deactivated at ${fmtPKTTime()} PKT`);
-    } catch (e) {
-      console.error('[AutoSignal] Deactivate error:', e);
-    }
+  // 4) Broadcast — shows the FUTURE settlement time users must match
+  const broadcastText =
+    `📊 KYNEX AI SIGNAL ALERT\n━━━━━━━━━━━━━━━\n🕒 Time: ${signalTimeLabel} (PKT)\n${dirEmoji} Asset: ${short}\n📉 Direction: ${dirLabel}`;
+  await sendBroadcastMessage(broadcastText).catch(e => console.error('[AutoSignal] Broadcast failed:', e?.message || e));
+
+  // 5) Fast path for the deadline. The 30s tick (enforceSignalLifecycle) is the durable one —
+  //    this timer just makes the close happen on the second when the process stays up.
+  const deactivateAfterMs = Math.max(deactivateAt - Date.now(), 5000);
+  setTimeout(() => {
+    enforceSignalLifecycle().catch(e => console.error('[AutoSignal] Deactivate error:', e?.message || e));
   }, deactivateAfterMs);
+
+  return { symbol: coin, direction, signalStartsAt, signalEndsAt, signalTimeLabel, overrideDur, settlementMinutes };
 }
 
-// Deactivate signal only — positions are settled by settleDuePositions() via candle override
-// Do NOT refund/cancel positions here — that would rob winners of their profit
-async function autoDeactivateSignal() {
-  const sigCfg = await readSignalConfig();
-  sigCfg.signalActive = false;
-  await writeSignalConfig(sigCfg);
-  console.log('[AutoSignal] Signal deactivated — positions will settle via candle override');
+// End-of-signal lifecycle, driven by the persisted deadline (livePlan.deactivateAt) so it survives
+// a Render restart or spin-down. Idempotent — safe to call from the tick and from a setTimeout.
+//
+// Owner spec at 3:20 (signal time 3:19):
+//   • 3:19 followers  → already settled by settleAllDuePositions() → WIN / LOSS by direction
+//   • 3:18 or earlier → already settled at their own time → LOSS
+//   • 3:20 or later   → never reaches its own settle time inside the session → TIMEOUT + refund
+let _lifecycleRunning = false;
+async function enforceSignalLifecycle() {
+  if (_lifecycleRunning) return false;              // tick + fast-path timer must not double-refund
+  const cfg = await readSignalConfig();
+  const plan = cfg.livePlan;
+  if (!plan || !Number.isFinite(Number(plan.deactivateAt))) return false;
+  if (Date.now() < Number(plan.deactivateAt)) return false;
+
+  _lifecycleRunning = true;
+  try {
+    // 1) Pay/settle everything that is already due — winners must be paid before anything is voided.
+    await settleAllDuePositions();
+
+    // 2) Anything still open ran past the signal → timeout + refund.
+    const timedOut = await timeoutOpenPositions();
+
+    // 3) Close the session.
+    const fresh = await readSignalConfig();
+    fresh.signalActive = false;
+    fresh.livePlan = null;
+    await writeSignalConfig(fresh);
+    console.log(`[Signal] Session closed at ${fmtPKTTime()} PKT — ${timedOut} position(s) timed out/refunded`);
+    return true;
+  } finally {
+    _lifecycleRunning = false;
+  }
+}
+
+// Refund + mark timedOut every unsettled position that has NOT reached its own settle time.
+// Due-but-unsettled positions are left alone (the settle sweep owns them) so a winner is never
+// converted into a refund by a race. Each account is mutated under its own transfer lock and
+// re-read inside it, the same pattern settleAllDuePositions() uses — otherwise a trade being
+// placed at this exact moment could be lost or a refund applied twice.
+async function timeoutOpenPositions() {
+  const snapshot = await readDemoAccounts();
+  const candidates = Object.entries(snapshot)
+    .filter(([, a]) => (a?.positions || []).some(p => !p.settled && !p.cancelled && !p.timedOut))
+    .map(([userId]) => userId);
+
+  let count = 0;
+  for (const userId of candidates) {
+    const unlock = await acquireTransferLock(userId);
+    try {
+      const nowTs = Date.now();
+      const fresh = await readDemoAccounts();
+      const account = fresh[userId];
+      if (!account || !Array.isArray(account.positions)) continue;
+      let userCount = 0;
+      for (const pos of account.positions) {
+        if (pos.settled || pos.cancelled || pos.timedOut) continue;
+        if (Number(pos.settleAt) <= nowTs) continue;   // due — the sweep settles it
+        account.signalBalance = Math.round(((account.signalBalance || 0) + pos.stake) * 100) / 100;
+        pos.settled = true;
+        pos.timedOut = true;
+        pos.won = null;
+        pos.profit = 0;
+        pos.settledAt = nowTs;
+        userCount++;
+      }
+      if (!userCount) continue;
+      await writeDemoAccounts(fresh);
+      count += userCount;
+      await pushMessage(userId, "Signal refunded", "The signal session has ended before your settle time, so your stake has been refunded.").catch(() => {});
+    } finally { unlock(); }
+  }
+  return count;
 }
 
 // Shared helper — send broadcast to all deposited users (chat + push)
@@ -4419,7 +4623,41 @@ async function sendBroadcastMessage(text) {
 // ── Admin API: get/set auto signal config ─────────────────────────────────
 app.get('/api/admin/auto-signal-config', requireAdmin, async (req, res) => {
   const cfg = await readAutoSignalConfig();
-  res.json({ ok: true, ...cfg });
+  const sig = await readSignalConfig();
+  const nowPKT = pktNow();
+  const dateStr = pktDateStr();
+  const hourNow = nowPKT.getUTCHours();
+  const firedToday = [...(_autoSignalFired || [])].filter(k => k.startsWith(dateStr)).map(k => Number(k.split(':')[1]));
+  const hours = (cfg.windows || []).map(w => w.hourPKT).sort((a, b) => a - b);
+  const nextHour = hours.find(h => h > hourNow || (h === hourNow && !firedToday.includes(h)));
+  const plan = sig.autoFirePlan;
+  const live = sig.livePlan;
+  res.json({
+    ok: true,
+    ...cfg,
+    firedToday,
+    nextWindowPKT: nextHour != null ? `${nextHour}:00` : (hours.length ? `${hours[0]}:00 (kal)` : null),
+    serverTimePKT: fmtPKTTime(),
+    // Live state — lets the owner see the exact planned fire minute and the open session's deadlines
+    plannedFirePKT: plan && plan.fireKey === `${dateStr}:${hourNow}` ? fmtPKT(plan.plannedFireAt) : null,
+    liveSettlePKT: live && live.announcedAt ? fmtPKT(live.announcedAt) : null,
+    liveClosePKT: live && live.deactivateAt ? fmtPKT(live.deactivateAt) : null,
+    signalActive: !!sig.signalActive,
+  });
+});
+
+// Fire a signal right now — lets the admin verify the whole auto flow without waiting for 3 PM.
+// Same code path as the scheduler (fireAutoSignal), so a successful test proves auto mode works.
+app.post('/api/admin/auto-signal-fire-now', requireAdmin, async (req, res) => {
+  try {
+    const cfg = await readAutoSignalConfig();
+    const result = await fireAutoSignal(cfg);   // no fireKey → does not consume a real window
+    await adminLog(req, 'auto-signal.fire-now', result);
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    console.error('[AutoSignal] Manual fire-now failed:', e);
+    res.status(500).json({ error: e?.message || 'Could not fire signal.' });
+  }
 });
 
 app.post('/api/admin/auto-signal-config', requireAdmin, async (req, res) => {
@@ -4439,9 +4677,22 @@ app.post('/api/admin/auto-signal-config', requireAdmin, async (req, res) => {
 initDb().then(() => initVapid()).then(() => {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`KYNEX backend running on http://0.0.0.0:${PORT}`);
+    // Keep-alive: Render's free plan spins the instance down after 15 minutes without inbound
+    // traffic, and a spun-down instance runs NO timers — the 3/5/7 PM scheduler would simply not
+    // exist. Pinging our own public URL every 4 minutes is inbound traffic, so the instance stays
+    // up (3+ pings of margin before the 15-minute cutoff).
+    // NOTE: staying up 24/7 burns ~730 of the workspace's 750 free instance-hours per month.
+    const SELF_URL = process.env.RENDER_EXTERNAL_URL || 'https://kynex-backend-9w8t.onrender.com';
+    let _pingFails = 0;
     setInterval(() => {
-      fetch(`https://kynex-backend-9w8t.onrender.com/api/health`).catch(() => {});
-    }, 5 * 60 * 1000);
+      fetch(`${SELF_URL}/api/health`)
+        .then(() => { _pingFails = 0; })
+        .catch(e => {
+          _pingFails++;
+          // Only log when it starts to matter (2 misses = 8 min; 15 min of silence = spin-down)
+          if (_pingFails >= 2) console.error(`[KeepAlive] self-ping failed ${_pingFails}x:`, e?.message || e);
+        });
+    }, 4 * 60 * 1000);
     // (daily chat clear runs from the 5 AM PKT interval near the top of the file — single scheduler)
     // Auto re-verify pending deposits (first pass 30s after boot, then every 3 min)
     setTimeout(() => recheckPendingDeposits().catch(() => {}), 30 * 1000);
@@ -4450,13 +4701,23 @@ initDb().then(() => initVapid()).then(() => {
     setInterval(() => settleAllDuePositions().catch(() => {}), 60 * 1000);
     // Time-of-day jobs (checked every minute; each fires once per PKT day)
     setInterval(() => { sendReferralWindowReminder(); sendDailyAdminSummary(); }, 60 * 1000);
-    // Auto signal scheduler — fires every 30s, handles 3/5/7 PM PKT windows
-    // Load persisted fired-window log first so a restart mid-window doesn't double-fire
-    loadAutoSignalFired().then(() => {
-      setInterval(() => runAutoSignalScheduler().catch(() => {}), 30 * 1000);
-    }).catch(() => {
-      setInterval(() => runAutoSignalScheduler().catch(() => {}), 30 * 1000);
-    });
+    // Auto signal scheduler — fires every 30s, handles 3/5/7 PM PKT windows.
+    // On Render's free plan the instance can restart or spin down at any moment, so BOTH the fire
+    // time and the close time live in the DB and are re-evaluated on every tick. Nothing important
+    // depends on a setTimeout surviving.
+    // Load persisted fired-window log first so a restart mid-window doesn't double-fire.
+    const tickScheduler = async () => {
+      try { await enforceSignalLifecycle(); }
+      catch (e) { console.error('[Signal] lifecycle tick failed:', e?.message || e); }
+      try { await runAutoSignalScheduler(); }
+      catch (e) { console.error('[AutoSignal] tick failed:', e?.message || e); }
+    };
+    loadAutoSignalFired()
+      .catch(() => {})
+      .finally(() => {
+        tickScheduler();
+        setInterval(tickScheduler, 30 * 1000);
+      });
   });
 }).catch(err => {
   console.error("Database init failed:", err);

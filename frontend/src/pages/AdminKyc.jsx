@@ -97,6 +97,8 @@ const AdminKyc = () => {
   const [autoSettleMin, setAutoSettleMin] = useState(15);
   const [autoSettleMax, setAutoSettleMax] = useState(20);
   const [autoConfigSaving, setAutoConfigSaving] = useState(false);
+  const [autoStatus, setAutoStatus] = useState({ windows: [], firedToday: [], nextWindowPKT: null, serverTimePKT: null, plannedFirePKT: null, liveSettlePKT: null, liveClosePKT: null });
+  const [autoFiring, setAutoFiring] = useState(false);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
@@ -294,6 +296,15 @@ const AdminKyc = () => {
       setAutoSignalMode(asc.data.mode || 'manual');
       setAutoSettleMin(asc.data.settlementMinMin || 15);
       setAutoSettleMax(asc.data.settlementMinMax || 20);
+      setAutoStatus({
+        windows: (asc.data.windows || []).map(w => w.hourPKT),
+        firedToday: asc.data.firedToday || [],
+        nextWindowPKT: asc.data.nextWindowPKT || null,
+        serverTimePKT: asc.data.serverTimePKT || null,
+        plannedFirePKT: asc.data.plannedFirePKT || null,
+        liveSettlePKT: asc.data.liveSettlePKT || null,
+        liveClosePKT: asc.data.liveClosePKT || null,
+      });
     }
     setAuthed(true);
     sessionStorage.setItem(KEY_STORAGE, key);
@@ -1943,8 +1954,10 @@ This cannot be undone!`)) return;
             <div style={{ ...card, marginBottom: '16px' }}>
               <div style={{ fontWeight: 'bold', fontSize: '15px', marginBottom: '4px' }}>⚡ Auto Signal Scheduler</div>
               <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '14px' }}>
-                Auto mode fires a broadcast + activates signal at a random time within the first 5 minutes
-                of each window (3 PM, 5 PM, 7 PM PKT). Signal auto-deactivates after the settlement window.
+                Auto mode fires a broadcast + activates signals at a random minute inside the first 5
+                minutes of each window (3:00–3:05, 5:00–5:05, 7:00–7:05 PKT). Settlement time is a random
+                15–20 minutes after the fire — e.g. fires 3:03 → announced settle 3:19 PM, BTC, random
+                direction. The candle override is 1 minute (3:19→3:20), then the signal closes at 3:20.
                 Manual mode disables all auto behaviour — you control everything.
               </div>
 
@@ -1998,9 +2011,12 @@ This cannot be undone!`)) return;
                 </button>
               </div>
 
-              {/* Settlement window config */}
-              <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '8px', color: theme.text }}>
-                Settlement Window (minutes)
+              {/* Settlement offset config */}
+              <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '2px', color: theme.text }}>
+                Settlement Time After Fire (minutes)
+              </div>
+              <div style={{ fontSize: '11px', color: theme.subtext, marginBottom: '8px' }}>
+                Random between min and max. Owner spec: 15–20.
               </div>
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
@@ -2041,10 +2057,43 @@ This cannot be undone!`)) return;
                 fontSize: '12px', color: autoSignalMode === 'auto' ? theme.up : '#e74c3c',
               }}>
                 {autoSignalMode === 'auto'
-                  ? `✅ Scheduler ACTIVE — signals fire at 3 PM, 5 PM, 7 PM PKT (random within first 5 min). Settlement: ${autoSettleMin}–${autoSettleMax} min.`
+                  ? `✅ Scheduler ACTIVE — fires inside 3:00–3:05 / 5:00–5:05 / 7:00–7:05 PKT. Settlement ${autoSettleMin}–${autoSettleMax} min after fire, 1-min candle override, then auto-close.`
                   : `⛔ Scheduler PAUSED — use the manual controls below to activate/deactivate signals.`
                 }
               </div>
+
+              {/* Live scheduler state — proves the windows are actually loaded server-side */}
+              <div style={{ fontSize: '11px', color: theme.subtext, marginTop: '10px', lineHeight: 1.7 }}>
+                <div>Windows loaded: <b style={{ color: theme.text }}>{autoStatus.windows.length ? autoStatus.windows.map(h => `${h}:00`).join(' · ') : '— none —'}</b></div>
+                <div>Fired today: <b style={{ color: theme.text }}>{autoStatus.firedToday.length ? autoStatus.firedToday.map(h => `${h}:00`).join(' · ') : 'none yet'}</b></div>
+                <div>Next window: <b style={{ color: theme.text }}>{autoStatus.nextWindowPKT || '—'}</b> · Server time: <b style={{ color: theme.text }}>{autoStatus.serverTimePKT || '—'}</b> PKT</div>
+                {autoStatus.plannedFirePKT && <div>Planned fire this window: <b style={{ color: theme.text }}>{autoStatus.plannedFirePKT}</b> PKT</div>}
+                {autoStatus.liveSettlePKT && (
+                  <div style={{ color: theme.up }}>
+                    Live signal → settles <b>{autoStatus.liveSettlePKT}</b>, closes <b>{autoStatus.liveClosePKT}</b> PKT
+                  </div>
+                )}
+              </div>
+
+              {/* Test fire — same code path as the scheduler, so a working test proves auto mode works */}
+              <button
+                onClick={async () => {
+                  if (!window.confirm('Fire a real signal RIGHT NOW? All deposited users get the broadcast.')) return;
+                  setAutoFiring(true);
+                  try {
+                    const res = await fetch(`${API_URL}/api/admin/auto-signal-fire-now`, { method: 'POST', headers: adminHeaders(adminKey) });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Fire failed');
+                    showToast(`Fired — BTC ${String(data.direction).toUpperCase()} · settles ${data.signalTimeLabel} PKT`);
+                    loadAll(adminKey);
+                  } catch (err) { setError(err.message); }
+                  finally { setAutoFiring(false); }
+                }}
+                disabled={autoFiring}
+                style={{ ...btnPrimary, width: '100%', marginTop: '12px' }}
+              >
+                {autoFiring ? 'Firing…' : '⚡ Fire signal now (test)'}
+              </button>
             </div>
             {/* ──────────────────────────────────────────────────────────── */}
 
