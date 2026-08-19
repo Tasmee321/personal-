@@ -12,7 +12,7 @@ import { generateSecret as generateTotpSecret, generateURI as generateTotpURI, v
 import { v2 as cloudinary } from "cloudinary";
 import helmet from "helmet";
 import webpush from "web-push";
-import { initDb, dbRead, dbWrite } from "./db.js";
+import { initDb, dbRead, dbWrite, dbDelete, dbListKeys, dbDumpAll, dbRestoreAll } from "./db.js";
 import { initializeApp as initFirebaseApp, cert } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 
@@ -4601,9 +4601,167 @@ function fmtPKT(ms) {
     .toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'UTC' });
 }
 
-// Round a timestamp UP to the next whole minute. Signal times are announced to the minute
-// ("3:32 PM"), so the override must start at exactly :00 seconds of that minute — otherwise a
-// user who picks 3:32 in the app is compared against 3:32:07 and the match depends on seconds.
+// ---- Backups ----
+// Neon's free plan has no automated backups — only a 6-hour restore window — and what lives in this
+// database is user balances, deposit records and KYC state. Two layers, because they cover
+// different failures:
+//   1. a daily in-DB snapshot, which covers the realistic one: a bad write or an admin mistake
+//      corrupting a key, noticed after Neon's 6-hour window has already passed;
+//   2. an off-site JSON download, the only layer that survives losing the Neon project itself.
+// Layer 1 runs on its own; layer 2 needs someone to click it.
+const BACKUP_PREFIX   = 'backup:';
+const BACKUP_DAILY    = `${BACKUP_PREFIX}d-`;
+const BACKUP_MANUAL   = `${BACKUP_PREFIX}m-`;
+const BACKUP_PRE      = `${BACKUP_PREFIX}r-`;   // safety copy taken just before a restore
+const BACKUP_KEEP     = { [BACKUP_DAILY]: 7, [BACKUP_MANUAL]: 3, [BACKUP_PRE]: 3 };
+const BACKUP_HOUR_PKT = 4;
+const BACKUP_MIN_PKT  = 10;   // 4:10 AM PKT — quiet, and clear of the 3 AM / 5 AM chat clears
+// live_chats is wiped every day by design, so snapshotting it only stores noise. backup:* is
+// excluded so a snapshot can never nest earlier snapshots inside itself and grow geometrically.
+const BACKUP_SKIP_PREFIXES = [BACKUP_PREFIX, 'live_chats'];
+let _backupLastDay = null;
+
+async function takeBackup(kind = BACKUP_MANUAL) {
+  const data    = await dbDumpAll(BACKUP_SKIP_PREFIXES);
+  const takenAt = Date.now();
+  // Daily ids are keyed by PKT date so a same-day retry overwrites instead of piling up; the other
+  // kinds carry the timestamp, so each one is kept until pruned.
+  const id = kind === BACKUP_DAILY ? `${BACKUP_DAILY}${pktDateStr()}` : `${kind}${takenAt}`;
+  const payload = { takenAt, takenAtPKT: fmtPKT(takenAt), kind, keys: Object.keys(data).sort(), data };
+  await dbWrite(id, payload);
+  return {
+    id, takenAt, takenAtPKT: payload.takenAtPKT,
+    keyCount: payload.keys.length,
+    bytes: Buffer.byteLength(JSON.stringify(payload)),
+  };
+}
+
+// Prune per kind, not across all backups: a burst of manual snapshots must not be able to evict the
+// daily history, which is the layer that actually covers a slow-to-notice corruption.
+async function pruneBackups() {
+  const rows = await dbListKeys();
+  for (const [prefix, keep] of Object.entries(BACKUP_KEEP)) {
+    const mine = rows.filter(r => r.key.startsWith(prefix)).map(r => r.key).sort().reverse();
+    for (const key of mine.slice(keep)) await dbDelete(key);
+  }
+}
+
+async function listBackups() {
+  const rows = await dbListKeys();
+  return rows
+    .filter(r => r.key.startsWith(BACKUP_PREFIX))
+    .map(r => ({
+      id: r.key,
+      kind: r.key.startsWith(BACKUP_DAILY) ? 'daily'
+          : r.key.startsWith(BACKUP_PRE)   ? 'pre-restore' : 'manual',
+      bytes: r.bytes,
+      updatedAt: r.updatedAt,
+    }))
+    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+}
+
+async function runDailyBackup() {
+  try {
+    const nowPkt = pktNow();
+    if (nowPkt.getUTCHours() !== BACKUP_HOUR_PKT) return;
+    // A 10-minute band rather than one exact minute, so a transient DB error still gets retries.
+    const m = nowPkt.getUTCMinutes();
+    if (m < BACKUP_MIN_PKT || m > BACKUP_MIN_PKT + 9) return;
+    const dayKey = pktDateStr();
+    if (_backupLastDay === dayKey) return;
+    _backupLastDay = dayKey;
+    const res = await takeBackup(BACKUP_DAILY);
+    await pruneBackups();
+    console.log(`[Backup] ${res.id} — ${res.keyCount} keys, ${Math.round(res.bytes / 1024)} KB`);
+  } catch (e) {
+    console.error('[Backup] Daily snapshot failed:', e?.message || e);
+    _backupLastDay = null;   // let the remaining minutes of the band retry
+  }
+}
+
+app.get('/api/admin/backup/list', requireAdmin, async (req, res) => {
+  try { res.json({ ok: true, backups: await listBackups() }); }
+  catch (e) { res.status(500).json({ error: e?.message || 'Could not list backups.' }); }
+});
+
+app.post('/api/admin/backup/now', requireAdmin, async (req, res) => {
+  try {
+    const info = await takeBackup(BACKUP_MANUAL);
+    await pruneBackups();
+    await adminLog(req, 'backup.create', info);
+    res.json({ ok: true, ...info });
+  } catch (e) {
+    console.error('[Backup] Manual snapshot failed:', e);
+    res.status(500).json({ error: e?.message || 'Backup failed.' });
+  }
+});
+
+// Off-site copy. No `id` → dump the LIVE data, which is what a routine download wants; pass an id
+// to re-download an older snapshot instead.
+app.get('/api/admin/backup/download', requireAdmin, async (req, res) => {
+  try {
+    const id = req.query.id ? String(req.query.id) : null;
+    if (id && !id.startsWith(BACKUP_PREFIX)) return res.status(400).json({ error: 'Not a backup id.' });
+    let payload;
+    if (id) {
+      const snap = await dbRead(id);
+      if (!snap || !snap.data) return res.status(404).json({ error: 'Snapshot not found.' });
+      payload = snap;
+    } else {
+      const data = await dbDumpAll(BACKUP_SKIP_PREFIXES);
+      const takenAt = Date.now();
+      payload = { takenAt, takenAtPKT: fmtPKT(takenAt), kind: 'live', keys: Object.keys(data).sort(), data };
+    }
+    const stamp = new Date(Number(payload.takenAt) + 5 * 60 * 60 * 1000)
+      .toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="kynex-backup-${stamp}-PKT.json"`);
+    await adminLog(req, 'backup.download', { id: id || 'live', keyCount: (payload.keys || []).length });
+    res.send(JSON.stringify(payload));
+  } catch (e) {
+    console.error('[Backup] Download failed:', e);
+    res.status(500).json({ error: e?.message || 'Download failed.' });
+  }
+});
+
+app.post('/api/admin/backup/restore', requireAdmin, async (req, res) => {
+  try {
+    const { id, confirm } = req.body || {};
+    if (confirm !== 'RESTORE') return res.status(400).json({ error: 'Type RESTORE to confirm.' });
+    if (!id || !String(id).startsWith(BACKUP_PREFIX)) return res.status(400).json({ error: 'Not a backup id.' });
+    const snap = await dbRead(String(id));
+    if (!snap || !snap.data || typeof snap.data !== 'object') {
+      return res.status(404).json({ error: 'Snapshot not found or unreadable.' });
+    }
+
+    // Refuse while a signal is live: a restore would swap the accounts and the candle override out
+    // from under trades that are already placed and about to be judged.
+    const live = await inFlightSession();
+    if (live) {
+      return res.status(409).json({ error: `A signal is live until ${fmtPKT(live.deactivateAt)} PKT. Restore after it closes.` });
+    }
+
+    // Safety copy first, so a restore from the wrong snapshot is itself undoable.
+    const safety = await takeBackup(BACKUP_PRE);
+    const count  = await dbRestoreAll(snap.data);
+
+    // Every in-memory cache and hint now describes data that no longer exists. null means "unknown",
+    // which forces a real read on the next tick instead of trusting a stale value.
+    _autoCfgCache       = null;
+    _nextSettleAtHint   = null;
+    _pendingDepositHint = null;
+    _liveSessionHint    = null;
+    _autoSignalFired.clear();
+    await loadAutoSignalFired().catch(() => {});
+
+    await pruneBackups();
+    await adminLog(req, 'backup.restore', { from: id, keysRestored: count, safetyCopy: safety.id });
+    res.json({ ok: true, restored: count, from: id, safetyCopy: safety.id });
+  } catch (e) {
+    console.error('[Backup] Restore failed:', e);
+    res.status(500).json({ error: e?.message || 'Restore failed.' });
+  }
+});
 
 // Core auto-scheduler — called every 30 seconds.
 //
@@ -4987,22 +5145,10 @@ app.post('/api/admin/auto-signal-config', requireAdmin, async (req, res) => {
 initDb().then(() => initVapid()).then(() => {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`KYNEX backend running on http://0.0.0.0:${PORT}`);
-    // Keep-alive: Render's free plan spins the instance down after 15 minutes without inbound
-    // traffic, and a spun-down instance runs NO timers — the 3/5/7 PM scheduler would simply not
-    // exist. Pinging our own public URL every 4 minutes is inbound traffic, so the instance stays
-    // up (3+ pings of margin before the 15-minute cutoff).
-    // NOTE: staying up 24/7 burns ~730 of the workspace's 750 free instance-hours per month.
-    const SELF_URL = process.env.RENDER_EXTERNAL_URL || 'https://kynex-backend-9w8t.onrender.com';
-    let _pingFails = 0;
-    setInterval(() => {
-      fetch(`${SELF_URL}/api/health`)
-        .then(() => { _pingFails = 0; })
-        .catch(e => {
-          _pingFails++;
-          // Only log when it starts to matter (2 misses = 8 min; 15 min of silence = spin-down)
-          if (_pingFails >= 2) console.error(`[KeepAlive] self-ping failed ${_pingFails}x:`, e?.message || e);
-        });
-    }, 4 * 60 * 1000);
+    // No keep-alive self-ping: this service runs on a PAID Render instance, which does not spin
+    // down, so pinging our own /api/health every 4 minutes bought nothing and just burned
+    // bandwidth. If this is ever downgraded back to the free plan, the ping must come back — a
+    // spun-down instance runs NO timers, so the 3/5/7 PM scheduler would simply not exist.
     // (daily chat clear runs from the 5 AM PKT interval near the top of the file — single scheduler)
     // Auto re-verify pending deposits (first pass 30s after boot, then every 3 min)
     setTimeout(() => recheckPendingDeposits().catch(() => {}), 30 * 1000);
@@ -5010,7 +5156,7 @@ initDb().then(() => initVapid()).then(() => {
     // Settle due signals for everyone every minute (timely won/lost notifications)
     setInterval(() => settleAllDuePositions().catch(() => {}), 60 * 1000);
     // Time-of-day jobs (checked every minute; each fires once per PKT day)
-    setInterval(() => { sendReferralWindowReminder(); sendDailyAdminSummary(); }, 60 * 1000);
+    setInterval(() => { sendReferralWindowReminder(); sendDailyAdminSummary(); runDailyBackup(); }, 60 * 1000);
     // Auto signal scheduler — fires every 30s, handles 3/5/7 PM PKT windows.
     // On Render's free plan the instance can restart or spin down at any moment, so BOTH the fire
     // time and the close time live in the DB and are re-evaluated on every tick. Nothing important

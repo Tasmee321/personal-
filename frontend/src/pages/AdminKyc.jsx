@@ -333,6 +333,7 @@ const AdminKyc = () => {
     if (!authed) return;
     if (activeTab === 'logs') loadLogs('');
     if (activeTab === 'users') loadBlockedEmails();
+    if (activeTab === 'backup') loadBackups();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, authed]);
 
@@ -759,6 +760,69 @@ This cannot be undone!`)) return;
     } catch (err) { setError(err.message); }
   };
 
+  // ---- Backups ----
+  const [backups, setBackups] = useState([]);
+  const [backupBusy, setBackupBusy] = useState(false);
+
+  const loadBackups = async () => {
+    setBackupBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/backup/list`, { headers: adminHeaders(adminKey) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not list backups');
+      setBackups(data.backups || []);
+    } catch (err) { setError(err.message); }
+    finally { setBackupBusy(false); }
+  };
+
+  const takeBackupNow = async () => {
+    setBackupBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/backup/now`, { method: 'POST', headers: adminHeaders(adminKey) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Backup failed');
+      showToast(`Snapshot saved — ${data.keyCount} keys, ${Math.round(data.bytes / 1024)} KB`);
+      await loadBackups();
+    } catch (err) { setError(err.message); }
+    finally { setBackupBusy(false); }
+  };
+
+  // The endpoint needs the admin key in a header, so this cannot be a plain <a href> — fetch it and
+  // hand the browser a blob instead.
+  const downloadBackup = async (id) => {
+    setBackupBusy(true);
+    try {
+      const url = `${API_URL}/api/admin/backup/download${id ? `?id=${encodeURIComponent(id)}` : ''}`;
+      const res = await fetch(url, { headers: { 'x-admin-key': adminKey } });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Download failed');
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = (res.headers.get('content-disposition') || '').match(/filename="(.+?)"/)?.[1] || 'kynex-backup.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(a.href);
+      showToast('Downloaded — keep this file off the server');
+    } catch (err) { setError(err.message); }
+    finally { setBackupBusy(false); }
+  };
+
+  const restoreBackup = async (id) => {
+    if (!window.confirm(`Restore from ${id}?\n\nThis OVERWRITES the current database with that snapshot. A safety copy of the current data is taken first, so this is undoable.`)) return;
+    if (window.prompt('Type RESTORE to confirm:') !== 'RESTORE') return;
+    setBackupBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/backup/restore`, {
+        method: 'POST', headers: adminHeaders(adminKey), body: JSON.stringify({ id, confirm: 'RESTORE' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Restore failed');
+      showToast(`Restored ${data.restored} keys — safety copy: ${data.safetyCopy}`);
+      await loadBackups();
+      loadAll(adminKey);
+    } catch (err) { setError(err.message); }
+    finally { setBackupBusy(false); }
+  };
+
   const tabs = [
     { key: 'dashboard', label: 'Overview' },
     { key: 'users', label: 'Users' },
@@ -768,6 +832,7 @@ This cannot be undone!`)) return;
     { key: 'signals', label: 'Signals' },
     { key: 'livechat', label: 'Live Chat' },
     { key: 'logs', label: 'Logs' },
+    { key: 'backup', label: 'Backup' },
   ];
 
   const card = {
@@ -2295,6 +2360,58 @@ This cannot be undone!`)) return;
         )}
 
         {/* ── Live Chat Tab ── */}
+        {activeTab === 'backup' && (
+          <>
+            <div style={{ ...card, marginBottom: '16px' }}>
+              <div style={{ fontWeight: 'bold', fontSize: '15px', marginBottom: '6px' }}>Database backup</div>
+              <div style={{ fontSize: '12px', color: theme.subtext, lineHeight: 1.8, marginBottom: '14px' }}>
+                A snapshot is taken automatically every day at <b style={{ color: theme.text }}>4:10 AM PKT</b>; the last 7 are kept.
+                Those snapshots live inside the same database, so they cover a bad write or a mistake — <b style={{ color: theme.text }}>not</b> the
+                database itself being lost. For that, hit <b style={{ color: theme.text }}>Download</b> and keep the file somewhere off this server.
+              </div>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <button onClick={takeBackupNow} disabled={backupBusy} style={btnPrimary}>
+                  {backupBusy ? 'Working…' : '📦 Snapshot now'}
+                </button>
+                <button onClick={() => downloadBackup(null)} disabled={backupBusy} style={btnSuccess}>
+                  ⬇️ Download live data
+                </button>
+                <button onClick={loadBackups} disabled={backupBusy}
+                  style={{ ...btnPrimary, backgroundColor: 'transparent', color: theme.primary, border: `1px solid ${theme.primary}` }}>
+                  ↻ Refresh
+                </button>
+              </div>
+            </div>
+
+            <div style={card}>
+              <div style={{ fontWeight: 'bold', fontSize: '15px', marginBottom: '12px' }}>Snapshots ({backups.length})</div>
+              {backups.length === 0 && (
+                <div style={{ fontSize: '13px', color: theme.subtext }}>
+                  None yet — the first automatic snapshot runs at 4:10 AM PKT, or take one now.
+                </div>
+              )}
+              {backups.map(b => (
+                <div key={b.id} style={{
+                  display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap',
+                  padding: '10px 0', borderBottom: `1px solid ${theme.cardBorder}`,
+                }}>
+                  <div style={{ flex: 1, minWidth: '200px' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 600 }}>
+                      {b.kind === 'daily' ? '🗓️ Daily' : b.kind === 'pre-restore' ? '🛟 Taken before a restore' : '📦 Manual'}
+                      <span style={{ color: theme.subtext, fontWeight: 400 }}> · {Math.round(b.bytes / 1024)} KB</span>
+                    </div>
+                    <div style={{ fontSize: '11px', color: theme.faint, fontFamily: 'monospace' }}>{b.id}</div>
+                  </div>
+                  <button onClick={() => downloadBackup(b.id)} disabled={backupBusy}
+                    style={{ ...btnPrimary, padding: '6px 12px', fontSize: '12px' }}>Download</button>
+                  <button onClick={() => restoreBackup(b.id)} disabled={backupBusy}
+                    style={{ ...btnDanger, padding: '6px 12px', fontSize: '12px' }}>Restore</button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
         {activeTab === 'livechat' && (
           <div className="admin-chat-wrap" style={{ display: 'flex', gap: '16px', height: '600px' }}>
             {/* Thread list */}
