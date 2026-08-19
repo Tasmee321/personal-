@@ -89,6 +89,12 @@ const AdminKyc = () => {
   const [broadcastSending, setBroadcastSending] = useState(false);
   const [broadcastResult, setBroadcastResult] = useState('');
 
+  // Auto Signal Scheduler state
+  const [autoSignalMode, setAutoSignalMode] = useState('manual');
+  const [autoSettleMin, setAutoSettleMin] = useState(15);
+  const [autoSettleMax, setAutoSettleMax] = useState(20);
+  const [autoConfigSaving, setAutoConfigSaving] = useState(false);
+
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
   const prevUnreadRef = useRef(null);
@@ -256,7 +262,7 @@ const AdminKyc = () => {
   const loadAll = useCallback(async (key) => {
     setError('');
     const h = { 'x-admin-key': key };
-    const [u, k, w, s, co, ref, dw, dp] = await Promise.all([
+    const [u, k, w, s, co, ref, dw, dp, asc] = await Promise.all([
       safeFetch(`${API_URL}/api/admin/users`, { headers: h }),
       safeFetch(`${API_URL}/api/admin/kyc/pending`, { headers: h }),
       safeFetch(`${API_URL}/api/admin/withdrawals/pending`, { headers: h }),
@@ -265,6 +271,7 @@ const AdminKyc = () => {
       safeFetch(`${API_URL}/api/admin/referral-active`, { headers: h }),
       safeFetch(`${API_URL}/api/admin/deposit-wallets`, { headers: h }),
       safeFetch(`${API_URL}/api/admin/deposits/pending`, { headers: h }),
+      safeFetch(`${API_URL}/api/admin/auto-signal-config`, { headers: h }),
     ]);
     if (!u.ok) { setError(u.data.error || 'Invalid admin key.'); setAuthed(false); return; }
     setUsers(u.data.users || []);
@@ -280,6 +287,11 @@ const AdminKyc = () => {
     setActiveReferrers(ref.data?.referrers || []);
     if (dw.ok) setDepositWallets(dw.data.wallets || { trc20: '', erc20: '', bep20: '' });
     if (dp.ok) setPendingDeposits(dp.data.pending || []);
+    if (asc.ok) {
+      setAutoSignalMode(asc.data.mode || 'manual');
+      setAutoSettleMin(asc.data.settlementMinMin || 15);
+      setAutoSettleMax(asc.data.settlementMinMax || 20);
+    }
     setAuthed(true);
     sessionStorage.setItem(KEY_STORAGE, key);
     // Load chat threads for badge count
@@ -1781,6 +1793,115 @@ This cannot be undone!`)) return;
 
         {activeTab === 'signals' && (
           <>
+            {/* ── Auto Signal Scheduler ──────────────────────────────────── */}
+            <div style={{ ...card, marginBottom: '16px' }}>
+              <div style={{ fontWeight: 'bold', fontSize: '15px', marginBottom: '4px' }}>⚡ Auto Signal Scheduler</div>
+              <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '14px' }}>
+                Auto mode fires a broadcast + activates signal at a random time within the first 5 minutes
+                of each window (3 PM, 5 PM, 7 PM PKT). Signal auto-deactivates after the settlement window.
+                Manual mode disables all auto behaviour — you control everything.
+              </div>
+
+              {/* Mode Toggle */}
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+                <button
+                  onClick={async () => {
+                    setAutoConfigSaving(true);
+                    const h = adminHeaders(adminKey);
+                    const newMode = 'auto';
+                    await fetch(`${API_URL}/api/admin/auto-signal-config`, {
+                      method: 'POST', headers: h,
+                      body: JSON.stringify({ mode: newMode, settlementMinMin: autoSettleMin, settlementMinMax: autoSettleMax }),
+                    });
+                    setAutoSignalMode(newMode);
+                    setAutoConfigSaving(false);
+                    showToast('Auto mode enabled — scheduler is live');
+                  }}
+                  style={{
+                    flex: 1, padding: '12px', borderRadius: '10px', border: 'none', cursor: 'pointer',
+                    fontWeight: 'bold', fontSize: '14px',
+                    backgroundColor: autoSignalMode === 'auto' ? theme.primary : theme.card,
+                    color: autoSignalMode === 'auto' ? '#fff' : theme.text,
+                    border: `2px solid ${autoSignalMode === 'auto' ? theme.primary : theme.cardBorder}`,
+                  }}
+                >
+                  🤖 Auto Mode
+                </button>
+                <button
+                  onClick={async () => {
+                    setAutoConfigSaving(true);
+                    const h = adminHeaders(adminKey);
+                    const newMode = 'manual';
+                    await fetch(`${API_URL}/api/admin/auto-signal-config`, {
+                      method: 'POST', headers: h,
+                      body: JSON.stringify({ mode: newMode }),
+                    });
+                    setAutoSignalMode(newMode);
+                    setAutoConfigSaving(false);
+                    showToast('Manual mode — scheduler paused');
+                  }}
+                  style={{
+                    flex: 1, padding: '12px', borderRadius: '10px', border: 'none', cursor: 'pointer',
+                    fontWeight: 'bold', fontSize: '14px',
+                    backgroundColor: autoSignalMode === 'manual' ? '#e74c3c' : theme.card,
+                    color: autoSignalMode === 'manual' ? '#fff' : theme.text,
+                    border: `2px solid ${autoSignalMode === 'manual' ? '#e74c3c' : theme.cardBorder}`,
+                  }}
+                >
+                  🖐 Manual Mode
+                </button>
+              </div>
+
+              {/* Settlement window config */}
+              <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '8px', color: theme.text }}>
+                Settlement Window (minutes)
+              </div>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
+                  <label style={{ fontSize: '11px', color: theme.subtext }}>Min Minutes</label>
+                  <input type="number" min="5" max="59" value={autoSettleMin}
+                    onChange={(e) => setAutoSettleMin(Number(e.target.value))}
+                    style={{ ...inputStyle }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
+                  <label style={{ fontSize: '11px', color: theme.subtext }}>Max Minutes</label>
+                  <input type="number" min="5" max="60" value={autoSettleMax}
+                    onChange={(e) => setAutoSettleMax(Number(e.target.value))}
+                    style={{ ...inputStyle }} />
+                </div>
+                <button
+                  onClick={async () => {
+                    setAutoConfigSaving(true);
+                    const h = adminHeaders(adminKey);
+                    await fetch(`${API_URL}/api/admin/auto-signal-config`, {
+                      method: 'POST', headers: h,
+                      body: JSON.stringify({ mode: autoSignalMode, settlementMinMin: autoSettleMin, settlementMinMax: autoSettleMax }),
+                    });
+                    setAutoConfigSaving(false);
+                    showToast('Settlement window saved');
+                  }}
+                  style={{ ...btnPrimary, alignSelf: 'flex-end', whiteSpace: 'nowrap' }}
+                  disabled={autoConfigSaving}
+                >
+                  {autoConfigSaving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+
+              {/* Status summary */}
+              <div style={{
+                padding: '10px 14px', borderRadius: '10px',
+                backgroundColor: autoSignalMode === 'auto' ? 'rgba(0,200,100,0.08)' : 'rgba(231,76,60,0.08)',
+                border: `1px solid ${autoSignalMode === 'auto' ? theme.up : '#e74c3c'}`,
+                fontSize: '12px', color: autoSignalMode === 'auto' ? theme.up : '#e74c3c',
+              }}>
+                {autoSignalMode === 'auto'
+                  ? `✅ Scheduler ACTIVE — signals fire at 3 PM, 5 PM, 7 PM PKT (random within first 5 min). Settlement: ${autoSettleMin}–${autoSettleMax} min.`
+                  : `⛔ Scheduler PAUSED — use the manual controls below to activate/deactivate signals.`
+                }
+              </div>
+            </div>
+            {/* ──────────────────────────────────────────────────────────── */}
+
             {/* Signal on/off */}
             <div style={{ ...card, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
