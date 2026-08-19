@@ -2178,7 +2178,7 @@ This cannot be undone!`)) return;
                       ['Deposit', 'Thanks! Your deposit is being verified on the blockchain — confirmed transactions are credited automatically, usually within a few minutes. If it stays pending, we will review it manually.'],
                       ['Withdrawal', 'Your withdrawal request has been received and is under review. Withdrawals are processed within 24 hours after review.'],
                       ['KYC', 'Please complete KYC in Security → Verification (ID + selfie). Once certified, withdrawals are enabled.'],
-                      ['Volume', 'Signal → Spot transfers are penalty-free once your trading volume (5× of the amount transferred into Signal) is complete. You can see your progress on the Signals page.'],
+                      ['Volume', 'Signal → Spot transfers are penalty-free once your trading volume is complete. Your progress (done / total, remaining USDT and %) is shown on the Signals page and the Transfer page. Until it is complete, a 20% penalty applies on Signal → Spot transfers.'],
                       ['Referral', 'Referral bonus signals can be placed daily between 8:00–8:20 PM (PKT). Unused days are forfeited.'],
                       ['Thanks', 'You are welcome! Let us know if there is anything else we can help with. 😊'],
                     ].map(([label, text]) => (
