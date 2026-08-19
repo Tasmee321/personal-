@@ -808,8 +808,11 @@ const Signals = () => {
                   Stake: {fmtUsd(p.stake)} USDT · Entry: {fmtUsd(p.entryPrice)}
                   {!isCancelled && !isTimedOut && <> → Close: {fmtUsd(p.closePrice)}</>}
                 </div>
-                <div style={{ color: theme.faint, fontSize: '11px', marginTop: '3px' }}>
-                  {fmtClockShort(p.openedAt)} → {fmtClockShort(p.settleAt)} PKT
+                <div style={{ color: theme.faint, fontSize: '11px', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                  <span>{fmtClockShort(p.openedAt)} → {fmtClockShort(p.settleAt)} PKT</span>
+                  <span style={{ color: p.direction === 'up' ? theme.up : theme.down, fontWeight: 'bold' }}>
+                    · {p.pair.replace('USDT','').replace('/','').replace('USDT','')} {p.direction === 'up' ? '▲ UP' : '▼ DOWN'}
+                  </span>
                 </div>
                 {!isCancelled && !isTimedOut && (
                   <div style={{ color: p.won ? theme.up : theme.down, fontSize: '13px', fontWeight: 'bold', marginTop: '4px' }}>
