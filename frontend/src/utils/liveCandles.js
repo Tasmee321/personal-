@@ -49,11 +49,12 @@ export function applyOverrideDrift(c, override, nowMs = Date.now()) {
 // Merge a trade tick (price at tradeTimeMs) into the current candle.
 // Returns the candle to draw, or null if the tick belongs to an older bucket (ignore).
 // `bucketTime` = start of the tick's candle in the chart's time base (seconds, incl. offsets).
-export function mergeTradeTick(lastCandle, price, bucketTime) {
+export function mergeTradeTick(lastCandle, price, bucketTime, qty = 0) {
   if (!Number.isFinite(price)) return null;
+  const q = Number.isFinite(qty) ? qty : 0;
   if (!lastCandle || bucketTime > lastCandle.time) {
     // First tick of a new candle — open at the tick price until the kline stream confirms
-    return { time: bucketTime, open: price, high: price, low: price, close: price };
+    return { time: bucketTime, open: price, high: price, low: price, close: price, volume: q };
   }
   if (bucketTime < lastCandle.time) return null;
   return {
@@ -61,5 +62,6 @@ export function mergeTradeTick(lastCandle, price, bucketTime) {
     close: price,
     high: Math.max(lastCandle.high, price),
     low: Math.min(lastCandle.low, price),
+    volume: (Number(lastCandle.volume) || 0) + q,
   };
 }

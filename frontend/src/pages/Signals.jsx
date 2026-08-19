@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createChart, CandlestickSeries } from 'lightweight-charts';
 import PullIndicator from '../components/PullToRefresh';
 import { usePullToRefresh } from '../utils/usePullToRefresh';
 import { buildChartStreamUrl, applyOverrideDrift, mergeTradeTick } from '../utils/liveCandles';
+import { attachHistoryLoader, klineToCandle } from '../utils/candleHistory';
+import { createCandleChart } from '../utils/candleChart';
 import { Link } from 'react-router-dom';
 import { ChevronDown, Search, X, Settings } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
@@ -166,8 +167,7 @@ const Signals = () => {
   const [placingBonus, setPlacingBonus] = useState(false);
 
   const chartContainerRef = useRef(null);
-  const chartRef = useRef(null);
-  const seriesRef = useRef(null);
+  const chartRef = useRef(null); // createCandleChart() api
 
   const priceBufferRef = useRef({});
   const pendingKlinesRef = useRef(null);
@@ -252,21 +252,26 @@ const Signals = () => {
   useEffect(() => {
     let cancelled = false;
     const minutes = Math.ceil(MARKET_DATA_DELAY_MS / 60_000) + 5;
-    COINS.forEach(async (coin) => {
-      try {
-        const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=${coin.symbol}&interval=1m&limit=${minutes}`);
-        const raw = await res.json();
-        if (cancelled || !Array.isArray(raw) || !raw.length) return;
-        const buf = priceBufferRef.current[coin.symbol] || (priceBufferRef.current[coin.symbol] = []);
-        const first = parseFloat(raw[0][4]) || parseFloat(raw[0][1]);
-        raw.forEach((k) => {
-          const close = parseFloat(k[4]);
-          buf.push({ ts: k[0], price: close, change: first ? ((close - first) / first) * 100 : 0 });
-        });
-        buf.sort((a, b) => a.ts - b.ts);
-      } catch { /* live buffer fills in */ }
-    });
-    return () => { cancelled = true; };
+    // Seed the price buffer for every coin — but only AFTER the main chart has had a chance to
+    // paint. Firing 21 Binance requests at mount competed with the chart's own history request
+    // and made the first (BTC/ETH) load feel slow. The ticker WS fills prices within ~1s anyway.
+    const timer = setTimeout(() => {
+      COINS.forEach(async (coin) => {
+        try {
+          const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=${coin.symbol}&interval=1m&limit=${minutes}`);
+          const raw = await res.json();
+          if (cancelled || !Array.isArray(raw) || !raw.length) return;
+          const buf = priceBufferRef.current[coin.symbol] || (priceBufferRef.current[coin.symbol] = []);
+          const first = parseFloat(raw[0][4]) || parseFloat(raw[0][1]);
+          raw.forEach((k) => {
+            const close = parseFloat(k[4]);
+            buf.push({ ts: k[0], price: close, change: first ? ((close - first) / first) * 100 : 0 });
+          });
+          buf.sort((a, b) => a.ts - b.ts);
+        } catch { /* live buffer fills in */ }
+      });
+    }, 2500);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, []);
 
   useEffect(() => {
@@ -292,86 +297,87 @@ const Signals = () => {
 
   useEffect(() => {
     if (!chartContainerRef.current) return undefined;
-    const chart = createChart(chartContainerRef.current, {
-      layout: { background: { color: 'transparent' }, textColor: theme.subtext },
-      grid: { vertLines: { color: theme.cardBorder }, horzLines: { color: theme.cardBorder } },
-      width: chartContainerRef.current.clientWidth,
-      height: 260,
-      timeScale: { timeVisible: true, secondsVisible: false },
-      crosshair: { mode: 0 },
-    });
-    const series = chart.addSeries(CandlestickSeries, {
-      upColor: theme.up, downColor: theme.down, borderVisible: false,
-      wickUpColor: theme.up, wickDownColor: theme.down,
-    });
-    chartRef.current = chart;
-    seriesRef.current = series;
-    const handleResize = () => {
-      if (chartContainerRef.current) chart.applyOptions({ width: chartContainerRef.current.clientWidth });
-    };
-    window.addEventListener('resize', handleResize);
+    const container = chartContainerRef.current;
+    // Shared Binance/OKX-style chart: candles + MA(7/25/99) + volume pane + OHLC legend
+    const api = createCandleChart(container, { theme, height: 300 });
+    chartRef.current = api;
+    const ro = new ResizeObserver(() => { if (chartRef.current) chartRef.current.resize(container.clientWidth); });
+    ro.observe(container);
     return () => {
-      window.removeEventListener('resize', handleResize);
-      chart.remove();
+      ro.disconnect();
+      api.remove();
       chartRef.current = null;
-      seriesRef.current = null;
     };
   }, [theme]);
 
   useEffect(() => {
+    if (!chartRef.current) return undefined; // chart effect above runs first; guard anyway
     let cancelled = false;
     let ws;
     const pending = [];
     pendingKlinesRef.current = pending;
     lastRawCandleRef.current = null;
     latestTickRef.current = null;
-    const load = async () => {
-      try {
-        const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=${selectedCoin.symbol}&interval=1m&limit=120`);
-        const raw = await res.json();
-        if (cancelled || !seriesRef.current) return;
-        const cutoffSec = Math.floor((Date.now() - MARKET_DATA_DELAY_MS) / 1000);
-        const shiftSec = Math.floor(MARKET_DATA_DELAY_MS / 1000);
-        const candles = raw.map((k) => ({
-          time: Math.floor(k[0] / 1000) + shiftSec + PKT_OFFSET_SEC,
-          open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]),
-        }));
-        const shown = candles.filter((c) => (c.time - shiftSec - PKT_OFFSET_SEC) <= cutoffSec);
-        seriesRef.current.setData(shown);
-        lastRawCandleRef.current = shown.length ? { ...shown[shown.length - 1] } : null;
-        candles.filter((c) => (c.time - shiftSec - PKT_OFFSET_SEC) > cutoffSec).forEach((c) => {
-          pending.push({ eventTime: (c.time - shiftSec - PKT_OFFSET_SEC) * 1000, candle: c });
-        });
-        chartRef.current?.timeScale().fitContent();
-      } catch { /* silent */ }
-      // Combined stream: kline_1m (source of truth every ~2s) + aggTrade (every trade → fluid candle)
+    const shiftSec = Math.floor(MARKET_DATA_DELAY_MS / 1000);
+    const toCandle = (k) => klineToCandle(k, shiftSec + PKT_OFFSET_SEC);
+
+    // Combined stream: kline_1m (source of truth every ~2s) + aggTrade (every trade → fluid candle).
+    // Auto-reconnects so the chart never silently freezes on a dropped connection.
+    let reconnectTimer = null;
+    const connectWs = () => {
+      if (cancelled) return;
+      if (ws) { try { ws.close(); } catch { /* ignore */ } }
       ws = new WebSocket(buildChartStreamUrl(selectedCoin.symbol, '1m'));
       ws.onmessage = (event) => {
         let msg; try { msg = JSON.parse(event.data); } catch { return; }
         const data = msg?.data;
         if (!data) return;
-        const shiftSec = Math.floor(MARKET_DATA_DELAY_MS / 1000);
         if (data.e === 'kline' && data.k) {
           const k = data.k;
           pending.push({
             eventTime: data.E || Date.now(),
-            candle: { time: Math.floor(k.t / 1000) + shiftSec + PKT_OFFSET_SEC, open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c) },
+            candle: { time: Math.floor(k.t / 1000) + shiftSec + PKT_OFFSET_SEC, open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c), volume: parseFloat(k.v) || 0 },
           });
         } else if (data.e === 'aggTrade') {
           // Only the latest tick matters — coalesce (BTC can push dozens per second)
           const t = Number(data.T || data.E || Date.now());
-          latestTickRef.current = { price: parseFloat(data.p), bucketTime: Math.floor(t / 60000) * 60 + shiftSec + PKT_OFFSET_SEC, eventTime: t };
+          latestTickRef.current = { price: parseFloat(data.p), qty: parseFloat(data.q) || 0, bucketTime: Math.floor(t / 60000) * 60 + shiftSec + PKT_OFFSET_SEC, eventTime: t };
         }
       };
+      const scheduleReconnect = () => { if (!cancelled && !reconnectTimer) reconnectTimer = setTimeout(() => { reconnectTimer = null; connectWs(); }, 2000); };
+      ws.onerror = scheduleReconnect;
+      ws.onclose = scheduleReconnect;
     };
-    const initial = setTimeout(load, 0);
-    return () => { cancelled = true; clearTimeout(initial); if (ws) ws.close(); pendingKlinesRef.current = null; };
+
+    // WS first (don't wait on REST), then progressive history: small fast first paint,
+    // then backfills older candles up to HISTORY_DAYS as the user scrolls back.
+    connectWs();
+    const disposeHistory = attachHistoryLoader({
+      target: chartRef.current, symbol: selectedCoin.symbol, interval: '1m', toCandle,
+      onInitial: (candles) => {
+        const cutoffSec = Math.floor((Date.now() - MARKET_DATA_DELAY_MS) / 1000);
+        const shown = candles.filter((c) => (c.time - shiftSec - PKT_OFFSET_SEC) <= cutoffSec);
+        lastRawCandleRef.current = shown.length ? { ...shown[shown.length - 1] } : null;
+        candles.filter((c) => (c.time - shiftSec - PKT_OFFSET_SEC) > cutoffSec).forEach((c) => {
+          pending.push({ eventTime: (c.time - shiftSec - PKT_OFFSET_SEC) * 1000, candle: c });
+        });
+        return shown;
+      },
+    });
+
+    return () => {
+      cancelled = true;
+      disposeHistory();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (ws) { ws.onclose = null; ws.onerror = null; ws.close(); }
+      pendingKlinesRef.current = null;
+    };
   }, [selectedCoin, themeMode]);
 
   useEffect(() => {
     const interval = setInterval(() => {
       const pending = pendingKlinesRef.current;
-      if (!pending || !seriesRef.current) return;
+      if (!pending || !chartRef.current) return;
       const cutoff = Date.now() - MARKET_DATA_DELAY_MS;
       const override = candleOverridesRef.current.find(o => o.symbol === selectedCoin.symbol);
       let toDraw = null;
@@ -388,13 +394,13 @@ const Signals = () => {
       const tick = latestTickRef.current;
       if (tick && (noDelay || tick.eventTime <= cutoff)) {
         latestTickRef.current = null;
-        const merged = mergeTradeTick(lastRawCandleRef.current, tick.price, tick.bucketTime);
+        const merged = mergeTradeTick(lastRawCandleRef.current, tick.price, tick.bucketTime, tick.qty);
         if (merged) { lastRawCandleRef.current = merged; toDraw = merged; }
       }
       if (!toDraw) return;
       // Admin override bias — deterministic per candle (no per-tick jitter), gentle wobble
       const c = override ? applyOverrideDrift(toDraw, override) : toDraw;
-      seriesRef.current.update(c);
+      chartRef.current.update(c);
     }, 80);
     return () => clearInterval(interval);
   }, [selectedCoin]);
@@ -538,7 +544,7 @@ const Signals = () => {
 
       {/* Chart */}
       <div style={{ ...glassCard(theme), marginBottom: '14px', overflow: 'hidden' }}>
-        <div ref={chartContainerRef} style={{ minHeight: '260px' }} />
+        <div ref={chartContainerRef} style={{ minHeight: '300px', position: 'relative' }} />
         <div style={{ textAlign: 'right', padding: '4px 12px 6px', fontSize: '10px', color: theme.faint, fontWeight: '600', borderTop: `1px solid ${theme.cardBorder}` }}>PKT (UTC+5)</div>
       </div>
 

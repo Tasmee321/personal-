@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
-import { createChart, CandlestickSeries } from 'lightweight-charts';
 import { AlertTriangle, ChevronDown, Search, X, Settings } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
 import { CoinIcon } from '../components/CoinIcons';
@@ -29,10 +28,10 @@ function fmt(n, digits = 2) {
 
 const PKT_OFFSET_SEC = 5 * 60 * 60;
 import { buildChartStreamUrl, applyOverrideDrift, mergeTradeTick, TF_SECONDS } from '../utils/liveCandles';
+import { attachHistoryLoader, klineToCandle } from '../utils/candleHistory';
+import { createCandleChart } from '../utils/candleChart';
 
-function toCandle(k) {
-  return { time: Math.floor(k[0] / 1000) + PKT_OFFSET_SEC, open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]) };
-}
+const toCandle = (k) => klineToCandle(k, PKT_OFFSET_SEC);
 
 function glassCard(theme) {
   return {
@@ -229,8 +228,7 @@ const Trade = () => {
   const [error, setError] = useState('');
 
   const chartContainerRef = useRef(null);
-  const chartRef = useRef(null);
-  const seriesRef = useRef(null);
+  const chartRef = useRef(null); // createCandleChart() api
   const candleOverridesRef = useRef([]);
 
   const loadAccount = useCallback(async () => {
@@ -284,61 +282,26 @@ const Trade = () => {
     const tfSec = TF_SECONDS[timeframe] || 60;
 
     const container = chartContainerRef.current;
-    const chart = createChart(container, {
-      layout: {
-        background: { color: 'transparent' },
-        textColor: theme.subtext,
-        fontFamily: "'Inter', 'SF Pro Display', sans-serif",
-      },
-      grid: {
-        vertLines: { color: theme.cardBorder, style: 1 },
-        horzLines: { color: theme.cardBorder, style: 1 },
-      },
-      width: container.clientWidth,
-      height: 280,
-      timeScale: {
-        timeVisible: true,
-        secondsVisible: true, // show seconds so live movement is visible
-        borderColor: theme.cardBorder,
-        rightOffset: 5,
-        barSpacing: 8,
-      },
-      rightPriceScale: {
-        borderColor: theme.cardBorder,
-        scaleMargins: { top: 0.08, bottom: 0.08 },
-      },
-      crosshair: {
-        mode: 1,
-        vertLine: { color: theme.primary, labelBackgroundColor: theme.primary },
-        horzLine: { color: theme.primary, labelBackgroundColor: theme.primary },
-      },
-      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true },
-      handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
-    });
-
-    const series = chart.addSeries(CandlestickSeries, {
-      upColor: theme.up,
-      downColor: theme.down,
-      borderVisible: false,
-      wickUpColor: theme.up,
-      wickDownColor: theme.down,
-    });
-    chartRef.current = chart;
-    seriesRef.current = series;
+    // Shared Binance/OKX-style chart: candles + MA(7/25/99) + volume pane + OHLC legend
+    const api = createCandleChart(container, { theme, height: 320 });
+    chartRef.current = api;
 
     // Resize observer — more reliable than window resize for mobile
     const ro = new ResizeObserver(() => {
-      if (container && chartRef.current) {
-        chartRef.current.applyOptions({ width: container.clientWidth });
-      }
+      if (container && chartRef.current) chartRef.current.resize(container.clientWidth);
     });
     ro.observe(container);
 
-    // rAF-based drain: apply pending WS tick at 60fps, never block
-    const drainLoop = () => {
-      if (pendingUpdate && seriesRef.current) {
-        seriesRef.current.update(pendingUpdate);
+    // rAF-based drain of the latest WS tick, throttled to ~12 draws/sec. BTC/ETH push hundreds
+    // of trades a second; repainting on every frame made low-end phones lag while still looking
+    // no smoother than ~12fps for a single moving candle.
+    const DRAW_EVERY_MS = 80;
+    let lastDrawAt = 0;
+    const drainLoop = (now) => {
+      if (pendingUpdate && chartRef.current && now - lastDrawAt >= DRAW_EVERY_MS) {
+        chartRef.current.update(pendingUpdate);
         pendingUpdate = null;
+        lastDrawAt = now;
       }
       animFrameId = requestAnimationFrame(drainLoop);
     };
@@ -349,19 +312,19 @@ const Trade = () => {
       // Combined stream: kline (authoritative OHLC every ~2s) + aggTrade (every trade → fluid candle)
       ws = new WebSocket(buildChartStreamUrl(selectedCoin.symbol, timeframe));
       ws.onmessage = (event) => {
-        if (cancelled || !seriesRef.current) return;
+        if (cancelled || !chartRef.current) return;
         let msg; try { msg = JSON.parse(event.data); } catch { return; }
         const data = msg?.data;
         if (!data) return;
         let c;
         if (data.e === 'kline' && data.k) {
           const k = data.k;
-          c = { time: Math.floor(k.t / 1000) + PKT_OFFSET_SEC, open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c) };
+          c = { time: Math.floor(k.t / 1000) + PKT_OFFSET_SEC, open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c), volume: parseFloat(k.v) || 0 };
           lastRawCandle = c;
         } else if (data.e === 'aggTrade') {
           const t = Number(data.T || data.E || Date.now());
           const bucket = Math.floor(t / 1000 / tfSec) * tfSec + PKT_OFFSET_SEC;
-          const merged = mergeTradeTick(lastRawCandle, parseFloat(data.p), bucket);
+          const merged = mergeTradeTick(lastRawCandle, parseFloat(data.p), bucket, parseFloat(data.q));
           if (!merged) return;
           lastRawCandle = merged;
           c = merged;
@@ -379,33 +342,24 @@ const Trade = () => {
       };
     };
 
-    // Kick off: fetch history and WS in parallel
-    const load = async () => {
-      // Start WS immediately — don't wait for REST
-      connectWs();
-      try {
-        const res = await fetch(
-          `https://api.binance.com/api/v3/klines?symbol=${selectedCoin.symbol}&interval=${timeframe}&limit=200`,
-          { cache: 'no-store' }
-        );
-        const raw = await res.json();
-        if (cancelled || !seriesRef.current || !Array.isArray(raw)) return;
-        const hist = raw.map(toCandle);
-        seriesRef.current.setData(hist);
+    // Kick off: WS immediately (don't wait for REST) + progressive history
+    // (fast small first paint, then backfills up to HISTORY_DAYS as the user scrolls back)
+    connectWs();
+    const disposeHistory = attachHistoryLoader({
+      target: api, symbol: selectedCoin.symbol, interval: timeframe, toCandle,
+      onInitial: (hist) => {
         if (hist.length && (!lastRawCandle || hist[hist.length - 1].time >= lastRawCandle.time)) lastRawCandle = { ...hist[hist.length - 1] };
-        chartRef.current?.timeScale().fitContent();
-      } catch { /* WS keeps it live even if REST fails */ }
-    };
-    load();
+      },
+    });
 
     return () => {
       cancelled = true;
+      disposeHistory();
       ro.disconnect();
       if (animFrameId) cancelAnimationFrame(animFrameId);
       if (ws) { try { ws.close(); } catch (_) {} }
-      try { chart.remove(); } catch (_) {}
+      try { api.remove(); } catch (_) {}
       chartRef.current = null;
-      seriesRef.current = null;
     };
   }, [theme, selectedCoin, timeframe]);
 
@@ -481,7 +435,7 @@ const Trade = () => {
 
       {/* Chart */}
       <div style={{ ...glassCard(theme), marginBottom: '14px', overflow: 'hidden' }}>
-        <div ref={chartContainerRef} style={{ borderRadius: '16px 16px 0 0', minHeight: '260px', width: '100%', position: 'relative' }} />
+        <div ref={chartContainerRef} style={{ borderRadius: '16px 16px 0 0', minHeight: '320px', width: '100%', position: 'relative' }} />
         {/* Timeframe selector */}
         <div style={{ display: 'flex', gap: '4px', padding: '8px 12px', borderTop: `1px solid ${theme.cardBorder}`, alignItems: 'center' }}>
           <span style={{ fontSize: '10px', color: theme.faint, fontWeight: '600', marginRight: '4px' }}>PKT</span>
