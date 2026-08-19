@@ -517,7 +517,8 @@ const Signals = () => {
                 <div style={{ height: '100%', borderRadius: '3px', background: done ? theme.upGradient : theme.brandGradient, width: `${pct}%`, transition: 'width 0.4s ease' }} />
               </div>
               <div style={{ fontSize: '10px', color: theme.faint, marginTop: '4px' }}>
-                {done ? 'Signal → Spot transfers are penalty-free' : `${fmtUsd(remaining)} USDT remaining to unlock penalty-free transfer`}
+                {fmtUsd(volumeData.tradedVolume)} / {fmtUsd(volumeData.requiredVolume)} USDT
+                {done ? ' · Signal → Spot transfers are penalty-free' : ` · ${fmtUsd(remaining)} USDT more to unlock penalty-free transfer`}
               </div>
             </div>
           );
