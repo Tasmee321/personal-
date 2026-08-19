@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Zap, TrendingUp, Shield, Globe, Award, Smartphone, RefreshCw, Wifi, HardDrive, Download as DownloadIcon, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Zap, TrendingUp, Shield, Globe, Smartphone, RefreshCw, Wifi, HardDrive, Download as DownloadIcon, CheckCircle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { CoinIcon } from '../components/CoinIcons';
 import { useTheme } from '../ThemeContext';
@@ -15,126 +15,6 @@ const FloatingCoin = ({ symbol, size, top, left, right, bottom, delay, duration 
     <CoinIcon symbol={symbol} size={size} />
   </div>
 );
-
-const MINI_SIGNERS = ['M. Lehmann', 'J. Whitfield', 'R. Hernandez', 'K. Lim Wei', 'H. Al-Maktoum', 'A. Schmidt'];
-
-const MiniSigSVG = ({ idx }) => {
-  const s = { fill:'none', strokeLinecap:'round', strokeLinejoin:'round' };
-  switch (idx) {
-    case 0: return <svg width="50" height="16" viewBox="0 0 50 16"><path d="M3,12 C6,2 10,2 12,8 C13,11 11,14 9,12 C7,10 10,4 15,5 C20,6 18,12 22,10 C26,8 24,4 28,6 C32,8 30,12 34,10 C38,8 42,4 46,8" stroke="#1a1a1a" strokeWidth="1.1" opacity="0.55" {...s} /></svg>;
-    case 1: return <svg width="50" height="16" viewBox="0 0 50 16"><path d="M4,10 L9,3 L13,10 L17,2 L21,9 L25,4 L29,10 L32,6" stroke="#111" strokeWidth="1.4" opacity="0.5" {...s} /><circle cx="36" cy="8" r="1.2" fill="#111" opacity="0.3" /></svg>;
-    case 2: return <svg width="50" height="16" viewBox="0 0 50 16"><path d="M5,14 L5,3 C5,2 8,1 10,3 C12,5 10,8 7,8 L5,8" stroke="#222" strokeWidth="1.5" opacity="0.5" {...s} /><path d="M7,8 L13,14" stroke="#222" strokeWidth="1.2" opacity="0.45" {...s} /><path d="M15,10 C18,6 21,10 24,8 C27,6 30,10 34,8 C38,6 42,10 46,8" stroke="#222" strokeWidth="0.9" opacity="0.35" {...s} /></svg>;
-    case 3: return <svg width="50" height="16" viewBox="0 0 50 16"><path d="M6,8 C7,4 9,4 10,7 C11,10 9,11 10,8 C11,5 13,5 14,8 C15,11 13,12 14,8 C15,5 17,4 18,7 C19,10 17,12 20,8 C22,6 24,6 26,8" stroke="#1a1a1a" strokeWidth="1.3" opacity="0.45" {...s} /><path d="M28,8 L38,8" stroke="#1a1a1a" strokeWidth="0.6" opacity="0.25" strokeDasharray="1.5,2" /></svg>;
-    case 4: return <svg width="50" height="16" viewBox="0 0 50 16"><path d="M7,10 C10,3 15,3 18,7 C21,11 17,14 14,11 C11,8 16,4 22,6 C28,8 26,12 30,10 C34,8 32,4 38,8 C42,10 40,14 44,10" stroke="#111" strokeWidth="1.1" opacity="0.45" {...s} /><circle cx="20" cy="4" r="1" fill="#111" opacity="0.35" /></svg>;
-    case 5: return <svg width="50" height="16" viewBox="0 0 50 16"><path d="M10,14 L16,3 L22,14" stroke="#1a1a1a" strokeWidth="1.4" opacity="0.5" {...s} /><path d="M13,10 L19,10" stroke="#1a1a1a" strokeWidth="1" opacity="0.4" /><path d="M24,4 C24,4 28,3 29,6 C30,9 26,10 26,10 C26,10 30,11 30,8 C30,5 26,14 30,14" stroke="#1a1a1a" strokeWidth="1.2" opacity="0.45" {...s} /><path d="M8,15 L34,15" stroke="#1a1a1a" strokeWidth="0.5" opacity="0.25" /></svg>;
-    default: return <svg width="50" height="16" viewBox="0 0 50 16"><path d="M5,10 Q15,2 25,10 Q35,18 45,10" stroke="#222" strokeWidth="1" opacity="0.4" {...s} /></svg>;
-  }
-};
-
-const MiniStampSVG = ({ idx, color }) => {
-  const s = 34;
-  switch (idx) {
-    case 0: return <svg width={s} height={s} viewBox="0 0 34 34" style={{transform:'rotate(-12deg)'}}><circle cx="17" cy="17" r="15" fill="none" stroke={color} strokeWidth="1.5" opacity="0.28" /><rect x="14.5" y="9" width="5" height="16" rx="0.5" fill={color} opacity="0.18" /><rect x="9" y="14.5" width="16" height="5" rx="0.5" fill={color} opacity="0.18" /></svg>;
-    case 1: return <svg width={s} height={s} viewBox="0 0 34 34" style={{transform:'rotate(-8deg)'}}><rect x="3" y="5" width="28" height="24" rx="2" fill="none" stroke={color} strokeWidth="1.5" opacity="0.28" /><text x="17" y="16" textAnchor="middle" fontSize="6" fill={color} opacity="0.3" fontWeight="800">FCA</text><line x1="8" y1="19" x2="26" y2="19" stroke={color} strokeWidth="0.5" opacity="0.2" /><text x="17" y="25" textAnchor="middle" fontSize="3.5" fill={color} opacity="0.22">REGISTERED</text></svg>;
-    case 2: return <svg width={s} height={s} viewBox="0 0 34 34" style={{transform:'rotate(-18deg)'}}><circle cx="17" cy="17" r="15" fill="none" stroke={color} strokeWidth="1.5" opacity="0.25" /><circle cx="17" cy="17" r="11" fill="none" stroke={color} strokeWidth="1" opacity="0.18" />{[0,72,144,216,288].map((a,i)=>{const r=13.5,rad=a*Math.PI/180;return <text key={i} x={17+Math.cos(rad)*r} y={17+Math.sin(rad)*r} textAnchor="middle" fontSize="3.5" fill={color} opacity="0.2">★</text>})}<text x="17" y="16" textAnchor="middle" fontSize="5" fill={color} opacity="0.3" fontWeight="800">MSB</text></svg>;
-    case 3: return <svg width={s} height={s} viewBox="0 0 34 34" style={{transform:'rotate(-6deg)'}}><circle cx="17" cy="17" r="15" fill="none" stroke={color} strokeWidth="1.5" opacity="0.28" strokeDasharray="3,1.5" /><circle cx="17" cy="17" r="11" fill="none" stroke={color} strokeWidth="0.8" opacity="0.2" /><text x="17" y="16" textAnchor="middle" fontSize="6.5" fill={color} opacity="0.3" fontWeight="900">MAS</text><text x="17" y="23" textAnchor="middle" fontSize="3" fill={color} opacity="0.2">LICENSED</text></svg>;
-    case 4: return <svg width={s} height={s} viewBox="0 0 34 34" style={{transform:'rotate(-15deg)'}}><polygon points="17,2 30,10 30,24 17,32 4,24 4,10" fill="none" stroke={color} strokeWidth="1.5" opacity="0.28" /><text x="17" y="16" textAnchor="middle" fontSize="5.5" fill={color} opacity="0.3" fontWeight="800">VARA</text><text x="17" y="22" textAnchor="middle" fontSize="3" fill={color} opacity="0.2">DUBAI</text></svg>;
-    case 5: return <svg width={s} height={s} viewBox="0 0 34 34" style={{transform:'rotate(-10deg)'}}>{Array.from({length:8}).map((_,i)=>{const a=i*45*Math.PI/180;return <line key={i} x1={17+Math.cos(a)*9} y1={17+Math.sin(a)*9} x2={17+Math.cos(a)*14} y2={17+Math.sin(a)*14} stroke={color} strokeWidth="3" opacity="0.1" strokeLinecap="round" />})}<circle cx="17" cy="17" r="9" fill="none" stroke={color} strokeWidth="1.2" opacity="0.22" /><text x="17" y="16" textAnchor="middle" fontSize="5.5" fill={color} opacity="0.3" fontWeight="800">ISO</text><text x="17" y="22" textAnchor="middle" fontSize="3" fill={color} opacity="0.18">27001</text></svg>;
-    default: return <svg width={s} height={s} viewBox="0 0 34 34"><circle cx="17" cy="17" r="14" fill="none" stroke={color} strokeWidth="1.5" opacity="0.25" /></svg>;
-  }
-};
-
-const MINI_PATTERNS = [
-  (g) => `repeating-linear-gradient(45deg, ${g} 0px, ${g} 1px, transparent 1px, transparent 12px)`,
-  (g) => `repeating-linear-gradient(-45deg, ${g} 0px, ${g} 0.5px, transparent 0.5px, transparent 9px), repeating-linear-gradient(45deg, ${g} 0px, ${g} 0.5px, transparent 0.5px, transparent 9px)`,
-  (g) => `repeating-radial-gradient(circle at 50% 50%, transparent 0px, transparent 7px, ${g} 7px, ${g} 8px, transparent 8px, transparent 15px)`,
-  (g) => `repeating-linear-gradient(0deg, ${g} 0px, ${g} 0.5px, transparent 0.5px, transparent 5px), repeating-linear-gradient(90deg, ${g} 0px, ${g} 0.5px, transparent 0.5px, transparent 5px)`,
-  (g) => `repeating-linear-gradient(60deg, ${g} 0px, ${g} 0.6px, transparent 0.6px, transparent 10px)`,
-  (g) => `repeating-linear-gradient(30deg, ${g} 0px, ${g} 0.5px, transparent 0.5px, transparent 7px), repeating-linear-gradient(150deg, ${g} 0px, ${g} 0.5px, transparent 0.5px, transparent 7px)`,
-];
-
-const MiniSealSVG = ({ idx, color }) => {
-  const cx=24, cy=24;
-  const gold = '#B8973B';
-  return <svg width="48" height="48" viewBox="0 0 48 48">
-    {Array.from({length:24}).map((_,i) => {
-      const a = (i*15)*Math.PI/180, r1=22, r2=i%2===0?19:17;
-      return <line key={i} x1={cx+Math.cos(a)*r2} y1={cy+Math.sin(a)*r2} x2={cx+Math.cos(a)*r1} y2={cy+Math.sin(a)*r1} stroke={gold} strokeWidth="1.2" opacity="0.45" />;
-    })}
-    <circle cx={cx} cy={cy} r="17" fill="none" stroke={color} strokeWidth="1.5" />
-    <circle cx={cx} cy={cy} r="13" fill={color} opacity="0.06" />
-    {idx===0 && <><rect x="21" y="14" width="6" height="20" rx="0.5" fill={color} opacity="0.4" /><rect x="14" y="21" width="20" height="6" rx="0.5" fill={color} opacity="0.4" /></>}
-    {idx===1 && <path d="M16,30 L17.5,20 L20,25 L22,18 L24,22 L26,18 L28,25 L30.5,20 L32,30 Z" fill={color} opacity="0.4" />}
-    {idx===2 && <><path d="M24,14 L32,20 L32,28 C32,32 28,34 24,36 C20,34 16,32 16,28 L16,20 Z" fill={color} opacity="0.3" /><polygon points="24,20 25.5,24 30,24 26.5,27 27.5,31 24,28.5 20.5,31 21.5,27 18,24 22.5,24" fill="white" opacity="0.5" /></>}
-    {idx===3 && <><polygon points="24,12 27,20 36,20 29,26 31,34 24,29 17,34 19,26 12,20 21,20" fill={color} opacity="0.4" /><circle cx="24" cy="24" r="4" fill="white" opacity="0.5" /></>}
-    {idx===4 && <><circle cx="24" cy="25" r="10" fill={color} opacity="0.25" /><circle cx="28" cy="22" r="8" fill="#FFFEF7" opacity="0.85" /><polygon points="22,17 23,20.5 26,20.5 23.5,23 24.5,26.5 22,24 19.5,26.5 20.5,23 18,20.5 21,20.5" fill={color} opacity="0.45" /></>}
-    {idx===5 && <>{Array.from({length:6}).map((_,i)=>{const a=i*60*Math.PI/180;return <line key={i} x1={24+Math.cos(a)*7} y1={24+Math.sin(a)*7} x2={24+Math.cos(a)*13} y2={24+Math.sin(a)*13} stroke={color} strokeWidth="3.5" opacity="0.15" strokeLinecap="round" />})}<circle cx="24" cy="24" r="7" fill={color} opacity="0.2" /><circle cx="24" cy="24" r="4" fill="white" opacity="0.4" /></>}
-  </svg>;
-};
-
-const CertBadge = ({ title, body, regNo, color, seal, idx }) => {
-  const gold = '#B8973B';
-  const pat = MINI_PATTERNS[idx % MINI_PATTERNS.length];
-  const signerName = MINI_SIGNERS[idx % MINI_SIGNERS.length];
-
-  return (
-    <div style={{
-      background: '#FFFEF7',
-      borderRadius: '4px',
-      border: `2.5px solid ${gold}`,
-      padding: '3px',
-      boxShadow: '0 2px 12px rgba(0,0,0,0.12)',
-    }}>
-      <div style={{
-        border: `1.5px solid ${gold}88`,
-        borderRadius: '3px',
-        padding: '18px 16px 14px',
-        position: 'relative',
-        overflow: 'hidden',
-        minHeight: '180px',
-      }}>
-        <div style={{ position:'absolute', inset:0, opacity:0.025, pointerEvents:'none', backgroundImage:pat(gold) }} />
-        {[{t:2,l:2,s:''},{t:2,r:2,s:'scaleX(-1)'},{b:2,l:2,s:'scaleY(-1)'},{b:2,r:2,s:'scale(-1)'}].map((pos,pi) => (
-          <svg key={pi} style={{position:'absolute',top:pos.t,bottom:pos.b,left:pos.l,right:pos.r,transform:pos.s}} width="28" height="28" viewBox="0 0 28 28">
-            <path d="M0,0 L28,0 L28,4 Q14,4 4,14 L4,28 L0,28 Z" fill={gold} opacity="0.2" />
-            <path d="M0,0 L18,0 L18,3 Q10,3 3,10 L3,18 L0,18 Z" fill={gold} opacity="0.35" />
-            <circle cx="4" cy="4" r="1.5" fill={gold} opacity="0.4" />
-          </svg>
-        ))}
-        <div style={{ textAlign:'center', marginBottom:'8px' }}>
-          <MiniSealSVG idx={idx} color={color} />
-        </div>
-        <div style={{ textAlign:'center', marginBottom:'4px' }}>
-          <div style={{ fontSize:'7px', letterSpacing:'2.5px', color:'#888', textTransform:'uppercase', marginBottom:'4px' }}>{seal}</div>
-          <div style={{ fontSize:'11px', fontWeight:'700', color:'#1a1a1a', fontFamily:'Georgia, "Times New Roman", serif', lineHeight:1.3 }}>{title}</div>
-        </div>
-        <div style={{ textAlign:'center', fontSize:'8.5px', color:'#555', lineHeight:'1.6', margin:'8px 0', fontFamily:'Georgia, "Times New Roman", serif' }}>
-          <div style={{ fontWeight:'700', color:'#111', fontSize:'11px', letterSpacing:'1.5px', margin:'4px 0' }}>KYNEX AG</div>
-          <div>{body}</div>
-        </div>
-        <div style={{ textAlign:'center', margin:'8px 0 6px' }}>
-          <span style={{ fontSize:'7px', color:'#777', letterSpacing:'0.8px', fontFamily:'monospace', background:`${gold}11`, padding:'3px 8px', borderRadius:'2px', border:`1px solid ${gold}22` }}>{regNo}</span>
-        </div>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginTop:'10px' }}>
-          <div style={{ fontSize:'7px', color:'#999' }}>
-            <MiniSigSVG idx={idx} />
-            <div style={{ borderTop:'1px solid #ccc', paddingTop:'2px', width:'50px', fontSize:'6.5px' }}>{signerName}</div>
-          </div>
-          <MiniStampSVG idx={idx} color={color} />
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const CERTS = [
-  { title: 'FINMA VASP Registration', body: 'Registered Virtual Asset Service Provider under Swiss Anti-Money Laundering Act', regNo: 'CHE-384.719.528', color: '#D52B1E', seal: 'Swiss Confederation' },
-  { title: 'FCA Cryptoasset Registration', body: 'Registered under Money Laundering Regulations 2017 for Cryptoasset Exchange', regNo: 'FRN: 924817', color: '#003087', seal: 'United Kingdom' },
-  { title: 'FinCEN MSB Registration', body: 'Money Services Business — Money Transmission & Virtual Currency', regNo: 'MSB 31000276419582', color: '#002868', seal: 'United States of America' },
-  { title: 'MAS DPT Service License', body: 'Licensed under Payment Services Act 2019 for Digital Payment Tokens', regNo: 'PS20220001438', color: '#EF3340', seal: 'Republic of Singapore' },
-  { title: 'VARA Exchange License', body: 'Virtual Asset Exchange, Broker-Dealer & Custody Services', regNo: 'VARA-2024-00397', color: '#00732F', seal: 'UAE — Dubai' },
-  { title: 'ISO/IEC 27001:2022', body: 'Information Security Management System Certification', regNo: 'IS 809247 / Deloitte AG', color: '#00539F', seal: 'International Standard' },
-];
 
 const Download = () => {
   const { theme, mode, iconBadges } = useTheme();
@@ -189,7 +69,6 @@ const Download = () => {
         }
         @media (max-width: 520px) {
           .dl-feature-grid { grid-template-columns: 1fr !important; }
-          .dl-cert-grid { grid-template-columns: 1fr 1fr !important; }
           .dl-platform-grid { grid-template-columns: 1fr !important; }
           .dl-benefits-grid { grid-template-columns: 1fr !important; }
         }
@@ -422,7 +301,7 @@ const Download = () => {
       <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${theme.cardBorder}, transparent)` }} />
 
       {/* Features Section */}
-      <div style={{ padding: '50px 20px 40px', maxWidth: '600px', margin: '0 auto' }}>
+      <div style={{ padding: '50px 20px 60px', maxWidth: '600px', margin: '0 auto' }}>
         <div className="dl-feature-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '28px' }}>
           {features.map((f, i) => (
             <div key={i} style={{
@@ -462,9 +341,6 @@ const Download = () => {
           No install needed — works on any device with a browser
         </p>
       </div>
-
-      {/* Divider */}
-      <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${theme.cardBorder}, transparent)`, margin: '0 20px' }} />
 
       {/* iOS Guide Modal */}
       {showIosGuide && (
@@ -524,36 +400,6 @@ const Download = () => {
           </div>
         </div>
       )}
-
-      {/* Certificates Section */}
-      <div style={{ padding: '40px 20px 60px', maxWidth: '600px', margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-          <Award size={20} style={{ color: '#B8973B' }} />
-          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800, letterSpacing: '-0.3px' }}>Regulatory Licenses & Certifications</h2>
-        </div>
-        <p style={{ color: theme.faint, fontSize: '13px', margin: '0 0 24px', lineHeight: 1.5 }}>
-          KYNEX is registered and regulated across multiple international jurisdictions. All licenses can be independently verified with the respective regulatory authorities.
-        </p>
-
-        <div className="dl-cert-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
-          {CERTS.map((c, i) => (
-            <CertBadge key={i} idx={i} {...c} />
-          ))}
-        </div>
-
-        <div style={{
-          marginTop: '20px', padding: '14px 16px', borderRadius: '12px',
-          backgroundColor: theme.card, border: `1px solid ${theme.cardBorder}`,
-          boxShadow: theme.shadow,
-        }}>
-          <p style={{ margin: 0, fontSize: '11px', color: theme.faint, lineHeight: 1.6 }}>
-            KYNEX AG is incorporated in the Canton of Zurich, Switzerland (CHE-384.719.528).
-            SOC 2 Type II and ISO 27001:2022 certified. Audited by Deloitte AG.
-            Digital asset insurance coverage by Lloyd's of London (up to $250M aggregate).
-            For full regulatory details, visit <Link to="/legal/about" style={{ color: theme.brand, textDecoration: 'underline' }}>About KYNEX</Link>.
-          </p>
-        </div>
-      </div>
     </div>
   );
 };
