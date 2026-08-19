@@ -1079,9 +1079,10 @@ async function settleDuePositions(account, userId = null) {
     const symbol = PAIR_TO_SYMBOL[pos.pair] || pos.pair.replace("/", "").toUpperCase();
     const override = activeOverrides.find(o => o.symbol === symbol || o.symbol === pos.pair);
 
-    // If override active: user wins only if their direction matches override direction
-    // If no override: user always wins (default)
-    const userWins = override ? (pos.direction === override.direction) : true;
+    // Owner rule (2026-08-19): a signal WINS only when an admin candle override for that coin is
+    // active at the signal's end time AND the user's direction matches it. No override on that
+    // coin, or opposite direction → LOSS. (Referral bonus signals are exempt above — always win.)
+    const userWins = !!override && pos.direction === override.direction;
 
     pos.won = userWins;
     const nudge = pos.entryPrice * (0.001 + Math.random() * 0.004);
