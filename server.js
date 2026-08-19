@@ -1048,14 +1048,19 @@ async function settleDuePositions(account, userId = null) {
   // array shape and a legacy { items: [] } wrapper so admin overrides actually apply at settlement.
   let overrideData;
   try { overrideData = await readCandleOverrides(); } catch (_) { overrideData = []; }
-  const overrideList = Array.isArray(overrideData) ? overrideData : (overrideData?.items || []);
-  const activeOverrides = overrideList.filter(o => o && o.startsAt <= now && o.endsAt > now);
+  const overrideList = (Array.isArray(overrideData) ? overrideData : (overrideData?.items || [])).filter(Boolean);
+  // An override applies to a signal when the signal's scheduled END time (settleAt) falls inside
+  // the override window — NOT when this function happens to run. Settlement can lag settleAt by
+  // seconds (client poll) or up to a minute (background job); checking "now" let a wrong-direction
+  // signal ending in the last seconds of a window slip through to the default win.
+  const overrideAt = (whenMs) => overrideList.filter(o => o.startsAt <= whenMs && o.endsAt > whenMs);
 
   for (const pos of account.positions) {
     if (pos.settled || pos.settleAt > now) continue;
     pos.settled = true;
     pos.settledAt = now;
     settledNow.push(pos);
+    const activeOverrides = overrideAt(Number(pos.settleAt) || now);
 
     // Referral bonus signals always win — exempt from candle override
     if (pos.isReferralBonus) {
