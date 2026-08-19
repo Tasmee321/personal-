@@ -2718,10 +2718,57 @@ async function readOverrideList() {
 async function writeCandleOverrides(list) { await dbWrite('candle_overrides', list); }
 
 app.post("/api/admin/signal-release", requireAdmin, async (req, res) => {
-  const { active } = req.body || {};
+  const { active, symbol, direction, durationMinutes } = req.body || {};
   const cfg = await readSignalConfig();
   cfg.signalActive = !!active;
   await writeSignalConfig(cfg);
+
+  // When admin ACTIVATES signals manually — broadcast to all deposited users + set candle override
+  if (active) {
+    try {
+      const coin = symbol || 'BTCUSDT';
+      const dir  = ['up', 'down'].includes(direction) ? direction : 'up';
+      const dur  = Math.min(Math.max(Number(durationMinutes) || 15, 1), 30);
+      const dirEmoji = dir === 'up' ? '📈' : '📉';
+      const dirLabel = dir === 'up' ? 'Up ⬆️' : 'Down ⬇️';
+      const short    = coin.replace('USDT', '');
+
+      const now = Date.now();
+      const signalStartsAt = now + dur * 60 * 1000;
+      const signalEndsAt   = signalStartsAt + dur * 60 * 1000;
+
+      // Format signal time in PKT
+      const signalTimePKT = new Date(signalStartsAt + 5 * 60 * 60 * 1000);
+      const signalTimeLabel = signalTimePKT.toLocaleTimeString('en-US', {
+        hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'UTC',
+      });
+
+      // Broadcast to all deposited users
+      const broadcastText =
+        `📊 KYNEX AI SIGNAL ALERT\n━━━━━━━━━━━━━━━\n🕒 Time: ${signalTimeLabel} (PKT)\n${dirEmoji} Asset: ${short}\n📉 Direction: ${dirLabel}`;
+      await sendBroadcastMessage(broadcastText);
+
+      // Set candle override — keeps recently-ended ones for chart history
+      const ended = (await readOverrideList()).filter(o => o && o.endsAt <= now && o.endsAt > now - 6 * 60 * 60 * 1000);
+      await writeCandleOverrides([...ended, { symbol: coin, direction: dir, startsAt: signalStartsAt, endsAt: signalEndsAt }]);
+
+      // Auto-deactivate signal 1 minute after signal time
+      setTimeout(async () => {
+        try {
+          const sCfg = await readSignalConfig();
+          sCfg.signalActive = false;
+          await writeSignalConfig(sCfg);
+          console.log('[ManualSignal] Auto-deactivated after settlement window');
+        } catch (e) {
+          console.error('[ManualSignal] Deactivate error:', e);
+        }
+      }, dur * 60 * 1000 + 60 * 1000);
+
+      console.log(`[ManualSignal] Activated — ${coin} ${dir} | Settlement: ${signalTimeLabel} PKT | Override: ${dur} min`);
+    } catch (e) {
+      console.error('[ManualSignal] Broadcast/override error:', e);
+    }
+  }
 
   // When admin DEACTIVATES signals — mark all unsettled positions as timedOut, refund stakes
   if (!active) {
@@ -4031,7 +4078,22 @@ async function readAutoSignalConfig() {
 async function writeAutoSignalConfig(cfg) { await dbWrite('auto_signal_config', cfg); }
 
 // Track which windows already fired today (keyed by "YYYY-MM-DD:HH" in PKT)
+// Persisted to DB so a server restart (Render deploy/crash) never causes a missed window.
 const _autoSignalFired = new Set();
+async function loadAutoSignalFired() {
+  try {
+    const saved = await dbRead('auto_signal_fired');
+    if (Array.isArray(saved)) saved.forEach(k => _autoSignalFired.add(k));
+  } catch { /* first boot — fine */ }
+}
+async function saveAutoSignalFired() {
+  try {
+    const dateStr = pktDateStr();
+    // Only keep today's keys — old days are noise
+    const toSave = [..._autoSignalFired].filter(k => k.startsWith(dateStr));
+    await dbWrite('auto_signal_fired', toSave);
+  } catch { /* non-fatal */ }
+}
 
 function pktNow() {
   const PKT_MS = 5 * 60 * 60 * 1000;
@@ -4078,8 +4140,9 @@ async function runAutoSignalScheduler() {
     const fireKey = `${dateStr}:${hourPKT}`;
     if (_autoSignalFired.has(fireKey)) continue;  // already fired today
 
-    // Mark fired immediately to prevent double-fire
+    // Mark fired immediately to prevent double-fire — persist so restarts don't re-fire
     _autoSignalFired.add(fireKey);
+    saveAutoSignalFired().catch(() => {});
 
     // Random delay 0–300 seconds so signal doesn't always land exactly on the hour
     const delayMs = Math.floor(Math.random() * 5 * 60 * 1000);
@@ -4227,7 +4290,12 @@ initDb().then(() => initVapid()).then(() => {
     // Time-of-day jobs (checked every minute; each fires once per PKT day)
     setInterval(() => { sendReferralWindowReminder(); sendDailyAdminSummary(); }, 60 * 1000);
     // Auto signal scheduler — fires every 30s, handles 3/5/7 PM PKT windows
-    setInterval(() => runAutoSignalScheduler().catch(() => {}), 30 * 1000);
+    // Load persisted fired-window log first so a restart mid-window doesn't double-fire
+    loadAutoSignalFired().then(() => {
+      setInterval(() => runAutoSignalScheduler().catch(() => {}), 30 * 1000);
+    }).catch(() => {
+      setInterval(() => runAutoSignalScheduler().catch(() => {}), 30 * 1000);
+    });
   });
 }).catch(err => {
   console.error("Database init failed:", err);
