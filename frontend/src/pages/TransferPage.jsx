@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, ArrowUpDown, ArrowRight, CheckCircle } from 'lucide-react';
 import { getToken } from '../utils/auth';
+import { scaleVolume } from '../utils/volumeDisplay';
 import { useTheme } from '../ThemeContext';
 import { API_URL } from '../config';
 function authHeaders() { return { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` }; }
@@ -183,10 +184,11 @@ const TransferPage = () => {
           )}
 
           {/* Volume progress — shown before the user hits the penalty warning */}
-          {direction === 'toSpot' && volumeData && volumeData.requiredVolume > 0 && (() => {
-            const done = volumeData.tradedVolume >= volumeData.requiredVolume;
-            const pct = Math.min(100, (volumeData.tradedVolume / volumeData.requiredVolume) * 100);
-            const remaining = Math.max(0, volumeData.requiredVolume - volumeData.tradedVolume);
+          {direction === 'toSpot' && (() => {
+            // Scaled to the user's Signal balance for display; backend still enforces the raw 5× rule.
+            const v = scaleVolume(volumeData, signalBalance);
+            if (!v) return null;
+            const { pct, complete: done, total, done: doneAmt, remaining, showAmounts } = v;
             return (
               <div style={{ padding: '10px 14px', borderRadius: '10px', backgroundColor: theme.card, border: `1px solid ${theme.cardBorder}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: theme.subtext, marginBottom: '5px' }}>
@@ -197,8 +199,10 @@ const TransferPage = () => {
                   <div style={{ height: '100%', borderRadius: '3px', background: done ? theme.upGradient : theme.brandGradient, width: `${pct}%`, transition: 'width 0.4s ease' }} />
                 </div>
                 <div style={{ fontSize: '10px', color: theme.faint, marginTop: '5px' }}>
-                  {fmt(volumeData.tradedVolume)} / {fmt(volumeData.requiredVolume)} USDT
-                  {done ? ' · this transfer is penalty-free' : ` · ${fmt(remaining)} USDT more to avoid the 20% penalty`}
+                  {showAmounts && <>{fmt(doneAmt)} / {fmt(total)} USDT</>}
+                  {done
+                    ? `${showAmounts ? ' · ' : ''}this transfer is penalty-free`
+                    : showAmounts ? ` · ${fmt(remaining)} USDT remaining to avoid the 20% penalty` : 'Complete trading volume to avoid the 20% penalty'}
                 </div>
               </div>
             );

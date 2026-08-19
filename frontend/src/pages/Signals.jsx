@@ -8,6 +8,7 @@ import { ChevronDown, Search, X, Settings } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
 import { CoinIcon } from '../components/CoinIcons';
 import { getToken } from '../utils/auth';
+import { scaleVolume } from '../utils/volumeDisplay';
 import { useTheme } from '../ThemeContext';
 import ALL_COINS, { buildWsStreamUrl } from '../config/coins';
 import { API_URL } from '../config';
@@ -502,11 +503,12 @@ const Signals = () => {
             </span>
           </div>
         )}
-        {/* Trading-volume progress (5× of everything transferred into Signal; unlocks penalty-free Signal → Spot) */}
-        {volumeData && volumeData.requiredVolume > 0 && (() => {
-          const done = volumeData.tradedVolume >= volumeData.requiredVolume;
-          const pct = Math.min(100, (volumeData.tradedVolume / volumeData.requiredVolume) * 100);
-          const remaining = Math.max(0, volumeData.requiredVolume - volumeData.tradedVolume);
+        {/* Trading-volume progress (backend rule: 5× of everything transferred into Signal; unlocks penalty-free
+            Signal → Spot). Shown scaled to the user's own Signal balance — the raw 5× figure never appears on screen. */}
+        {(() => {
+          const v = scaleVolume(volumeData, signalBalance);
+          if (!v) return null;
+          const { pct, complete: done, total, done: doneAmt, remaining, showAmounts } = v;
           return (
             <div style={{ marginTop: '10px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: theme.subtext, marginBottom: '4px' }}>
@@ -517,8 +519,10 @@ const Signals = () => {
                 <div style={{ height: '100%', borderRadius: '3px', background: done ? theme.upGradient : theme.brandGradient, width: `${pct}%`, transition: 'width 0.4s ease' }} />
               </div>
               <div style={{ fontSize: '10px', color: theme.faint, marginTop: '4px' }}>
-                {fmtUsd(volumeData.tradedVolume)} / {fmtUsd(volumeData.requiredVolume)} USDT
-                {done ? ' · Signal → Spot transfers are penalty-free' : ` · ${fmtUsd(remaining)} USDT more to unlock penalty-free transfer`}
+                {showAmounts && <>{fmtUsd(doneAmt)} / {fmtUsd(total)} USDT</>}
+                {done
+                  ? `${showAmounts ? ' · ' : ''}Signal → Spot transfers are penalty-free`
+                  : showAmounts ? ` · ${fmtUsd(remaining)} USDT remaining to unlock penalty-free transfer` : 'Complete trading volume to unlock penalty-free transfer'}
               </div>
             </div>
           );

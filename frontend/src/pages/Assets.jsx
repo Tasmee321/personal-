@@ -6,6 +6,7 @@ import { ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Receipt, AlertTriangl
 import BottomNav from '../components/BottomNav';
 import { CoinIcon } from '../components/CoinIcons';
 import { getToken } from '../utils/auth';
+import { scaleVolume } from '../utils/volumeDisplay';
 import { useTheme } from '../ThemeContext';
 import ALL_COINS, { buildWsStreamUrl } from '../config/coins';
 import { API_URL } from '../config';
@@ -118,6 +119,8 @@ function TransferForm({ spotBalance, signalBalance, volumeData, onSubmit, onRefr
 
   const vd = volumeData || { depositBase: 0, requiredVolume: 0, tradedVolume: 0, signalTradeCount: 0 };
   const volumeComplete = vd.requiredVolume > 0 && vd.tradedVolume >= vd.requiredVolume;
+  // Display-only: progress scaled to the user's Signal balance (backend still enforces the raw 5× rule).
+  const vol = scaleVolume(vd, signalBalance);
   const daysCompleted = Math.floor((vd.signalTradeCount || 0) / 3);
 
   const submit = async () => {
@@ -188,17 +191,22 @@ function TransferForm({ spotBalance, signalBalance, volumeData, onSubmit, onRefr
           </button>
         </div>
 
-        {direction === 'toSpot' && vd.requiredVolume > 0 && (
+        {direction === 'toSpot' && vol && (
           <div style={{ marginTop: '12px', padding: '12px', borderRadius: '12px', backgroundColor: volumeComplete ? theme.upSoft : theme.brandSoft, border: `1px solid ${volumeComplete ? theme.up : theme.brand}40` }}>
-            <span style={{ fontSize: '11px', fontWeight: '700', color: volumeComplete ? theme.up : theme.brand }}>
-              {volumeComplete ? 'Volume Complete — 0% fee' : 'Volume Incomplete — 20% penalty applies'}
-            </span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', fontWeight: '700', color: volumeComplete ? theme.up : theme.brand }}>
+                {volumeComplete ? 'Volume Complete — 0% fee' : 'Volume Incomplete — 20% penalty applies'}
+              </span>
+              <span style={{ fontSize: '11px', fontWeight: '600', color: volumeComplete ? theme.up : theme.text }}>{Math.round(vol.pct)}%</span>
+            </div>
             <div style={{ height: '5px', borderRadius: '3px', backgroundColor: theme.inputBg, overflow: 'hidden', marginTop: '8px' }}>
-              <div style={{ height: '100%', borderRadius: '3px', background: volumeComplete ? theme.upGradient : theme.brandGradient, width: `${Math.min(100, vd.requiredVolume > 0 ? (vd.tradedVolume / vd.requiredVolume) * 100 : 0)}%`, transition: 'width 0.3s' }} />
+              <div style={{ height: '100%', borderRadius: '3px', background: volumeComplete ? theme.upGradient : theme.brandGradient, width: `${vol.pct}%`, transition: 'width 0.3s' }} />
             </div>
-            <div style={{ fontSize: '10px', color: theme.faint, marginTop: '5px' }}>
-              {fmt(vd.tradedVolume)} / {fmt(vd.requiredVolume)} USDT &middot; Remaining: {fmt(Math.max(0, vd.requiredVolume - vd.tradedVolume))} USDT
-            </div>
+            {vol.showAmounts && (
+              <div style={{ fontSize: '10px', color: theme.faint, marginTop: '5px' }}>
+                {fmt(vol.done)} / {fmt(vol.total)} USDT &middot; Remaining: {fmt(vol.remaining)} USDT
+              </div>
+            )}
           </div>
         )}
 
