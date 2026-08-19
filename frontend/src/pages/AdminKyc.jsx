@@ -1555,7 +1555,7 @@ This cannot be undone!`)) return;
                   const fmtAmt = (n) => {
                     if (n === undefined || n === null) return '-';
                     const abs = Math.abs(n).toFixed(2);
-                    return (n >= 0 ? '+' : '-') + '
+                    return (n >= 0 ? '+' : '-') + abs;
 
             {/* TEAM TREE TAB */}
             {userDetailTab === 'tree' && teamTree && teamUser && teamUser.id === selectedUser.id && (() => {
