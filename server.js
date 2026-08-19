@@ -7,7 +7,7 @@ import { fileURLToPath } from "url";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-// nodemailer replaced by Resend API (Render blocks SMTP)
+// Transactional email goes out through the Brevo HTTP API (see sendEmail below), not SMTP.
 import { generateSecret as generateTotpSecret, generateURI as generateTotpURI, verify as verifyTotp } from "otplib";
 import { v2 as cloudinary } from "cloudinary";
 import helmet from "helmet";
@@ -42,14 +42,20 @@ const PASSWORD_CHANGE_WITHDRAW_LOCK_MS = 2 * 60 * 60 * 1000;
 const FUND_PASSWORD_PATTERN = /^[0-9]{4,6}$/;
 const KYC_DOC_TYPES = ["passport", "driving_license", "national_id"];
 
-// Per-user transfer lock to prevent race conditions on reward claims
-const _transferLocks = new Map();
+// GLOBAL account lock (was per-user). Every balance path does read-whole-accounts-blob → mutate →
+// write-whole-accounts-blob, so a per-user lock could never stop a cross-user lost update: user A
+// reads the blob, user B reads + mutates + writes, then A writes back its stale snapshot and B's
+// balance change silently vanishes. Serialising every mutation through one queue closes that window.
+// The userId argument is kept so call sites still read naturally, but it no longer narrows the lock.
+// Correct only while the backend runs as a SINGLE instance (Render Starter default). Scaling to 2+
+// instances needs DB-level locking — the old per-user lock would have been just as broken there.
+let _accountLockTail = null;
 function acquireTransferLock(userId) {
-  if (_transferLocks.has(userId)) return _transferLocks.get(userId).then(() => acquireTransferLock(userId));
+  if (_accountLockTail) return _accountLockTail.then(() => acquireTransferLock(userId));
   let unlock;
   const p = new Promise(r => { unlock = r; });
-  _transferLocks.set(userId, p);
-  return () => { _transferLocks.delete(userId); unlock(); };
+  _accountLockTail = p;
+  return () => { if (_accountLockTail === p) _accountLockTail = null; unlock(); };
 }
 
 // Express middleware: serialize all account-mutating requests for the same user (shares the same
@@ -65,8 +71,9 @@ function userLock(req, res, next) {
     const release = () => { if (!released) { released = true; if (timer) clearTimeout(timer); unlock(); } };
     res.once("finish", release);
     res.once("close", release);
-    // Safety net: if a handler throws asynchronously and never responds, don't wedge the user forever.
-    timer = setTimeout(release, 30 * 1000);
+    // Safety net: if a handler throws asynchronously and never responds, don't wedge the lock
+    // forever. The lock is global now, so a wedged request stalls every user — keep this short.
+    timer = setTimeout(release, 15 * 1000);
     timer.unref?.();
     next();
   }).catch(next);
@@ -710,6 +717,27 @@ async function resolveReferral(rawReferral) {
 async function readDemoAccounts() { return await dbRead('accounts'); }
 async function writeDemoAccounts(accounts) { await dbWrite('accounts', accounts); }
 
+// ── Postgres read budget ─────────────────────────────────────────────────────
+// The instance is awake 24/7, so background jobs that unconditionally SELECT the whole `accounts`
+// blob every minute dominate database usage — enough to exhaust the free tier's monthly compute
+// hours and egress allowance around the middle of the month, which suspends the database and takes
+// the app down. Each periodic job therefore answers "could anything have changed?" from process
+// memory first, and only queries Postgres when the answer is yes.
+//
+// Every hint starts as null = UNKNOWN, so the first tick after boot always performs a real query.
+// Invariant for all of them: a stale hint may cause an EXTRA query, never a MISSED one. Anything
+// that creates future work must lower or clear the matching hint in the same request that writes.
+let _nextSettleAtHint   = null;   // earliest unsettled position settleAt; Infinity = none open
+let _pendingDepositHint = null;   // is any deposit request still awaiting re-verification?
+let _liveSessionHint    = null;   // livePlan.deactivateAt; 0 = no session open
+
+// Call on every position insert so the settle sweep can never sleep past a new deadline.
+function noteOpenPosition(settleAt) {
+  const t = Number(settleAt);
+  if (!Number.isFinite(t)) { _nextSettleAtHint = null; return; }   // unparseable → force a query
+  if (_nextSettleAtHint === null || t < _nextSettleAtHint) _nextSettleAtHint = t;
+}
+
 async function readAllMessages() { return await dbRead('messages'); }
 async function writeAllMessages(all) { await dbWrite('messages', all); }
 async function pushMessage(userId, title, body) {
@@ -758,13 +786,19 @@ async function sendWebPush(uid, title, body) {
   } catch { /* ignore push errors */ }
 }
 
-async function sendWebPushAll(title, body) {
+// allowedUids scopes the push. Broadcasts carry the asset, direction and settle minute, which is
+// paid content — without a scope this pushed it to every browser subscription on the platform,
+// including users who never deposited and users who had signed out on that device.
+async function sendWebPushAll(title, body, allowedUids = null) {
   if (!vapidReady) return;
   try {
+    const allow = allowedUids ? new Set(allowedUids.map(String)) : null;
     const subs = await readPushSubs();
-    await Promise.allSettled(Object.entries(subs).map(([uid, userSubs]) =>
-      Promise.allSettled(userSubs.map(sub => webpush.sendNotification(sub, JSON.stringify({ title, body, icon: '/icons/icon-192.png', tag: 'kynex-broadcast', renotify: true })).catch(() => {})))
-    ));
+    await Promise.allSettled(Object.entries(subs)
+      .filter(([uid]) => !allow || allow.has(String(uid)))
+      .map(([uid, userSubs]) =>
+        Promise.allSettled(userSubs.map(sub => webpush.sendNotification(sub, JSON.stringify({ title, body, icon: '/icons/icon-192.png', tag: 'kynex-broadcast', renotify: true })).catch(() => {})))
+      ));
   } catch { /* ignore */ }
 }
 
@@ -1036,7 +1070,7 @@ function describeSignalResult(pos) {
   if (pos.won) {
     return { title: `✅ ${kind} won — +$${(pos.profit || 0).toFixed(2)}`, body: `${pair} ${dir} settled in your favour. Profit $${(pos.profit || 0).toFixed(2)} USDT added to your Signal balance.` };
   }
-  return { title: `❌ ${kind} lost`, body: `${pair} ${dir} did not settle in your favour. Your stake was returned to your Signal balance. Better luck next time!` };
+  return { title: `❌ ${kind} lost`, body: `${pair} ${dir} did not settle in your favour. Your stake was not returned. Better luck next time!` };
 }
 
 // Settles due positions on `account`. When userId is given, the user gets one push notification
@@ -1047,7 +1081,14 @@ async function settleDuePositions(account, userId = null) {
   // candle_overrides is stored as a plain array (see /api/admin/candle-override). Accept both the
   // array shape and a legacy { items: [] } wrapper so admin overrides actually apply at settlement.
   let overrideData;
-  try { overrideData = await readCandleOverrides(); } catch (_) { overrideData = []; }
+  try {
+    overrideData = await readCandleOverrides();
+  } catch (e) {
+    // A transient DB hiccup must NOT be read as "no override active" — that would settle every
+    // correct follower as a loss. Settle nothing this pass; the 30s/60s sweep retries in a moment.
+    console.error('[Settle] candle_overrides read failed — skipping this pass:', e?.message || e);
+    return;
+  }
   const overrideList = (Array.isArray(overrideData) ? overrideData : (overrideData?.items || [])).filter(Boolean);
   // An override applies to a signal when the signal's scheduled END time (settleAt) falls inside
   // the override window — NOT when this function happens to run. Settlement can lag settleAt by
@@ -1058,27 +1099,14 @@ async function settleDuePositions(account, userId = null) {
   for (const pos of account.positions) {
     if (pos.settled || pos.settleAt > now) continue;
 
-    // Placed for a signal but with a settle time PAST the announced minute (e.g. announced 3:19,
-    // user picked 3:20). The session closes at 3:20, so this trade never had a signal to ride —
-    // owner rule: TIMEOUT + refund, not a loss. Decided here (from stamped data) so it can't
-    // depend on whether the settle sweep or the deactivate tick runs first.
-    if (Number.isFinite(Number(pos.announcedSettleAt)) && Number(pos.settleAt) > Number(pos.announcedSettleAt)) {
-      pos.settled = true;
-      pos.timedOut = true;
-      pos.won = null;
-      pos.profit = 0;
-      pos.settledAt = now;
-      account.signalBalance = Math.round(((account.signalBalance || 0) + pos.stake) * 100) / 100;
-      settledNow.push(pos);
-      continue;
-    }
-
     pos.settled = true;
     pos.settledAt = now;
     settledNow.push(pos);
-    const activeOverrides = overrideAt(Number(pos.settleAt) || now);
 
-    // Referral bonus signals always win — exempt from candle override
+    // Referral bonus signals always win — exempt from the candle override AND from the timeout
+    // rule below. A bonus signal is a gift; it can never time out, lose, or be refunded instead.
+    // This MUST stay above the timeout check, otherwise a bonus trade stamped with an announced
+    // minute would be refunded rather than paid.
     if (pos.isReferralBonus) {
       pos.won = true;
       const nudge = pos.entryPrice * (0.001 + Math.random() * 0.004);
@@ -1091,6 +1119,26 @@ async function settleDuePositions(account, userId = null) {
       account.signalBalance = Math.round((account.signalBalance + pos.stake + profit) * 100) / 100;
       continue;
     }
+
+    // Placed for a signal but with a settle time PAST the announced minute (e.g. announced 3:19,
+    // user picked 3:20). The session closes at 3:20, so this trade never had a signal to ride —
+    // owner rule: TIMEOUT + refund, not a loss. Decided here (from stamped data) so it can't
+    // depend on whether the settle sweep or the deactivate tick runs first.
+    // announcedSettleAt is null for a trade placed while no signal was scheduled. Number(null) is
+    // 0 and Number.isFinite(0) is true, so null MUST be excluded explicitly — otherwise every
+    // off-signal trade would be refunded instead of settled (owner rule: those lose).
+    const announced = pos.announcedSettleAt;
+    const hasAnnounced = announced !== null && announced !== undefined
+      && Number.isFinite(Number(announced)) && Number(announced) > 0;
+    if (hasAnnounced && Number(pos.settleAt) > Number(announced)) {
+      pos.timedOut = true;
+      pos.won = null;
+      pos.profit = 0;
+      account.signalBalance = Math.round(((account.signalBalance || 0) + pos.stake) * 100) / 100;
+      continue;
+    }
+
+    const activeOverrides = overrideAt(Number(pos.settleAt) || now);
 
     const symbol = PAIR_TO_SYMBOL[pos.pair] || pos.pair.replace("/", "").toUpperCase();
     const override = activeOverrides.find(o => o.symbol === symbol || o.symbol === pos.pair);
@@ -2146,9 +2194,17 @@ app.get("/api/admin/livechat/:uid/typing-status", requireAdmin, async (req, res)
 
 app.get("/api/demo/account", authenticate, userLock, async (req, res) => {
   const accounts = await readDemoAccounts();
+  // Every open app polls this route. Writing the whole accounts blob on each poll burned Neon's
+  // egress budget and held the (now global) account lock for nothing. Only write when there is
+  // something real to persist: a freshly seeded account (its deposit addresses are random, so
+  // losing them would show the user a different address next poll) or a position that just settled.
+  const existing = accounts[req.user.sub];
+  const needsSeed = !existing || !existing.depositAddresses;
   const account = getDemoAccount(accounts, req.user.sub);
+  const openBefore = (account.positions || []).filter(p => !p.settled).length;
   await settleDuePositions(account, req.user.sub);
-  await writeDemoAccounts(accounts);
+  const openAfter = (account.positions || []).filter(p => !p.settled).length;
+  if (needsSeed || openAfter !== openBefore) await writeDemoAccounts(accounts);
   res.json({
     ok: true,
     balance: Math.round(account.balance * 100) / 100,
@@ -2489,6 +2545,7 @@ app.post("/api/demo/deposit/request", authenticate, rateLimit(60 * 1000, 5), use
   depositEntry.verificationNote = verification.reason;
   account.depositRequests.unshift(depositEntry);
   await writeDemoAccounts(accounts);
+  _pendingDepositHint = true;          // wake the re-verification job
   await pushMessage(req.user.sub, "Deposit submitted", `Your deposit of ${amt.toFixed(2)} USDT via ${network.toUpperCase()} is pending review.`);
   res.json({ ok: true, requestId, status: 'pending', autoVerified: false });
 });
@@ -2743,6 +2800,44 @@ async function readOverrideList() {
 }
 async function writeCandleOverrides(list) { await dbWrite('candle_overrides', list); }
 
+// Overrides ARE the money rule: a trade placed for 3:19 is judged against the override that starts
+// at 3:19. So writing a new override must NEVER silently drop one that has not finished yet —
+// doing that turns every correct follower into a LOSS with no refund (owner rule: followers win).
+//
+// What survives every write:
+//   • recently-ended overrides (bounded to 6h) so charts can still shape that history
+//   • every override still in progress or scheduled in the future — UNLESS it actually collides
+//     with the new one's window for the same symbol, which is a real conflict where the newest wins
+//
+// Read errors are deliberately NOT swallowed here (unlike readOverrideList): writing the new list
+// after a failed read would persist a list with the pending override missing.
+async function scheduleOverride(next) {
+  const raw = await readCandleOverrides();
+  const all = Array.isArray(raw) ? raw : (raw?.items || []);
+  const now = Date.now();
+  const keep = all.filter(o => {
+    if (!o) return false;
+    const startsAt = Number(o.startsAt), endsAt = Number(o.endsAt);
+    if (!Number.isFinite(startsAt) || !Number.isFinite(endsAt)) return false;
+    if (endsAt <= now) return endsAt > now - 6 * 60 * 60 * 1000;   // already over → keep briefly
+    const collides = o.symbol === next.symbol && startsAt < next.endsAt && endsAt > next.startsAt;
+    return !collides;                                              // pending → keep unless overlapping
+  });
+  await writeCandleOverrides([...keep, next]);
+  return next;
+}
+
+// A signal session is "in flight" from the moment it is broadcast until deactivateAt (the minute
+// after the announced settlement minute). Opening a second session inside that window would
+// announce a different direction while users are already holding trades against the first one,
+// and its override write would land on top of the one those trades are judged by.
+async function inFlightSession(cfg = null) {
+  const sig = cfg || await readSignalConfig();
+  const plan = sig?.livePlan;
+  if (!plan || !Number.isFinite(Number(plan.deactivateAt))) return null;
+  return Date.now() < Number(plan.deactivateAt) ? plan : null;
+}
+
 app.post("/api/admin/signal-release", requireAdmin, async (req, res) => {
   // symbol/direction from the body are intentionally IGNORED — coin is always BTC and the
   // direction is always picked by the server (owner rule), so admin can never bias it.
@@ -2751,45 +2846,59 @@ app.post("/api/admin/signal-release", requireAdmin, async (req, res) => {
   // When admin ACTIVATES signals manually — same shape as an auto fire: broadcast + 1-minute
   // candle override at the announced minute + persisted close deadline.
   if (active) {
-    const cfg = await readSignalConfig();
-    cfg.signalActive = true;
-    await writeSignalConfig(cfg);
+    // Refuse while a session is already in flight. Otherwise this would broadcast a second
+    // direction and overwrite the override that the currently-open trades are judged against.
+    const inFlight = await inFlightSession();
+    if (inFlight) {
+      return res.status(409).json({
+        error: `A signal is already live until ${fmtPKT(inFlight.deactivateAt)} PKT. Wait for it to close.`,
+      });
+    }
     try {
       const coin = 'BTCUSDT';                                  // BTC only — owner rule
       const dir  = Math.random() < 0.5 ? 'up' : 'down';         // server-random every time
-      const dur  = Math.min(Math.max(Number(durationMinutes) || 15, 1), 30);
+      // Admin may pick a duration; with none supplied use the owner's 15–20 minute spread.
+      const reqDur = Number(durationMinutes);
+      const dur = Number.isFinite(reqDur) && reqDur >= 1
+        ? Math.min(Math.max(Math.round(reqDur), 1), 30)
+        : 15 + Math.floor(Math.random() * 6);
       const dirEmoji = dir === 'up' ? '📈' : '📉';
       const dirLabel = dir === 'up' ? 'Up ⬆️' : 'Down ⬇️';
       const short    = coin.replace('USDT', '');
 
       const now = Date.now();
-      // Snap to the next whole minute: the broadcast announces "3:32 PM", so the override must
-      // start at exactly 3:32:00 — otherwise matching a user's chosen time depends on seconds.
-      const signalStartsAt = ceilToMinute(now + dur * 60 * 1000);
+      // Offset counts from the CURRENT WHOLE MINUTE, not from the exact instant: the owner reads
+      // "fired 3:03 → settles 3:19" as 16 whole minutes. Rounding the sum up instead would add the
+      // leftover seconds on top, making the real spread 15.x–20.x and putting exactly-15 out of reach.
+      const signalStartsAt = Math.floor(now / 60000) * 60000 + dur * 60 * 1000;
       const signalEndsAt   = signalStartsAt + 60 * 1000;   // override = exactly 1 minute
       const signalTimeLabel = fmtPKT(signalStartsAt);
+
+      // Override + live plan are persisted BEFORE the broadcast. If either write fails, nothing was
+      // announced and signalActive stays false — users never see a signal the server can't honour.
+      await scheduleOverride({ symbol: coin, direction: dir, startsAt: signalStartsAt, endsAt: signalEndsAt });
+
+      const live = await readSignalConfig();
+      live.signalActive = true;
+      // Persist the close deadline so the 30s tick closes the session even if this process
+      // restarts or Render spins the instance down before the timer below can run.
+      live.livePlan = { announcedAt: signalStartsAt, deactivateAt: signalEndsAt, symbol: coin };
+      await writeSignalConfig(live);
+      _liveSessionHint = signalEndsAt;
 
       // Broadcast to all deposited users
       const broadcastText =
         `📊 KYNEX AI SIGNAL ALERT\n━━━━━━━━━━━━━━━\n🕒 Time: ${signalTimeLabel} (PKT)\n${dirEmoji} Asset: ${short}\n📉 Direction: ${dirLabel}`;
-      await sendBroadcastMessage(broadcastText);
+      await sendBroadcastMessage(broadcastText).catch(e => console.error('[ManualSignal] Broadcast failed:', e?.message || e));
 
-      // Set candle override — keeps recently-ended ones for chart history
-      const ended = (await readOverrideList()).filter(o => o && o.endsAt <= now && o.endsAt > now - 6 * 60 * 60 * 1000);
-      await writeCandleOverrides([...ended, { symbol: coin, direction: dir, startsAt: signalStartsAt, endsAt: signalEndsAt }]);
-
-      // Persist the close deadline so the 30s tick closes the session even if this process
-      // restarts or Render spins the free instance down before the timer below can run.
-      const live = await readSignalConfig();
-      live.livePlan = { announcedAt: signalStartsAt, deactivateAt: signalEndsAt, symbol: coin };
-      await writeSignalConfig(live);
       setTimeout(() => {
         enforceSignalLifecycle().catch(e => console.error('[ManualSignal] Deactivate error:', e?.message || e));
       }, Math.max(signalEndsAt - Date.now(), 5000));
 
       console.log(`[ManualSignal] Activated — ${coin} ${dir} | Settlement: ${signalTimeLabel} PKT | Override 1 min`);
     } catch (e) {
-      console.error('[ManualSignal] Broadcast/override error:', e);
+      console.error('[ManualSignal] Activate failed — signal NOT opened:', e);
+      return res.status(500).json({ error: 'Could not open the signal. Nothing was broadcast; try again.' });
     }
   }
 
@@ -2909,17 +3018,28 @@ app.post("/api/admin/candle-override", requireAdmin, async (req, res) => {
     startsAt = Date.now();
   }
 
-  const now = Date.now();
-  // FIX 2: Only one active/scheduled override allowed at a time — replace any existing live one.
-  // Recently-ended overrides are kept (bounded) so charts can still shape that history.
-  const ended = (await readOverrideList()).filter(o => o && o.endsAt <= now && o.endsAt > now - 6 * 60 * 60 * 1000);
   const next = { symbol, direction, startsAt, endsAt: startsAt + dur * 60 * 1000 };
-  await writeCandleOverrides([...ended, next]);
+
+  // A live signal session already has an override that open trades are judged against. Refuse to
+  // touch the same symbol until it closes — writing here would decide those trades' outcome.
+  const inFlight = await inFlightSession();
+  if (inFlight && (inFlight.symbol || 'BTCUSDT') === symbol) {
+    return res.status(409).json({
+      error: `A signal on ${symbol} is live until ${fmtPKT(inFlight.deactivateAt)} PKT. Overrides for it are locked until then.`,
+    });
+  }
+
+  // Keeps recently-ended overrides for chart history AND every pending one that does not collide.
+  await scheduleOverride(next);
   await adminLog(req, 'candle-override.set', next);
   res.json({ ok: true, override: next });
 });
 
-// FIX 3: Admin cancel override — also cancel all unsettled user positions and refund stakes
+// Admin cancel override — also voids all unsettled signal positions and refunds their stakes.
+// Positions are settled first and then mutated one account at a time under that account's transfer
+// lock, with a re-read inside the lock. The old version read the whole blob once, mutated every
+// account in memory and wrote it back: a trade being placed or settled during that window was
+// silently overwritten, which could erase a stake debit or a payout that had already been made.
 app.delete("/api/admin/candle-override", requireAdmin, async (req, res) => {
   const { index } = req.body || {};
   const now = Date.now();
@@ -2929,29 +3049,51 @@ app.delete("/api/admin/candle-override", requireAdmin, async (req, res) => {
   if (index >= 0 && index < overrides.length) overrides.splice(index, 1);
   await writeCandleOverrides([...ended, ...overrides]);
 
-  // Mark all unsettled signal positions as timedOut — no win, no loss, no cancel, stake refunded
+  // Pay out everything already due before voiding anything — a winner whose settle minute has
+  // passed must not be turned into a refund because the admin cancelled a later override.
   try {
-    const accounts = await readDemoAccounts();
-    for (const account of Object.values(accounts)) {
-      if (!account.positions) continue;
-      for (const pos of account.positions) {
-        if (pos.settled || pos.cancelled || pos.timedOut) continue;
-        if (pos.source !== "prediction" && pos.source !== "referral-signal") continue;
-        // Refund stake silently
-        account.signalBalance = Math.round((account.signalBalance + pos.stake) * 100) / 100;
-        pos.settled = true;
-        pos.timedOut = true;
-        pos.won = null;
-        pos.profit = 0;
-      }
+    await settleAllDuePositions();
+  } catch (e) {
+    console.error("Admin cancel — pre-settle failed:", e?.message || e);
+  }
+
+  // Void the remaining open positions: no win, no loss, no cancel — stake refunded.
+  let voided = 0;
+  try {
+    const snapshot = await readDemoAccounts();
+    const affected = Object.entries(snapshot)
+      .filter(([, a]) => (a?.positions || []).some(p =>
+        !p.settled && !p.cancelled && !p.timedOut &&
+        (p.source === "prediction" || p.source === "referral-signal")))
+      .map(([userId]) => userId);
+
+    for (const userId of affected) {
+      const unlock = await acquireTransferLock(userId);
+      try {
+        const fresh = await readDemoAccounts();          // re-read under the lock
+        const account = fresh[userId];
+        if (!account?.positions) continue;
+        let changed = false;
+        for (const pos of account.positions) {
+          if (pos.settled || pos.cancelled || pos.timedOut) continue;
+          if (pos.source !== "prediction" && pos.source !== "referral-signal") continue;
+          account.signalBalance = Math.round(((account.signalBalance || 0) + pos.stake) * 100) / 100;
+          pos.settled = true;
+          pos.timedOut = true;
+          pos.won = null;
+          pos.profit = 0;
+          changed = true;
+          voided++;
+        }
+        if (changed) await writeDemoAccounts(fresh);
+      } finally { unlock(); }
     }
-    await writeDemoAccounts(accounts);
   } catch (e) {
     console.error("Admin cancel positions error:", e);
   }
 
-  await adminLog(req, 'candle-override.cancel', { index: req.body?.index ?? null });
-  res.json({ ok: true, overrides });
+  await adminLog(req, 'candle-override.cancel', { index: req.body?.index ?? null, voided });
+  res.json({ ok: true, overrides, voided });
 });
 
 app.get("/api/admin/candle-overrides", requireAdmin, async (req, res) => {
@@ -3613,6 +3755,7 @@ app.post("/api/demo/referral-signal", authenticate, financialRateLimit, userLock
       settled: false,
       isReferralBonus: true,
     });
+    noteOpenPosition(settleAt);
     await writeDemoAccounts(accounts);
     res.json({ ok: true, signalBalance: account.signalBalance, positions: account.positions, direction, pair: pairName, settleAt });
   } catch (err) {
@@ -3630,6 +3773,14 @@ app.post("/api/demo/predict", authenticate, financialRateLimit, userLock, async 
     const signalCfg = await readSignalConfig();
     if (!signalCfg.signalActive) {
       return res.status(403).json({ error: "Signals are currently disabled. Please wait for admin to activate the next signal session." });
+    }
+    // A session is defined by its persisted deadline, not by the signalActive flag. After a restart
+    // the 30s tick can be up to half a minute late in clearing that flag, and a trade accepted in
+    // that gap would be placed against a session that has already closed — it could never settle
+    // inside the window and would only be refunded later.
+    const openPlan = signalCfg.livePlan;
+    if (openPlan && Number.isFinite(Number(openPlan.deactivateAt)) && Date.now() >= Number(openPlan.deactivateAt)) {
+      return res.status(403).json({ error: "This signal session has closed. Please wait for the next signal." });
     }
 
     const { pair, direction, durationMinutes } = req.body || {};
@@ -3717,39 +3868,49 @@ app.post("/api/demo/predict", authenticate, financialRateLimit, userLock, async 
     let followedSignal = false;
     const overrideList = await readOverrideList();
     const symbol = PAIR_TO_SYMBOL[pair] || pair.replace('/', '').toUpperCase();
-    const scheduledOverride = overrideList
-      .filter(o => o && o.symbol === symbol && o.startsAt > now)
-      .sort((a, b) => a.startsAt - b.startsAt)[0];
 
-    // The app sends the exact settle timestamp it is showing the user. Older app builds only send
-    // durationMinutes — reconstruct from that (minute-rounded, so keep the ±60s grace below).
-    const requestedSettleAt = Number(req.body?.settleAtRequested);
-    const intendedSettleAt = Number.isFinite(requestedSettleAt) && requestedSettleAt > now
-      ? requestedSettleAt
-      : now + duration * 60 * 1000;
+    // The announced minute comes from the SAME record /api/signal-status shows the user
+    // (signal_config.livePlan.announcedAt). Searching candle_overrides independently used to let the
+    // two diverge — the app would display 3:19 while the server judged against a different minute,
+    // force-losing every follower. livePlan wins; the override search is only a legacy fallback.
+    const livePlan = signalCfg.livePlan;
+    const announcedMinute = livePlan && Number.isFinite(Number(livePlan.announcedAt))
+      ? Number(livePlan.announcedAt) : null;
+    const scheduledOverride =
+      (announcedMinute !== null
+        ? overrideList.find(o => o && o.symbol === symbol && Number(o.startsAt) === announcedMinute)
+        : null)
+      || overrideList
+        .filter(o => o && o.symbol === symbol && o.startsAt > now)
+        .sort((a, b) => a.startsAt - b.startsAt)[0];
 
-    // Grace: the announced time is minute-precision, so anyone whose chosen settle time lands
-    // inside the announced minute counts as following (this also absorbs client-clock skew).
-    // Strictly < 60s: picking the minute before/after (e.g. 5:19 when 5:20 was announced) is NOT
-    // following. Confirmed real case (2026-08-19, 5 PM signal): two users both picked 5:20 and both
-    // showed "05:06 PM → 05:20 PM", but their settleAt carried their click seconds (5:20:40 vs
-    // 5:20:10) while the override started at 5:20:30 → one WIN, one LOSS. Snapping every follower
-    // to startsAt removes the seconds from the equation entirely.
-    const FOLLOW_GRACE_MS = 60 * 1000;
+    // The app sends the exact settle timestamp it is showing the user. Older builds send only
+    // durationMinutes. Either way the value is reduced to the WHOLE MINUTE it belongs to before any
+    // comparison, because that minute is what the user actually saw and chose:
+    //   • an explicit timestamp is floored — trailing seconds are click noise, not intent
+    //   • a duration is measured from the current whole minute, matching how the server picked the
+    //     announced offset ("fired 3:03, +16 → 3:19")
+    const rawRequested = Number(req.body?.settleAtRequested);
+    const requestedOk = Number.isFinite(rawRequested)
+      && rawRequested > now
+      && rawRequested <= now + MAX_DURATION_MIN * 60 * 1000;
+    const intendedSettleAt = requestedOk
+      ? Math.floor(rawRequested / 60000) * 60000
+      : Math.floor(now / 60000) * 60000 + duration * 60 * 1000;
 
-    if (scheduledOverride && Math.abs(intendedSettleAt - scheduledOverride.startsAt) < FOLLOW_GRACE_MS) {
+    // Following = the announced coin AND exactly the announced minute. No tolerance window: a
+    // ±60s grace used to promote a 3:18 pick into a paid 3:19 follower, which inverts the owner
+    // rule that only an exact follow wins. Both sides are whole minutes, so equality is precise.
+    if (scheduledOverride && intendedSettleAt === Number(scheduledOverride.startsAt)) {
       followedSignal = true;
-      settleAt = scheduledOverride.startsAt;   // identical for every follower
+      settleAt = Number(scheduledOverride.startsAt);   // identical for every follower
     } else {
-      settleAt = intendedSettleAt;             // off-signal trade — cannot win (flag below)
+      settleAt = intendedSettleAt;                     // off-signal trade — cannot win (flag below)
     }
 
     // Whole-minute discipline (owner rule): seconds must not exist anywhere in a position's
-    // timeline. The override already starts on a whole minute (ceilToMinute in signal-release /
-    // fireAutoSignal); here the user's side is snapped too — settle time up to the next whole
-    // minute, open time down to the minute it was placed in. Two users placing in the same minute
-    // now get byte-identical timestamps, so the result cannot differ by seconds.
-    settleAt = ceilToMinute(settleAt);
+    // timeline. settleAt is already minute-aligned above; openedAt is floored to the minute the
+    // trade was placed in, so two users placing in the same minute get identical timestamps.
     const openedAt = Math.floor(now / 60000) * 60000;
 
     // The announced signal minute this trade was placed against. Stamped on the position so
@@ -3775,6 +3936,7 @@ app.post("/api/demo/predict", authenticate, financialRateLimit, userLock, async 
       followedSignal,
       announcedSettleAt,
     });
+    noteOpenPosition(settleAt);
     await writeDemoAccounts(accounts);
     res.json({ ok: true, signalBalance: account.signalBalance, positions: account.positions });
   } catch (err) {
@@ -3784,6 +3946,12 @@ app.post("/api/demo/predict", authenticate, financialRateLimit, userLock, async 
 });
 
 // --- CANCEL DEMO TRADE ROUTE ---
+// Cancelling refunds the stake in full, so it must be impossible to use as an escape hatch once the
+// outcome is knowable. Two guards below: settle first (a due trade is decided, not cancellable) and
+// a lock-in window before the settle minute (the override direction becomes visible on the chart at
+// that minute, so a late cancel would be a risk-free way out of a losing follow).
+const CANCEL_LOCK_MS = 60 * 1000;
+
 app.post("/api/demo/cancel", authenticate, financialRateLimit, userLock, async (req, res) => {
   try {
     const { id } = req.body;
@@ -3791,23 +3959,43 @@ app.post("/api/demo/cancel", authenticate, financialRateLimit, userLock, async (
 
     const accounts = await readDemoAccounts();
     const account = getDemoAccount(accounts, req.user.sub);
-    
+    // Decide anything already due BEFORE looking at this position, so a trade whose settle minute
+    // has passed cannot be refunded instead of won/lost just because the sweep hasn't run yet.
+    await settleDuePositions(account, req.user.sub);
+
     // Find the specific trade
     const posIndex = account.positions.findIndex(p => p.id === id);
     if (posIndex === -1) {
+      await writeDemoAccounts(accounts);
       return res.status(404).json({ error: "Trade not found." });
     }
 
     const position = account.positions[posIndex];
     if (position.settled) {
+      await writeDemoAccounts(accounts);
       return res.status(400).json({ error: "Trade has already settled and cannot be cancelled." });
+    }
+
+    const settleAt = Number(position.settleAt);
+    if (Number.isFinite(settleAt) && Date.now() >= settleAt - CANCEL_LOCK_MS) {
+      await writeDemoAccounts(accounts);
+      return res.status(400).json({ error: "Too close to settlement time — this trade can no longer be cancelled." });
     }
 
     // Refund the stake amount back to the signal balance
     account.signalBalance = Math.round((account.signalBalance + position.stake) * 100) / 100;
 
-    // Volume is NOT reversed on cancel — prevents inflate/deflate exploit
-    // The trade was placed and volume was committed
+    // Reverse the volume this trade contributed. The stake is refunded in full, so the trade never
+    // really happened — leaving the credit in place let a user place-and-cancel repeatedly to farm
+    // the 5× traded-volume requirement that gates the withdrawal penalty, at zero risk. Exactly the
+    // amounts added at placement are subtracted here, so nothing can be inflated either way.
+    if (account.volumeData) {
+      account.volumeData.tradedVolume = Math.max(
+        0,
+        Math.round((account.volumeData.tradedVolume - position.stake) * 100) / 100
+      );
+      account.volumeData.signalTradeCount = Math.max(0, (account.volumeData.signalTradeCount || 0) - 1);
+    }
 
     position.settled = true;
     position.cancelled = true;
@@ -4093,6 +4281,9 @@ async function noteDepositRecheck(userId, requestId, reason) {
 
 async function recheckPendingDeposits() {
   if (_depositRecheckRunning) return;
+  // No deposit is waiting → nothing to verify. Skips two whole-table reads every 3 minutes, which
+  // is the usual state: pending deposits exist only for the minutes around an actual deposit.
+  if (_pendingDepositHint === false) return;
   _depositRecheckRunning = true;
   try {
     const accounts = await readDemoAccounts();
@@ -4100,14 +4291,19 @@ async function recheckPendingDeposits() {
     const wallets = cfg.adminWallets || {};
     const now = Date.now();
     const candidates = [];
+    // anyPending tracks pending requests REGARDLESS of age or wallet config, so configuring a
+    // wallet address later still wakes this job up for a deposit that was skipped before.
+    let anyPending = false;
     for (const [userId, account] of Object.entries(accounts)) {
       for (const dr of account.depositRequests || []) {
         if (dr.status !== 'pending') continue;
+        anyPending = true;
         if (now - dr.createdAt > DEPOSIT_RECHECK_MAX_AGE_MS) continue;
         if (!wallets[dr.network]) continue; // can't verify without our wallet address
         candidates.push({ userId, dr });
       }
     }
+    _pendingDepositHint = anyPending;
     if (!candidates.length) return;
     // Oldest first so nobody starves; cap per run
     candidates.sort((a, b) => a.dr.createdAt - b.dr.createdAt);
@@ -4126,6 +4322,7 @@ async function recheckPendingDeposits() {
     if (credited) console.log(`[DepositRecheck] ${credited} pending deposit(s) auto-credited`);
   } catch (e) {
     console.error('[DepositRecheck] failed:', e);
+    _pendingDepositHint = null;                         // unknown again → query on the next tick
   } finally {
     _depositRecheckRunning = false;
   }
@@ -4138,13 +4335,27 @@ async function recheckPendingDeposits() {
 let _settleJobRunning = false;
 async function settleAllDuePositions() {
   if (_settleJobRunning) return;
+  // Nothing can be due before the earliest open position — skip the query entirely. With no signal
+  // running this turns ~1,440 whole-table reads a day into zero.
+  if (_nextSettleAtHint !== null && Date.now() < _nextSettleAtHint) return;
   _settleJobRunning = true;
   try {
     const now = Date.now();
     const accounts = await readDemoAccounts();
-    const dueUsers = Object.entries(accounts)
-      .filter(([, a]) => (a.positions || []).some(p => !p.settled && !p.cancelled && !p.timedOut && p.settleAt <= now))
-      .map(([userId]) => userId);
+    // One pass computes both the due list and the next wake-up time, from the snapshot we just paid
+    // for. Positions with an unparseable settleAt are treated as due so they can never get stuck.
+    let earliestFuture = Infinity, sawDue = false;
+    const dueUsers = [];
+    for (const [userId, a] of Object.entries(accounts)) {
+      let due = false;
+      for (const p of (a.positions || [])) {
+        if (p.settled || p.cancelled || p.timedOut) continue;
+        const t = Number(p.settleAt);
+        if (!Number.isFinite(t) || t <= now) due = true;
+        else if (t < earliestFuture) earliestFuture = t;
+      }
+      if (due) { dueUsers.push(userId); sawDue = true; }
+    }
     for (const userId of dueUsers) {
       const unlock = await acquireTransferLock(userId);
       try {
@@ -4157,8 +4368,12 @@ async function settleAllDuePositions() {
         if (after !== before) await writeDemoAccounts(fresh);
       } finally { unlock(); }
     }
+    // Re-arm. If this pass had work, look again next minute in case a settle or write failed —
+    // never sleep on the assumption it succeeded. Otherwise sleep until the next open deadline.
+    _nextSettleAtHint = sawDue ? now + 60 * 1000 : earliestFuture;
   } catch (e) {
     console.error('[SettleJob] failed:', e?.message || e);
+    _nextSettleAtHint = null;                            // unknown again → query on the next tick
   } finally { _settleJobRunning = false; }
 }
 
@@ -4317,7 +4532,22 @@ async function readAutoSignalConfig() {
     settlementMinMax,
   };
 }
-async function writeAutoSignalConfig(cfg) { await dbWrite('auto_signal_config', cfg); }
+async function writeAutoSignalConfig(cfg) {
+  await dbWrite('auto_signal_config', cfg);
+  _autoCfgCache = null;                // admin changed the schedule → drop the cached copy
+}
+
+// The 30s scheduler tick needs this config constantly but it changes only when an admin edits it,
+// so serve it from memory for a few minutes at a time instead of querying Postgres 2,880×/day.
+let _autoCfgCache = null, _autoCfgCachedAt = 0;
+const AUTO_CFG_TTL_MS = 5 * 60 * 1000;
+async function getAutoSignalConfigCached() {
+  if (_autoCfgCache && Date.now() - _autoCfgCachedAt < AUTO_CFG_TTL_MS) return _autoCfgCache;
+  const cfg = await readAutoSignalConfig();
+  _autoCfgCache = cfg;
+  _autoCfgCachedAt = Date.now();
+  return cfg;
+}
 
 // Track which windows already fired today (keyed by "YYYY-MM-DD:HH" in PKT)
 // Persisted to DB so a server restart (Render deploy/crash) never causes a missed window.
@@ -4360,7 +4590,9 @@ function symbolShort(sym) {
 
 // Format current PKT time as "H:MM AM/PM"
 function fmtPKTTime() {
-  return pktNow().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  // pktNow() is already shifted +5h, so it must be read as UTC. Without timeZone:'UTC' the host's
+  // own zone is applied on top and the label is offset twice (correct only when the box runs UTC).
+  return pktNow().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'UTC' });
 }
 
 // Format any epoch-ms instant as PKT "H:MM AM/PM" (used in broadcasts and logs)
@@ -4372,7 +4604,6 @@ function fmtPKT(ms) {
 // Round a timestamp UP to the next whole minute. Signal times are announced to the minute
 // ("3:32 PM"), so the override must start at exactly :00 seconds of that minute — otherwise a
 // user who picks 3:32 in the app is compared against 3:32:07 and the match depends on seconds.
-function ceilToMinute(ms) { return Math.ceil(ms / 60000) * 60000; }
 
 // Core auto-scheduler — called every 30 seconds.
 //
@@ -4386,11 +4617,15 @@ function ceilToMinute(ms) { return Math.ceil(ms / 60000) * 60000; }
 //   • AUTO_CATCHUP_MIN: if the box was asleep/restarting through the whole window, the signal
 //     still goes out (late) up to this many minutes past the hour rather than being lost.
 const AUTO_FIRE_WINDOW_MIN = 5;    // 3:00–3:05 → fire minute is one of :00 :01 :02 :03 :04
-const AUTO_CATCHUP_MIN = 30;
+// Catch-up bound. The owner spec puts the fire inside the first 5 minutes of the hour, so a very
+// late catch-up would break it: firing at 3:29 announces settlement around 3:45–3:49, long after
+// the window users are watching. 10 minutes still rescues a boot/restart that overran the window
+// (worst case fires 3:09, settles by 3:29) without turning the session into a different event.
+const AUTO_CATCHUP_MIN = 10;
 const _autoSignalClaimed = new Set();   // in-flight in THIS process (not persisted)
 
 async function runAutoSignalScheduler() {
-  const cfg = await readAutoSignalConfig();
+  const cfg = await getAutoSignalConfigCached();
   const dateStr = pktDateStr();
 
   // Clean up old fire keys (keep only today's) — runs in both modes
@@ -4437,6 +4672,12 @@ async function runAutoSignalScheduler() {
 // Returns { fireKey, plannedFireAt } or null if the roll could not be stored.
 async function ensureAutoFirePlan(fireKey, hourPKT) {
   const sig = await readSignalConfig();
+
+  // Durable "this window already fired" mark. It is written in the SAME row as livePlan, so it
+  // survives a crash that happened before auto_signal_fired (a separate key) could be saved.
+  // Without this check the scheduler would roll a brand-new plan and broadcast the window twice.
+  if (sig.lastFireKey === fireKey) return null;
+
   const existing = sig.autoFirePlan;
   if (existing && existing.fireKey === fireKey && Number.isFinite(Number(existing.plannedFireAt))) {
     return { fireKey, plannedFireAt: Number(existing.plannedFireAt) };
@@ -4459,6 +4700,16 @@ async function ensureAutoFirePlan(fireKey, hourPKT) {
 // fireKey (optional) is persisted as "fired" once the signal is actually live, so a failure
 // before that point leaves the window retryable.
 async function fireAutoSignal(cfg, fireKey = null) {
+  // Never open a second session on top of a live one. This is the durable double-fire barrier:
+  // if the process died between persisting livePlan and persisting the "fired" mark, the restarted
+  // process finds livePlan still in flight and skips instead of broadcasting the window twice
+  // (which would also overwrite the override the first broadcast's followers are judged by).
+  const inFlight = await inFlightSession();
+  if (inFlight) {
+    console.log(`[AutoSignal] Skipped — session already live until ${fmtPKT(inFlight.deactivateAt)} PKT`);
+    return null;
+  }
+
   const coin      = 'BTCUSDT'; // BTC only — owner rule
   const direction = Math.random() < 0.5 ? 'up' : 'down';   // server-random every time
   const dirEmoji  = direction === 'up' ? '📈' : '📉';
@@ -4467,13 +4718,14 @@ async function fireAutoSignal(cfg, fireKey = null) {
 
   const now = Date.now();
 
-  // Settlement time = random 15–20 minutes after the fire moment (owner spec), snapped UP to a
-  // whole minute so the announced clock time and the override start are the SAME instant.
-  // Example: fires 3:03 → +16 → announced 3:19 PM.
+  // Settlement time = random 15–20 minutes after the fire MINUTE (owner spec: "fired 3:03 →
+  // settlement 3:19" is 16 whole minutes). Counting from the floored minute — instead of rounding
+  // now+N up — keeps the announced spread exactly 15..20 and keeps 15 reachable; adding the
+  // leftover seconds on top would produce 15.x–20.x and could announce 21 minutes.
   const minMin  = cfg.settlementMinMin || 15;
   const maxMin  = Math.max(cfg.settlementMinMax || 20, minMin);
   const settlementMinutes = minMin + Math.floor(Math.random() * (maxMin - minMin + 1));
-  const signalStartsAt    = ceilToMinute(now + settlementMinutes * 60 * 1000);
+  const signalStartsAt    = Math.floor(now / 60000) * 60000 + settlementMinutes * 60 * 1000;
 
   // Candle override = exactly ONE minute, starting at signal time (3:19:00 → 3:20:00).
   const overrideDur  = 1;
@@ -4484,19 +4736,24 @@ async function fireAutoSignal(cfg, fireKey = null) {
 
   console.log(`[AutoSignal] ${short} ${direction} | Settlement: ${signalTimeLabel} PKT (+${settlementMinutes} min) | Override 1 min`);
 
-  // 1) Schedule the candle override to start at EXACTLY signal time
-  const ended = (await readOverrideList()).filter(o => o && o.endsAt <= now && o.endsAt > now - 6 * 60 * 60 * 1000);
-  await writeCandleOverrides([...ended, { symbol: coin, direction, startsAt: signalStartsAt, endsAt: signalEndsAt }]);
+  // 1) Schedule the candle override to start at EXACTLY signal time. Pending overrides that do not
+  //    collide are preserved — dropping one would flip its followers to unrefunded losses.
+  await scheduleOverride({ symbol: coin, direction, startsAt: signalStartsAt, endsAt: signalEndsAt });
 
   // 2) Activate signal NOW — users can place their trade any time before signal time.
   //    livePlan persists the deadline so deactivation is driven by the 30s tick, NOT by an
-  //    in-process setTimeout (which a Render free-plan restart / spin-down would silently lose).
+  //    in-process setTimeout (which a Render restart / spin-down would silently lose).
   //    Direction is deliberately NOT stored here — signal_config feeds /api/signal-status.
   const sigCfg = await readSignalConfig();
   sigCfg.signalActive = true;
   sigCfg.livePlan = { announcedAt: signalStartsAt, deactivateAt, symbol: coin };
   sigCfg.autoFirePlan = null;          // this window's plan is consumed
+  // Written in the SAME row/write as livePlan, so "this window fired" can never be lost while the
+  // plan that produced it is cleared. auto_signal_fired below is a second, separate key — it alone
+  // could not make this atomic.
+  if (fireKey) sigCfg.lastFireKey = fireKey;
   await writeSignalConfig(sigCfg);
+  _liveSessionHint = deactivateAt;     // tick can skip DB reads until this deadline
   console.log('[AutoSignal] Signal trading window opened');
 
   // 3) Signal is live → mark the window fired (idempotency barrier: no double broadcast on retry)
@@ -4530,10 +4787,16 @@ async function fireAutoSignal(cfg, fireKey = null) {
 let _lifecycleRunning = false;
 async function enforceSignalLifecycle() {
   if (_lifecycleRunning) return false;              // tick + fast-path timer must not double-refund
+  // Memory hints: 0 = no session open, a future timestamp = open but not closable yet. Either way
+  // there is nothing to do, so the 30s tick costs no database read. Both are set by the code that
+  // opens a session, and null (unknown) after a restart forces one real read.
+  if (_liveSessionHint === 0) return false;
+  if (_liveSessionHint !== null && Date.now() < _liveSessionHint) return false;
+
   const cfg = await readSignalConfig();
   const plan = cfg.livePlan;
-  if (!plan || !Number.isFinite(Number(plan.deactivateAt))) return false;
-  if (Date.now() < Number(plan.deactivateAt)) return false;
+  if (!plan || !Number.isFinite(Number(plan.deactivateAt))) { _liveSessionHint = 0; return false; }
+  if (Date.now() < Number(plan.deactivateAt)) { _liveSessionHint = Number(plan.deactivateAt); return false; }
 
   _lifecycleRunning = true;
   try {
@@ -4541,13 +4804,14 @@ async function enforceSignalLifecycle() {
     await settleAllDuePositions();
 
     // 2) Anything still open ran past the signal → timeout + refund.
-    const timedOut = await timeoutOpenPositions();
+    const timedOut = await timeoutOpenPositions(plan);
 
     // 3) Close the session.
     const fresh = await readSignalConfig();
     fresh.signalActive = false;
     fresh.livePlan = null;
     await writeSignalConfig(fresh);
+    _liveSessionHint = 0;
     console.log(`[Signal] Session closed at ${fmtPKTTime()} PKT — ${timedOut} position(s) timed out/refunded`);
     return true;
   } finally {
@@ -4555,12 +4819,18 @@ async function enforceSignalLifecycle() {
   }
 }
 
-// Refund + mark timedOut every unsettled position that has NOT reached its own settle time.
-// Due-but-unsettled positions are left alone (the settle sweep owns them) so a winner is never
-// converted into a refund by a race. Each account is mutated under its own transfer lock and
-// re-read inside it, the same pattern settleAllDuePositions() uses — otherwise a trade being
+// Refund + mark timedOut every unsettled position of THIS session that has NOT reached its own
+// settle time. Due-but-unsettled positions are left alone (the settle sweep owns them) so a winner
+// is never converted into a refund by a race. Each account is mutated under its own transfer lock
+// and re-read inside it, the same pattern settleAllDuePositions() uses — otherwise a trade being
 // placed at this exact moment could be lost or a refund applied twice.
-async function timeoutOpenPositions() {
+//
+// `plan` scopes the sweep to the session being closed. Without it this refunded EVERY open position
+// on the whole platform — including a referral bonus trade waiting for its own 8:20 PM window, which
+// owner rules say must always win.
+async function timeoutOpenPositions(plan = null) {
+  const sessionAnnounced = plan && Number.isFinite(Number(plan.announcedAt))
+    ? Number(plan.announcedAt) : null;
   const snapshot = await readDemoAccounts();
   const candidates = Object.entries(snapshot)
     .filter(([, a]) => (a?.positions || []).some(p => !p.settled && !p.cancelled && !p.timedOut))
@@ -4578,6 +4848,12 @@ async function timeoutOpenPositions() {
       for (const pos of account.positions) {
         if (pos.settled || pos.cancelled || pos.timedOut) continue;
         if (Number(pos.settleAt) <= nowTs) continue;   // due — the sweep settles it
+        // Referral bonus signals have their own 8:00–8:20 PM window and always win (owner rule).
+        // Closing a 3/5/7 PM session must never touch them.
+        if (pos.isReferralBonus || pos.source === 'referral-signal') continue;
+        // A position stamped with a LATER announced minute belongs to a future session, not this one.
+        const stamped = Number(pos.announcedSettleAt);
+        if (sessionAnnounced !== null && Number.isFinite(stamped) && stamped > sessionAnnounced) continue;
         account.signalBalance = Math.round(((account.signalBalance || 0) + pos.stake) * 100) / 100;
         pos.settled = true;
         pos.timedOut = true;
@@ -4616,7 +4892,7 @@ async function sendBroadcastMessage(text) {
     }
     await writeLiveChats(chats);
   });
-  sendWebPushAll('📊 KYNEX Signal Alert', clean).catch(() => {});
+  sendWebPushAll('📊 KYNEX Signal Alert', clean, targetUids).catch(() => {});
   for (const uid of targetUids) sendFcmNotification(uid, '📊 KYNEX Signal Alert', clean).catch(() => {});
 }
 
@@ -4652,6 +4928,16 @@ app.post('/api/admin/auto-signal-fire-now', requireAdmin, async (req, res) => {
   try {
     const cfg = await readAutoSignalConfig();
     const result = await fireAutoSignal(cfg);   // no fireKey → does not consume a real window
+    // fireAutoSignal refuses while a session is still in flight, so the admin gets a clear reason
+    // instead of an empty 200 that looks like it worked.
+    if (!result) {
+      const live = await inFlightSession();
+      return res.status(409).json({
+        error: live
+          ? `A signal is already live until ${fmtPKT(live.deactivateAt)} PKT. Wait for it to close.`
+          : 'Could not fire signal right now.',
+      });
+    }
     await adminLog(req, 'auto-signal.fire-now', result);
     res.json({ ok: true, ...result });
   } catch (e) {
@@ -4664,12 +4950,36 @@ app.post('/api/admin/auto-signal-config', requireAdmin, async (req, res) => {
   const { mode, settlementMinMin, settlementMinMax, windows } = req.body || {};
   const cfg = await readAutoSignalConfig();
   if (mode === 'auto' || mode === 'manual') cfg.mode = mode;
-  if (Number.isFinite(Number(settlementMinMin)) && settlementMinMin >= 5)  cfg.settlementMinMin = Number(settlementMinMin);
-  if (Number.isFinite(Number(settlementMinMax)) && settlementMinMax <= 60) cfg.settlementMinMax = Number(settlementMinMax);
-  if (Array.isArray(windows)) cfg.windows = windows;
+
+  // Validate the pair together, not each bound on its own. Previously min was only checked against
+  // its floor and max only against its ceiling, so min=50/max=10 was accepted and stored; the
+  // response then echoed those numbers while readAutoSignalConfig() silently rewrote them on read,
+  // leaving the admin screen showing a schedule the server was not using.
+  const nextMin = Number(settlementMinMin);
+  const nextMax = Number(settlementMinMax);
+  const wantMin = Number.isFinite(nextMin) ? Math.round(nextMin) : cfg.settlementMinMin;
+  const wantMax = Number.isFinite(nextMax) ? Math.round(nextMax) : cfg.settlementMinMax;
+  if (wantMin < 5 || wantMax > 60 || wantMin > wantMax) {
+    return res.status(400).json({ error: 'Settlement range must satisfy 5 ≤ min ≤ max ≤ 60 minutes.' });
+  }
+  cfg.settlementMinMin = wantMin;
+  cfg.settlementMinMax = wantMax;
+
+  if (Array.isArray(windows)) {
+    const clean = windows
+      .map(w => ({ hourPKT: Number(w?.hourPKT) }))
+      .filter(w => Number.isInteger(w.hourPKT) && w.hourPKT >= 0 && w.hourPKT <= 23);
+    if (clean.length !== windows.length) {
+      return res.status(400).json({ error: 'Each window needs an integer hourPKT between 0 and 23.' });
+    }
+    cfg.windows = clean;
+  }
+
   await writeAutoSignalConfig(cfg);
-  await adminLog(req, 'auto-signal-config.set', cfg);
-  res.json({ ok: true, ...cfg });
+  // Echo what the server will actually use, read back through the same normaliser.
+  const effective = await readAutoSignalConfig();
+  await adminLog(req, 'auto-signal-config.set', effective);
+  res.json({ ok: true, ...effective });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

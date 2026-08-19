@@ -213,7 +213,7 @@ const Signals = () => {
       try {
         const res = await fetch(`${API_URL}/api/signal-status`, { headers: authHeaders() });
         const data = await res.json();
-        if (res.ok) setBonusInfo({ bonusSignals: data.bonusSignals || 0, daysRemaining: data.daysRemaining || 0, bonusUsedToday: data.bonusUsedToday || 0, referralWindowOpen: !!data.referralWindowOpen, referralSignalTime: data.referralSignalTime, referralDirection: data.referralDirection, referralSymbol: data.referralSymbol, referralEndTime: data.referralEndTime, dailySignalLimit: data.dailySignalLimit ?? null, signalsUsedToday: data.signalsUsedToday ?? null, signalsLeftToday: data.signalsLeftToday ?? null, signalActive: !!data.signalActive, signalSettleAt: data.signalSettleAt || null });
+        if (res.ok) setBonusInfo({ bonusSignals: data.bonusSignals || 0, daysRemaining: data.daysRemaining || 0, bonusUsedToday: data.bonusUsedToday || 0, referralWindowOpen: !!data.referralWindowOpen, referralSignalTime: data.referralSignalTime, referralDirection: data.referralDirection, referralSymbol: data.referralSymbol, referralEndTime: data.referralEndTime, dailySignalLimit: data.dailySignalLimit ?? null, signalsUsedToday: data.signalsUsedToday ?? null, signalsLeftToday: data.signalsLeftToday ?? null, signalActive: !!data.signalActive, signalSettleAt: data.signalSettleAt || null, signalSymbol: data.signalSymbol || null });
       } catch { /* silent */ }
     };
     loadBonusStatus();
@@ -222,7 +222,9 @@ const Signals = () => {
   }, []);
 
   useEffect(() => {
-    const tick = setInterval(() => setNow(Date.now()), 1000);
+    // Server clock, not the device clock: every signal deadline is compared against it, so a device
+    // running fast or slow must not change what the user is allowed to do or what they are shown.
+    const tick = setInterval(() => setNow(serverNow()), 1000);
     return () => clearInterval(tick);
   }, []);
 
@@ -447,9 +449,10 @@ const Signals = () => {
     // Default the settle time to the signal time from the broadcast. Matching that minute is what
     // counts as following the signal, so it must be the default — not a 5-minute guess.
     const announced = bonusInfo.signalSettleAt;
-    setSettleAtTarget(announced && announced > Date.now()
+    const srvNow = serverNow();
+    setSettleAtTarget(announced && announced > srvNow
       ? announced
-      : Math.ceil((Date.now() + 5 * 60 * 1000) / 60000) * 60000);
+      : Math.ceil((srvNow + 5 * 60 * 1000) / 60000) * 60000);
     setPendingDirection(direction);
   };
 
@@ -465,7 +468,7 @@ const Signals = () => {
           // Absolute settle instant — the server matches this against the announced signal time.
           settleAtRequested: settleAtTarget,
           // Kept for older server builds / as a fallback.
-          durationMinutes: Math.max(1, Math.round((settleAtTarget - Date.now()) / 60000)),
+          durationMinutes: Math.max(1, Math.round((settleAtTarget - serverNow()) / 60000)),
         }),
       });
       const data = await res.json();
@@ -502,23 +505,42 @@ const Signals = () => {
   const selectedLive = livePrices[selectedCoin.symbol];
   const stakeAmount = signalBalance ? Math.round(signalBalance * 0.01 * 100) / 100 : 0;
 
-  const settlePreviewDate = new Date(settleAtTarget);
-  const timeValue = `${String(settlePreviewDate.getHours()).padStart(2, '0')}:${String(settlePreviewDate.getMinutes()).padStart(2, '0')}`;
+  // Everything below reads and writes the settle time in PKT (UTC+5), which is what every label in
+  // this screen and every broadcast says. Reading the epoch shifted by +5h with getUTC* fields gives
+  // PKT regardless of the device's own timezone — the old code used local getHours()/setHours(), so
+  // a user outside Pakistan picked a completely different instant than the one displayed.
+  const PKT_OFFSET_MS = 5 * 60 * 60 * 1000;
+  const pktParts = (ms) => new Date(ms + PKT_OFFSET_MS);
+  const settlePreviewPkt = pktParts(settleAtTarget);
+  const timeValue = `${String(settlePreviewPkt.getUTCHours()).padStart(2, '0')}:${String(settlePreviewPkt.getUTCMinutes()).padStart(2, '0')}`;
 
   // Whole minutes only — seconds are zeroed so a trade lines up exactly with the signal time.
   const handleTimeChange = (e) => {
     if (!e.target.value) return;
     const [h, m] = e.target.value.split(':').map(Number);
-    const target = new Date();
-    target.setHours(h, m, 0, 0);
-    if (target.getTime() <= Date.now()) target.setDate(target.getDate() + 1);
-    setSettleAtTarget(target.getTime());
+    const srvNow = serverNow();
+    const p = pktParts(srvNow);
+    let target = Date.UTC(p.getUTCFullYear(), p.getUTCMonth(), p.getUTCDate(), h, m, 0, 0) - PKT_OFFSET_MS;
+    // Roll to the next PKT day only when the chosen minute is genuinely behind the SERVER clock.
+    // Comparing against the device clock here used to push a perfectly valid pick 24 hours out
+    // whenever the phone was running a little fast, which silently guaranteed a timeout refund.
+    if (target < Math.floor(srvNow / 60000) * 60000) target += 24 * 60 * 60 * 1000;
+    setSettleAtTarget(target);
   };
 
   // The signal time announced in the broadcast (server-provided). Matching this minute is what
   // makes a trade count as following the signal.
-  const announcedSettleAt = bonusInfo.signalSettleAt && bonusInfo.signalSettleAt > now ? bonusInfo.signalSettleAt : null;
-  const followsSignal = announcedSettleAt !== null && Math.abs(settleAtTarget - announcedSettleAt) < 60 * 1000;
+  // signalActive must be part of this test: the server rejects a prediction outright when the
+  // session is not active, so showing the green "following signal" state then would promise a win
+  // for a trade that cannot even be placed.
+  const announcedSettleAt = bonusInfo.signalActive && bonusInfo.signalSettleAt && bonusInfo.signalSettleAt > now ? bonusInfo.signalSettleAt : null;
+  // Must mirror the server's rule exactly (see /api/demo/predict): the announced COIN and the
+  // announced MINUTE, compared as whole minutes with no tolerance window. A ±60s window used to
+  // show the green "following" banner for the minute before the announced one, and omitting the
+  // coin check showed it for altcoins the server force-loses.
+  const followsSignal = announcedSettleAt !== null
+    && (!bonusInfo.signalSymbol || selectedCoin.symbol === bonusInfo.signalSymbol)
+    && Math.floor(settleAtTarget / 60000) === Math.floor(announcedSettleAt / 60000);
 
   return (
     <div style={{ padding: '16px', paddingBottom: '90px', color: theme.text, backgroundColor: theme.bg, minHeight: '100vh' }}>
@@ -874,7 +896,7 @@ const Signals = () => {
                   <div style={{ color: theme.faint, fontSize: '13px', marginTop: '4px' }}>Stake refunded</div>
                 )}
                 {isTimedOut && (
-                  <div style={{ color: '#f59e0b', fontSize: '13px', marginTop: '4px' }}>Signal ended by admin · Stake refunded</div>
+                  <div style={{ color: '#f59e0b', fontSize: '13px', marginTop: '4px' }}>Settled after the signal closed · Stake refunded</div>
                 )}
               </div>
             );
