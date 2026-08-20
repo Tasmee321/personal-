@@ -10,6 +10,7 @@ import { ChevronDown, Search, X, Settings } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
 import { CoinIcon } from '../components/CoinIcons';
 import { getToken } from '../utils/auth';
+import { hapticTick, hapticTap, hapticCommit, hapticWin, hapticLoss, hapticError } from '../utils/haptics';
 import { scaleVolume } from '../utils/volumeDisplay';
 import { useTheme } from '../ThemeContext';
 import ALL_COINS, { buildWsStreamUrl } from '../config/coins';
@@ -155,6 +156,40 @@ const Signals = () => {
   const [signalBalance, setSignalBalance] = useState(null);
   const [positions, setPositions] = useState([]);
 
+  // Settlement announcement. The poll below is the only place the app learns a trade closed, and it
+  // used to just swap the number in place — the user could easily miss having won or lost. This
+  // remembers which settled ids have already been shown so the banner fires exactly once per trade,
+  // and only for trades that settled while the user was watching. Purely presentational: it reads
+  // the result the server already decided and changes nothing about it.
+  const seenSettledRef = useRef(null);
+  const [settleFlash, setSettleFlash] = useState(null);
+  const announceSettlements = (incoming) => {
+    const settledNow = incoming.filter((p) => p.settled && !p.cancelled && !p.timedOut);
+    // First load: adopt whatever is already settled without announcing, otherwise opening the page
+    // would replay every historical result at once.
+    if (seenSettledRef.current === null) {
+      seenSettledRef.current = new Set(settledNow.map((p) => p.id));
+      return;
+    }
+    const fresh = settledNow.filter((p) => !seenSettledRef.current.has(p.id));
+    if (!fresh.length) return;
+    fresh.forEach((p) => seenSettledRef.current.add(p.id));
+    // Announce the newest one; if several closed in the same poll, the profits are summed so the
+    // figure shown still matches what the balance actually moved by.
+    const won = fresh.some((p) => p.won);
+    const profit = fresh.reduce((s, p) => s + (p.profit || 0), 0);
+    if (won) hapticWin(); else hapticLoss();
+    setSettleFlash({ won, profit, count: fresh.length });
+  };
+
+  // Auto-dismiss. Kept as an effect rather than a setTimeout at announce time so a result arriving
+  // while one is already showing restarts the clock instead of cutting the new one short.
+  useEffect(() => {
+    if (!settleFlash) return;
+    const t = setTimeout(() => setSettleFlash(null), 5200);
+    return () => clearTimeout(t);
+  }, [settleFlash]);
+
   const [selectedCoin, setSelectedCoin] = useState(COINS[0]);
   const [livePrices, setLivePrices] = useState({});
 
@@ -191,6 +226,7 @@ const Signals = () => {
       const data = await res.json();
       if (res.ok) {
         setSignalBalance(data.signalBalance);
+        announceSettlements(data.positions || []);
         setPositions(data.positions || []);
         if (data.volumeData) setVolumeData(data.volumeData);
       }
@@ -439,13 +475,16 @@ const Signals = () => {
   const startPlacing = (direction) => {
     setActionError('');
     if (signalBalance < 200) {
+      hapticError();
       setActionError('Minimum $200 signal balance required to trade.');
       return;
     }
     if (!signalBalance || signalBalance <= 0) {
+      hapticError();
       setActionError('Your balance is empty. Transfer funds first.');
       return;
     }
+    hapticTap();
     // Default the settle time to the signal time from the broadcast. Matching that minute is what
     // counts as following the signal, so it must be the default — not a 5-minute guess.
     const announced = bonusInfo.signalSettleAt;
@@ -458,6 +497,7 @@ const Signals = () => {
 
   const confirmPrediction = async () => {
     setActionError('');
+    hapticCommit();
     setPlacing(true);
     try {
       const res = await fetch(getEndpoint('/predict'), {
@@ -486,6 +526,7 @@ const Signals = () => {
   const [cancelConfirm, setCancelConfirm] = useState(null);
 
   const cancelTrade = async (id, stake) => {
+    hapticTap();
     setCancelConfirm(null);
     setPositions((prev) => prev.filter((p) => p.id !== id));
     setSignalBalance((prev) => prev + stake);
@@ -495,6 +536,7 @@ const Signals = () => {
       loadAccount();
     } catch (err) {
       console.error(err);
+      hapticError();
       setActionError('Could not cancel trade. It may have already settled.');
       loadAccount();
     }
@@ -528,6 +570,21 @@ const Signals = () => {
     setSettleAtTarget(target);
   };
 
+  // ±1 minute steppers. Hitting an exact announced minute through the native time input means
+  // opening the OS clock dialog and scrolling, which is where users mis-set the minute and lose;
+  // two buttons make the common adjustment one tap. Same whole-minute rule as above — the value is
+  // floored to the minute, so stepping can never introduce stray seconds.
+  //
+  // Deliberately CLAMPS at the next whole minute instead of rolling forward a day the way
+  // handleTimeChange does: rolling 24 hours because someone tapped "−" once would be baffling, and
+  // a settle time in the past is not a valid pick either way.
+  const stepMinutes = (delta) => {
+    hapticTick();
+    const floorMin = Math.floor(serverNow() / 60000) * 60000 + 60000;
+    const next = Math.floor(settleAtTarget / 60000) * 60000 + delta * 60000;
+    setSettleAtTarget(Math.max(floorMin, next));
+  };
+
   // The signal time announced in the broadcast (server-provided). Matching this minute is what
   // makes a trade count as following the signal.
   // signalActive must be part of this test: the server rejects a prediction outright when the
@@ -545,7 +602,44 @@ const Signals = () => {
   return (
     <div style={{ padding: '16px', paddingBottom: '90px', color: theme.text, backgroundColor: theme.bg, minHeight: '100vh' }}>
       <PullIndicator pull={ptrPull} refreshing={ptrRefreshing} />
-      <style>{`@keyframes kynexSlideIn { from { opacity: 0; transform: translateY(-12px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }`}</style>
+      <style>{`@keyframes kynexSlideIn { from { opacity: 0; transform: translateY(-12px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes kxResultIn { 0% { opacity: 0; transform: translateY(18px) scale(0.94); } 60% { transform: translateY(-3px) scale(1.02); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes kxResultGlow { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }`}</style>
+
+      {/* Settlement result. Sits above the content rather than replacing anything, so a result that
+          lands while the user is mid-tap cannot move the button out from under their finger. */}
+      {settleFlash && (
+        <div
+          onClick={() => setSettleFlash(null)}
+          style={{
+            position: 'fixed', left: '16px', right: '16px', bottom: 'calc(96px + env(safe-area-inset-bottom, 0px))',
+            zIndex: 9997, cursor: 'pointer',
+            padding: '14px 16px', borderRadius: '16px',
+            background: settleFlash.won ? theme.upGradient : theme.downGradient,
+            boxShadow: theme.shadowElevated,
+            animation: 'kxResultIn 0.42s cubic-bezier(0.22, 1, 0.36, 1)',
+            display: 'flex', alignItems: 'center', gap: '12px',
+          }}
+        >
+          <div style={{
+            width: '40px', height: '40px', borderRadius: '50%', flexShrink: 0,
+            background: 'rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '20px', animation: 'kxResultGlow 1.4s ease-in-out infinite',
+          }}>
+            {settleFlash.won ? '🎉' : '💔'}
+          </div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ color: '#fff', fontWeight: 800, fontSize: '15px', letterSpacing: '0.3px' }}>
+              {settleFlash.won ? 'You won!' : 'You lost'}
+              {settleFlash.count > 1 && ` · ${settleFlash.count} trades`}
+            </div>
+            <div style={{ color: 'rgba(255,255,255,0.9)', fontSize: '13px', fontWeight: 600 }}>
+              {settleFlash.profit >= 0 ? '+' : '−'}{fmtUsd(Math.abs(settleFlash.profit))} USDT
+            </div>
+          </div>
+          <X size={18} color="rgba(255,255,255,0.85)" style={{ flexShrink: 0 }} />
+        </div>
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
         <h3 style={{ margin: 0 }}>Signals</h3>
@@ -709,13 +803,33 @@ const Signals = () => {
           </div>
 
           <label style={{ fontSize: '12px', color: theme.subtext, marginBottom: '8px', display: 'block' }}>Settle Time</label>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+            <button
+              onClick={() => stepMinutes(-1)}
+              aria-label="One minute earlier"
+              style={{
+                width: '46px', height: '46px', flexShrink: 0, borderRadius: '12px', cursor: 'pointer',
+                border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg,
+                color: theme.text, fontSize: '20px', fontWeight: 700, lineHeight: 1,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >−</button>
             <input
               type="time"
               value={timeValue}
               onChange={handleTimeChange}
-              style={{ padding: '10px 14px', borderRadius: '10px', border: `1px solid ${followsSignal ? theme.up : theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg, color: theme.text, boxSizing: 'border-box', fontWeight: 'bold', fontSize: '16px' }}
+              style={{ flex: 1, minWidth: 0, padding: '10px 14px', borderRadius: '10px', border: `1px solid ${followsSignal ? theme.up : theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg, color: theme.text, boxSizing: 'border-box', fontWeight: 'bold', fontSize: '16px', textAlign: 'center' }}
             />
+            <button
+              onClick={() => stepMinutes(1)}
+              aria-label="One minute later"
+              style={{
+                width: '46px', height: '46px', flexShrink: 0, borderRadius: '12px', cursor: 'pointer',
+                border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg,
+                color: theme.text, fontSize: '20px', fontWeight: 700, lineHeight: 1,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >+</button>
           </div>
 
           {/* A trade only follows the signal when its settle time is the announced signal minute. */}
@@ -737,7 +851,7 @@ const Signals = () => {
 
           {announcedSettleAt !== null && !followsSignal && (
             <button
-              onClick={() => setSettleAtTarget(announcedSettleAt)}
+              onClick={() => { hapticTick(); setSettleAtTarget(announcedSettleAt); }}
               style={{
                 width: '100%', padding: '10px', borderRadius: '10px', marginBottom: '12px', cursor: 'pointer',
                 border: `1px solid ${theme.up}`, backgroundColor: 'transparent', color: theme.up,

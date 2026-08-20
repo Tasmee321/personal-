@@ -5,6 +5,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Receipt, AlertTriangle, Settings } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
 import { CoinIcon } from '../components/CoinIcons';
+import { Shimmer } from '../components/Skeleton';
 import { getToken } from '../utils/auth';
 import { scaleVolume } from '../utils/volumeDisplay';
 import { useTheme } from '../ThemeContext';
@@ -544,6 +545,16 @@ const Assets = () => {
 
       {tab === 'Overview' && (
         <>
+          {balance === null ? (
+            /* First load — balance is still null, so the total would read a misleading 0.00 USDT.
+               Show a skeleton of the same shape instead. Subsequent 5s polls keep the last real
+               value on screen, so this only ever appears once, on entry. */
+            <div style={{ ...glassCard(theme, { padding: '22px', marginBottom: '20px', boxShadow: theme.shadowElevated }) }}>
+              <Shimmer w="110px" h={13} r={6} mb={10} />
+              <Shimmer w="180px" h={30} r={8} mb={22} />
+              {[1, 2, 3, 4, 5].map((i) => <Shimmer key={i} w="100%" h={14} r={6} mb={12} />)}
+            </div>
+          ) : (
           <div style={{ ...glassCard(theme, { padding: '22px', marginBottom: '20px', boxShadow: theme.shadowElevated }) }}>
             <p style={{ color: theme.subtext, fontSize: '13px', margin: '0 0 4px 0' }}>Est. Total Value</p>
             <h2 style={{ margin: '0 0 20px 0', fontSize: '30px', fontWeight: '700', color: theme.text }}>{fmt(totalValue)} <span style={{ fontSize: '14px', color: theme.subtext, fontWeight: '500' }}>USDT</span></h2>
@@ -554,6 +565,7 @@ const Assets = () => {
             <BalanceBar label="Signal (in trades)" value={signalsLocked} total={totalValue} color={iconBadges.amber.fg} theme={theme} />
             <BalanceBar label="Futures Margin" value={futuresLocked} total={totalValue} color={iconBadges.purple.fg} theme={theme} />
           </div>
+          )}
 
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '22px' }}>
             {QUICK_ACTIONS.map((action) => {

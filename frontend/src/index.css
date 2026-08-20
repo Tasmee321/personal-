@@ -51,6 +51,29 @@ body {
   margin: 0;
 }
 
+/* Keyboard focus ring. The app is tap-driven so this is deliberately :focus-visible, not :focus —
+   otherwise every tapped button would keep a ring after the finger lifts. */
+:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Respect the OS "reduce motion" setting. The app has ~30 keyframe animations; users who ask for
+   less movement (vestibular disorders, or just preference) should get a still interface rather
+   than a broken one, so transitions are collapsed to near-zero instead of removed — a 0s duration
+   still fires transitionend, so anything waiting on that keeps working. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 #root {
   width: 100%;
   max-width: 100%;

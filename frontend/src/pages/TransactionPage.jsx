@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, Receipt, X, Copy, CheckCheck } from 'lucide-react';
 import { getToken } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
+import { SkeletonList } from '../components/Skeleton';
 import { API_URL } from '../config';
 function authHeaders() { return { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` }; }
 function fmt(n) { return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -140,6 +141,7 @@ const TransactionPage = () => {
   const [deposits, setDeposits] = useState([]);
   const [withdrawals, setWithdrawals] = useState([]);
   const [filter, setFilter] = useState('All');
+  const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState(null);
 
   useEffect(() => {
@@ -162,6 +164,7 @@ const TransactionPage = () => {
         const withData = await withRes.json();
         if (withRes.ok) setWithdrawals(withData.requests || []);
       } catch {}
+      finally { setLoading(false); }
     })();
   }, []);
 
@@ -258,7 +261,9 @@ const TransactionPage = () => {
           ))}
         </div>
 
-        {filtered.length === 0 && (
+        {loading && <SkeletonList rows={5} height={64} />}
+
+        {!loading && filtered.length === 0 && (
           <div style={{ textAlign: 'center', padding: '50px 0' }}>
             <div style={{ width: '56px', height: '56px', borderRadius: '16px', backgroundColor: iconBadges.amber.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
               <Receipt size={26} color={iconBadges.amber.fg} />
