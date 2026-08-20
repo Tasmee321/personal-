@@ -12,7 +12,7 @@ import { generateSecret as generateTotpSecret, generateURI as generateTotpURI, v
 import { v2 as cloudinary } from "cloudinary";
 import helmet from "helmet";
 import webpush from "web-push";
-import { initDb, dbRead, dbWrite, dbDelete, dbListKeys, dbDumpAll, dbRestoreAll } from "./db.js";
+import { initDb, dbRead, dbWrite, dbDelete, dbListKeys, dbTotalBytes, dbDumpAll, dbRestoreAll } from "./db.js";
 import { initializeApp as initFirebaseApp, cert } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 
@@ -59,7 +59,7 @@ function acquireTransferLock(userId) {
 }
 
 // Express middleware: serialize all account-mutating requests for the same user (shares the same
-// lock map as /api/demo/transfer). Prevents double-withdraw / double-predict / double-buy races
+// lock map as /api/real/transfer). Prevents double-withdraw / double-predict / double-buy races
 // where two simultaneous requests both pass the balance check. Released when the response ends.
 // Do NOT stack this on a handler that already calls acquireTransferLock itself (it would deadlock).
 function userLock(req, res, next) {
@@ -79,9 +79,10 @@ function userLock(req, res, next) {
   }).catch(next);
 }
 
-// ---- Demo/practice trading only — no real money ever moves through these accounts ----
-const DEMO_STARTING_BALANCE = 0;
-const DEMO_PAYOUT_RATE = 0.8; // legacy — kept for reference
+// ---- Real account balances. These are the users' actual funds: they arrive as verified on-chain
+// deposits (TRC20 / ERC20 / BEP20) and leave as real withdrawals, so every path that touches them is
+// a money path. Nothing here is practice money, whatever the older comments used to claim. ----
+const STARTING_BALANCE = 0;
 const SIGNAL_PROFIT_RATE = 0.00662; // every signal yields 0.662% profit on total signal balance
 const PAIR_TO_SYMBOL = {
   "BTC/USDT": "BTCUSDT", "ETH/USDT": "ETHUSDT", "SOL/USDT": "SOLUSDT", "BNB/USDT": "BNBUSDT",
@@ -92,7 +93,8 @@ const PAIR_TO_SYMBOL = {
   "OP/USDT": "OPUSDT",
 };
 
-// Demo-only referral whitelist.
+// Referral whitelist. These are live codes users may already hold, so entries must not be renamed
+// or removed — "DEMO2026" reads like a leftover but withdrawing it would reject real signups.
 const VALID_REFERRAL_CODES = ["K7X9QP", "WELCOME", "DEMO2026", "J529UD"];
 
 const LEVEL_REQUIREMENTS = [
@@ -714,15 +716,16 @@ async function resolveReferral(rawReferral) {
   return { valid: false };
 }
 
-async function readDemoAccounts() { return await dbRead('accounts'); }
-async function writeDemoAccounts(accounts) { await dbWrite('accounts', accounts); }
+async function readRealAccounts() { return await dbRead('accounts'); }
+async function writeRealAccounts(accounts) { await dbWrite('accounts', accounts); }
 
 // ── Postgres read budget ─────────────────────────────────────────────────────
-// The instance is awake 24/7, so background jobs that unconditionally SELECT the whole `accounts`
-// blob every minute dominate database usage — enough to exhaust the free tier's monthly compute
-// hours and egress allowance around the middle of the month, which suspends the database and takes
-// the app down. Each periodic job therefore answers "could anything have changed?" from process
-// memory first, and only queries Postgres when the answer is yes.
+// The instance is awake 24/7 (paid Render plan), so background jobs that unconditionally SELECT the
+// whole `accounts` blob every minute dominate database usage — enough to exhaust NEON's free-plan
+// monthly compute hours and egress allowance around the middle of the month, which suspends the
+// database and takes the app down. Neon is still on the free plan even though Render is not, so this
+// budget stays load-bearing. Each periodic job therefore answers "could anything have changed?" from
+// process memory first, and only queries Postgres when the answer is yes.
 //
 // Every hint starts as null = UNKNOWN, so the first tick after boot always performs a real query.
 // Invariant for all of them: a stale hint may cause an EXTRA query, never a MISSED one. Anything
@@ -843,7 +846,7 @@ async function readBlockedEmails() { return await dbRead('blocked_emails'); }
 async function writeBlockedEmails(list) { await dbWrite('blocked_emails', list); }
 async function isEmailBlocked(email) { return (await readBlockedEmails()).includes(email.toLowerCase()); }
 
-// ---- Deposit address generator (demo-realistic addresses, stored per user) ----
+// ---- Deposit address generator (stored per user) ----
 function generateDepositAddress(network) {
   if (network === 'trc20') {
     const chars = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -867,10 +870,10 @@ function addLedgerEntry(account, type, wallet, amount, description, ref) {
 
 // account.balance is the Spot wallet. account.signalBalance is a separate wallet that only
 // Signals trades draw from — funds move between the two only via an explicit transfer.
-function getDemoAccount(accounts, userId) {
+function getRealAccount(accounts, userId) {
   if (!accounts[userId]) {
     accounts[userId] = {
-      balance: DEMO_STARTING_BALANCE, signalBalance: 0,
+      balance: STARTING_BALANCE, signalBalance: 0,
       holdings: {}, positions: [], futures: [], trades: [],
       ledger: [], withdrawalRequests: [],
       totalDeposited: 0, totalRewarded: 0,
@@ -1059,7 +1062,7 @@ async function getLivePrice(pair) {
   throw new Error("Could not fetch live price for " + pair);
 }
 
-// Settles any demo position whose window has passed.
+// Settles any signal position whose window has passed.
 // Checks active candle overrides — if override matches pair at settle time,
 // forces win/loss based on override direction vs user direction.
 // Human label for a settled signal — used in the push notification
@@ -1144,7 +1147,7 @@ async function settleDuePositions(account, userId = null) {
     const override = activeOverrides.find(o => o.symbol === symbol || o.symbol === pos.pair);
 
     // Owner rule (2026-08-19): a signal WINS only when the user FOLLOWED the broadcast — same coin,
-    // settle time set to the announced signal minute (pos.followedSignal, set in /api/demo/predict)
+    // settle time set to the announced signal minute (pos.followedSignal, set in /api/real/predict)
     // — AND their direction matches the admin candle override active at that instant. Off-signal
     // trades (shorter/longer time, other coin) are pinned to a loss so they cannot win by landing
     // inside the window by accident. Positions from older app builds have followedSignal
@@ -1505,7 +1508,7 @@ app.get("/api/invite/summary", authenticate, async (req, res) => {
   if (!me) return res.status(404).json({ error: "Account not found." });
 
   const referrer = me.referredByUid ? users.find((u) => u.uid === me.referredByUid) : null;
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
 
   // Full level calculation using existing calculateLevel()
   const lvlInfo = calculateLevel(me.uid, users, accounts);
@@ -1590,9 +1593,9 @@ function computeSecurityLevel(user) {
 app.get("/api/account/profile", authenticate, async (req, res) => {
   const me = (await readUsers()).find((u) => u.id === req.user.sub);
   if (!me) return res.status(404).json({ error: "Account not found." });
-  const accounts = await readDemoAccounts();
-  const account = getDemoAccount(accounts, me.id);
-  await writeDemoAccounts(accounts);
+  const accounts = await readRealAccounts();
+  const account = getRealAccount(accounts, me.id);
+  await writeRealAccounts(accounts);
   res.json({
     ok: true,
     name: me.name,
@@ -2063,7 +2066,7 @@ app.get("/api/livechat/history", authenticate, async (req, res) => {
 app.get("/api/admin/livechat", requireAdmin, async (req, res) => {
   const chats = await readLiveChats();
   const users = await dbRead('users') || [];
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   const threads = Object.entries(chats).map(([uid, chat]) => {
     const user = users.find(u => u.id === uid);
     const acct = accounts[uid] || {};
@@ -2190,21 +2193,21 @@ app.get("/api/admin/livechat/:uid/typing-status", requireAdmin, async (req, res)
   res.json({ ok: true, userTyping });
 });
 
-// ---- Demo/practice trading account — no real money, ever ----
+// ---- Real trading account — actual user funds ----
 
-app.get("/api/demo/account", authenticate, userLock, async (req, res) => {
-  const accounts = await readDemoAccounts();
+app.get(["/api/real/account", "/api/demo/account"], authenticate, userLock, async (req, res) => {
+  const accounts = await readRealAccounts();
   // Every open app polls this route. Writing the whole accounts blob on each poll burned Neon's
   // egress budget and held the (now global) account lock for nothing. Only write when there is
   // something real to persist: a freshly seeded account (its deposit addresses are random, so
   // losing them would show the user a different address next poll) or a position that just settled.
   const existing = accounts[req.user.sub];
   const needsSeed = !existing || !existing.depositAddresses;
-  const account = getDemoAccount(accounts, req.user.sub);
+  const account = getRealAccount(accounts, req.user.sub);
   const openBefore = (account.positions || []).filter(p => !p.settled).length;
   await settleDuePositions(account, req.user.sub);
   const openAfter = (account.positions || []).filter(p => !p.settled).length;
-  if (needsSeed || openAfter !== openBefore) await writeDemoAccounts(accounts);
+  if (needsSeed || openAfter !== openBefore) await writeRealAccounts(accounts);
   res.json({
     ok: true,
     balance: Math.round(account.balance * 100) / 100,
@@ -2226,7 +2229,7 @@ app.get("/api/demo/account", authenticate, userLock, async (req, res) => {
 });
 
 // Spot <-> Signal transfer — tracks volume, applies 20% penalty on early Signal→Spot
-app.post("/api/demo/transfer", authenticate, transferRateLimit, async (req, res) => {
+app.post(["/api/real/transfer", "/api/demo/transfer"], authenticate, transferRateLimit, async (req, res) => {
   const { direction, amount, confirmPenalty } = req.body || {};
   const amt = Number(amount);
   if (!["toSignal", "toSpot"].includes(direction)) {
@@ -2238,12 +2241,12 @@ app.post("/api/demo/transfer", authenticate, transferRateLimit, async (req, res)
 
   const unlock = await acquireTransferLock(req.user.sub);
   try {
-  const accounts = await readDemoAccounts();
-  const account = getDemoAccount(accounts, req.user.sub);
+  const accounts = await readRealAccounts();
+  const account = getRealAccount(accounts, req.user.sub);
 
   if (direction === "toSignal") {
     if (amt > account.balance) {
-      await writeDemoAccounts(accounts);
+      await writeRealAccounts(accounts);
       return res.status(400).json({ error: "Insufficient Spot balance." });
     }
     account.balance = Math.round((account.balance - amt) * 100) / 100;
@@ -2273,7 +2276,7 @@ app.post("/api/demo/transfer", authenticate, transferRateLimit, async (req, res)
           const referrerUser = users.find(u => u.uid === me.referredByUid);
           if (referrerUser && referrerUser.id !== req.user.sub) {
             const refRewardRef = `referral-reward-${req.user.sub}`;
-            const refAccount = getDemoAccount(accounts, referrerUser.id);
+            const refAccount = getRealAccount(accounts, referrerUser.id);
             const refAlreadyPaid = (refAccount.ledger || []).some(e => e.ref === refRewardRef);
             if (!refAlreadyPaid) {
               referrerReward = Math.round(deposited * 0.06 * 100) / 100;
@@ -2290,13 +2293,13 @@ app.post("/api/demo/transfer", authenticate, transferRateLimit, async (req, res)
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       type: "transfer", direction, amount: amt, reward, at: Date.now(),
     });
-    await writeDemoAccounts(accounts);
+    await writeRealAccounts(accounts);
     return res.json({ ok: true, balance: account.balance, signalBalance: account.signalBalance, reward, referrerReward });
   }
 
   // direction === "toSpot"
   if (amt > account.signalBalance) {
-    await writeDemoAccounts(accounts);
+    await writeRealAccounts(accounts);
     return res.status(400).json({ error: "Insufficient Signal balance." });
   }
 
@@ -2307,7 +2310,7 @@ app.post("/api/demo/transfer", authenticate, transferRateLimit, async (req, res)
   const volumeComplete = vd.requiredVolume > 0 && vd.tradedVolume >= vd.requiredVolume;
 
   if (!volumeComplete && vd.requiredVolume > 0 && !confirmPenalty) {
-    await writeDemoAccounts(accounts);
+    await writeRealAccounts(accounts);
     const penaltyAmount = Math.round(amt * 0.2 * 100) / 100;
     const receiveAmount = Math.round(amt * 0.8 * 100) / 100;
     return res.json({
@@ -2332,7 +2335,7 @@ app.post("/api/demo/transfer", authenticate, transferRateLimit, async (req, res)
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       type: "transfer", direction, amount: amt, penalty, netAmount, at: Date.now(),
     });
-    await writeDemoAccounts(accounts);
+    await writeRealAccounts(accounts);
     return res.json({ ok: true, balance: account.balance, signalBalance: account.signalBalance, penaltyApplied: penalty });
   }
 
@@ -2344,19 +2347,19 @@ app.post("/api/demo/transfer", authenticate, transferRateLimit, async (req, res)
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     type: "transfer", direction, amount: amt, at: Date.now(),
   });
-  await writeDemoAccounts(accounts);
+  await writeRealAccounts(accounts);
   res.json({ ok: true, balance: account.balance, signalBalance: account.signalBalance });
   } finally { unlock(); }
 });
 
 // ---- Withdraw / deposit ----
-// NOTE: the old self-service "/api/demo/topup" endpoint (free balance top-up, legacy demo mode) has
+// NOTE: the old self-service "topup" endpoint (free balance top-up from a practice-money era) has
 // been removed — balances only change via verified on-chain deposits or admin actions.
-app.post("/api/demo/topup", authenticate, (req, res) => {
+app.post(["/api/real/topup", "/api/demo/topup"], authenticate, (req, res) => {
   res.status(410).json({ error: "This endpoint has been disabled." });
 });
 
-app.post("/api/demo/withdraw", authenticate, rateLimit(60 * 1000, 5), userLock, async (req, res) => {
+app.post(["/api/real/withdraw", "/api/demo/withdraw"], authenticate, rateLimit(60 * 1000, 5), userLock, async (req, res) => {
   const { amount, fundPassword, network, walletAddress } = req.body || {};
   const amt = Number(amount);
   if (!Number.isFinite(amt) || amt <= 0) {
@@ -2420,11 +2423,11 @@ app.post("/api/demo/withdraw", authenticate, rateLimit(60 * 1000, 5), userLock, 
     return res.status(403).json({ error: "This address is not in your withdrawal whitelist. Contact admin to update." });
   }
 
-  const accounts = await readDemoAccounts();
-  const account = getDemoAccount(accounts, req.user.sub);
+  const accounts = await readRealAccounts();
+  const account = getRealAccount(accounts, req.user.sub);
 
   if (amt > account.balance) {
-    await writeDemoAccounts(accounts);
+    await writeRealAccounts(accounts);
     return res.status(400).json({ error: "Insufficient Spot balance." });
   }
 
@@ -2448,7 +2451,7 @@ app.post("/api/demo/withdraw", authenticate, rateLimit(60 * 1000, 5), userLock, 
     status: 'pending', createdAt: Date.now(), reviewedAt: null, txid: null,
   });
   addLedgerEntry(account, 'withdrawal_lock', 'spot', -amt, `Withdrawal request ${amt.toFixed(2)} USDT (${feeLabel}: ${fee.toFixed(2)})`, requestId);
-  await writeDemoAccounts(accounts);
+  await writeRealAccounts(accounts);
   await pushMessage(req.user.sub, "Withdrawal submitted", `Your withdrawal of ${netPayout.toFixed(2)} USDT (after ${feeLabel}) is pending review.`);
 
   sendNotificationEmail(me.email, me.name, "Withdrawal Request Submitted", "Withdrawal Request Submitted",
@@ -2459,7 +2462,7 @@ app.post("/api/demo/withdraw", authenticate, rateLimit(60 * 1000, 5), userLock, 
 });
 
 // ---- Deposit addresses & simulate ----
-app.get("/api/demo/deposit/addresses", authenticate, async (req, res) => {
+app.get(["/api/real/deposit/addresses", "/api/demo/deposit/addresses"], authenticate, async (req, res) => {
   const cfg = await readSignalConfig();
   res.json({ ok: true, addresses: cfg.adminWallets || {} });
 });
@@ -2483,15 +2486,15 @@ app.get("/api/admin/deposit-wallets", requireAdmin, async (req, res) => {
   res.json({ ok: true, wallets: cfg.adminWallets || {} });
 });
 
-app.post("/api/demo/deposit/request", authenticate, rateLimit(60 * 1000, 5), userLock, async (req, res) => {
+app.post(["/api/real/deposit/request", "/api/demo/deposit/request"], authenticate, rateLimit(60 * 1000, 5), userLock, async (req, res) => {
   const { amount, network, txHash } = req.body || {};
   const amt = Number(amount);
   if (!Number.isFinite(amt) || amt <= 0) return res.status(400).json({ error: "Enter a valid amount." });
   if (!['trc20', 'erc20', 'bep20'].includes(network)) return res.status(400).json({ error: "Select a valid network." });
   if (!txHash?.trim()) return res.status(400).json({ error: "Enter the transaction hash / TXID." });
 
-  const accounts = await readDemoAccounts();
-  const account = getDemoAccount(accounts, req.user.sub);
+  const accounts = await readRealAccounts();
+  const account = getRealAccount(accounts, req.user.sub);
   if (!account.depositRequests) account.depositRequests = [];
 
   // Duplicate txHash check across all accounts
@@ -2528,7 +2531,7 @@ app.post("/api/demo/deposit/request", authenticate, rateLimit(60 * 1000, 5), use
     const usersForLevel = await readUsers();
     await checkAndRewardLevelUp(req.user.sub, usersForLevel, accounts);
     await writeUsers(usersForLevel);
-    await writeDemoAccounts(accounts);
+    await writeRealAccounts(accounts);
 
     await pushMessage(req.user.sub, "Deposit confirmed", `${amt.toFixed(2)} USDT deposited to your Spot wallet via ${network.toUpperCase()}. Auto-verified on blockchain.`);
     const users = await readUsers();
@@ -2544,20 +2547,20 @@ app.post("/api/demo/deposit/request", authenticate, rateLimit(60 * 1000, 5), use
   // Not auto-verified — stays pending for admin review
   depositEntry.verificationNote = verification.reason;
   account.depositRequests.unshift(depositEntry);
-  await writeDemoAccounts(accounts);
+  await writeRealAccounts(accounts);
   _pendingDepositHint = true;          // wake the re-verification job
   await pushMessage(req.user.sub, "Deposit submitted", `Your deposit of ${amt.toFixed(2)} USDT via ${network.toUpperCase()} is pending review.`);
   res.json({ ok: true, requestId, status: 'pending', autoVerified: false });
 });
 
-app.get("/api/demo/deposit/history", authenticate, async (req, res) => {
-  const accounts = await readDemoAccounts();
-  const account = getDemoAccount(accounts, req.user.sub);
+app.get(["/api/real/deposit/history", "/api/demo/deposit/history"], authenticate, async (req, res) => {
+  const accounts = await readRealAccounts();
+  const account = getRealAccount(accounts, req.user.sub);
   res.json({ ok: true, requests: account.depositRequests || [] });
 });
 
 app.get("/api/admin/deposits/pending", requireAdmin, async (req, res) => {
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   const users = await readUsers();
   const pending = [];
   for (const [userId, account] of Object.entries(accounts)) {
@@ -2575,7 +2578,7 @@ app.get("/api/admin/deposits/pending", requireAdmin, async (req, res) => {
 
 app.post("/api/admin/deposits/:requestId/process", requireAdmin, async (req, res) => {
   const { approve } = req.body || {};
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   const users = await readUsers();
   let found = false;
   for (const [userId, account] of Object.entries(accounts)) {
@@ -2602,7 +2605,7 @@ app.post("/api/admin/deposits/:requestId/process", requireAdmin, async (req, res
         dr.status = 'rejected';
         await pushMessage(userId, "Deposit rejected", `Your deposit of ${dr.amount.toFixed(2)} USDT via ${dr.network.toUpperCase()} was rejected.`);
       }
-      await writeDemoAccounts(accounts);
+      await writeRealAccounts(accounts);
       break;
     }
   }
@@ -2612,15 +2615,15 @@ app.post("/api/admin/deposits/:requestId/process", requireAdmin, async (req, res
 });
 
 // ---- Withdrawal listing & admin processing ----
-app.get("/api/demo/withdrawals", authenticate, async (req, res) => {
-  const accounts = await readDemoAccounts();
-  const account = getDemoAccount(accounts, req.user.sub);
-  await writeDemoAccounts(accounts);
+app.get(["/api/real/withdrawals", "/api/demo/withdrawals"], authenticate, async (req, res) => {
+  const accounts = await readRealAccounts();
+  const account = getRealAccount(accounts, req.user.sub);
+  await writeRealAccounts(accounts);
   res.json({ ok: true, requests: account.withdrawalRequests || [] });
 });
 
 app.get("/api/admin/withdrawals/pending", requireAdmin, async (req, res) => {
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   const users = await readUsers();
   const now = Date.now();
   const DAY = 24 * 60 * 60 * 1000;
@@ -2707,7 +2710,7 @@ app.post("/api/admin/blocked-emails/unblock", requireAdmin, async (req, res) => 
 
 app.post("/api/admin/withdrawals/:requestId/process", requireAdmin, async (req, res) => {
   const { approve, txid } = req.body || {};
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   const users = await readUsers();
   let found = false;
   for (const [userId, account] of Object.entries(accounts)) {
@@ -2743,7 +2746,7 @@ app.post("/api/admin/withdrawals/:requestId/process", requireAdmin, async (req, 
     }
   }
   if (!found) return res.status(404).json({ error: "Pending withdrawal not found." });
-  await writeDemoAccounts(accounts);
+  await writeRealAccounts(accounts);
   await adminLog(req, approve ? 'withdrawal.approve' : 'withdrawal.reject', { requestId: req.params.requestId, txid: txid || null });
   res.json({ ok: true });
 });
@@ -2755,11 +2758,11 @@ app.post("/api/admin/signal-limit", requireAdmin, async (req, res) => {
   if (!userId || typeof userId !== "string") return res.status(400).json({ error: "userId is required." });
   const limit = Number(dailyLimit);
   if (!Number.isFinite(limit) || limit < 1 || limit > 100) return res.status(400).json({ error: "dailyLimit must be between 1 and 100." });
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   const account = accounts[userId];
   if (!account) return res.status(404).json({ error: "User account not found." });
   account.dailySignalLimit = limit;
-  await writeDemoAccounts(accounts);
+  await writeRealAccounts(accounts);
   await adminLog(req, 'signal-limit.set', { userId, dailyLimit: limit });
   res.json({ ok: true, userId, dailySignalLimit: limit });
 });
@@ -2785,7 +2788,7 @@ app.get("/api/admin/user-lookup", requireAdmin, async (req, res) => {
   const users = await readUsers();
   const user = users.find(u => String(u.uid) === String(uid));
   if (!user) return res.status(404).json({ error: "No user found with that UID." });
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   const account = accounts[user.id] || {};
   res.json({ ok: true, userId: user.id, email: user.email, uid: user.uid, dailySignalLimit: account.dailySignalLimit || DEFAULT_DAILY_SIGNAL_LIMIT });
 });
@@ -3060,7 +3063,7 @@ app.delete("/api/admin/candle-override", requireAdmin, async (req, res) => {
   // Void the remaining open positions: no win, no loss, no cancel — stake refunded.
   let voided = 0;
   try {
-    const snapshot = await readDemoAccounts();
+    const snapshot = await readRealAccounts();
     const affected = Object.entries(snapshot)
       .filter(([, a]) => (a?.positions || []).some(p =>
         !p.settled && !p.cancelled && !p.timedOut &&
@@ -3070,7 +3073,7 @@ app.delete("/api/admin/candle-override", requireAdmin, async (req, res) => {
     for (const userId of affected) {
       const unlock = await acquireTransferLock(userId);
       try {
-        const fresh = await readDemoAccounts();          // re-read under the lock
+        const fresh = await readRealAccounts();          // re-read under the lock
         const account = fresh[userId];
         if (!account?.positions) continue;
         let changed = false;
@@ -3085,7 +3088,7 @@ app.delete("/api/admin/candle-override", requireAdmin, async (req, res) => {
           changed = true;
           voided++;
         }
-        if (changed) await writeDemoAccounts(fresh);
+        if (changed) await writeRealAccounts(fresh);
       } finally { unlock(); }
     }
   } catch (e) {
@@ -3134,7 +3137,7 @@ function getActiveReferred(u, users, accounts) {
 // referred user deposits.
 app.get("/api/admin/referral-active", requireAdmin, async (req, res) => {
   const users = await readUsers();
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   const result = [];
   let dirty = false;
   for (const u of users) {
@@ -3168,7 +3171,7 @@ app.get("/api/admin/referral-active", requireAdmin, async (req, res) => {
       referred: pending.map(toRow),
     });
   }
-  if (dirty) await writeDemoAccounts(accounts);
+  if (dirty) await writeRealAccounts(accounts);
   res.json({ ok: true, referrers: result });
 });
 
@@ -3177,11 +3180,11 @@ app.post("/api/admin/referral-bonus", requireAdmin, async (req, res) => {
   const { userId, bonusSignals } = req.body || {};
   const n = Number(bonusSignals);
   if (!Number.isInteger(n) || n < 1 || n > 100) return res.status(400).json({ error: "Bonus must be 1-100." });
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   const users = await readUsers();
   const user = users.find(u => u.id === userId);
   if (!user) return res.status(404).json({ error: "User not found." });
-  const account = getDemoAccount(accounts, userId);
+  const account = getRealAccount(accounts, userId);
   account.referralBonusSignals = (account.referralBonusSignals || 0) + n;
   account.totalBonusGranted = (account.totalBonusGranted || 0) + n;
   // Signals expire after N days from now (one per day, missed days are forfeit)
@@ -3193,7 +3196,7 @@ app.post("/api/admin/referral-bonus", requireAdmin, async (req, res) => {
   for (const r of getActiveReferred(user, users, accounts)) rewarded.add(r.uid);
   account.referralRewardedUids = [...rewarded];
   account.referralLastGrantedAt = Date.now();
-  await writeDemoAccounts(accounts);
+  await writeRealAccounts(accounts);
   await pushMessage(userId, "Referral Reward", `You earned ${n} bonus signal(s) as a referral reward! Valid for ${n} days.`);
   await adminLog(req, 'referral-bonus.grant', { userId, bonusSignals: n, email: user.email });
   res.json({ ok: true, referralBonusSignals: account.referralBonusSignals });
@@ -3245,7 +3248,7 @@ async function writeFlagConfig(cfg) { await dbWrite('admin_flag_config', cfg); }
 
 app.get("/api/admin/users", requireAdmin, async (req, res) => {
   const users = await readUsers();
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   const flagCfg = await readFlagConfig();
   const trustedWallets = new Set((flagCfg.trustedWallets || []).map(w => w.toLowerCase()));
   const flagsFor = computeUserFlags(users, accounts, { trustedWallets, dismissedFlags: flagCfg.dismissedFlags || {} });
@@ -3286,8 +3289,8 @@ app.post("/api/admin/user/:userId/balance", requireAdmin, async (req, res) => {
   const { amount, wallet } = req.body || {};
   const amt = Number(amount);
   if (!Number.isFinite(amt)) return res.status(400).json({ error: "Valid amount required." });
-  const accounts = await readDemoAccounts();
-  const account = getDemoAccount(accounts, req.params.userId);
+  const accounts = await readRealAccounts();
+  const account = getRealAccount(accounts, req.params.userId);
   if (wallet === 'signal') {
     account.signalBalance = Math.round((account.signalBalance + amt) * 100) / 100;
   } else {
@@ -3295,7 +3298,7 @@ app.post("/api/admin/user/:userId/balance", requireAdmin, async (req, res) => {
     if (amt > 0) account.totalDeposited = Math.round(((account.totalDeposited || 0) + amt) * 100) / 100;
   }
   addLedgerEntry(account, amt > 0 ? 'admin_credit' : 'admin_debit', wallet === 'signal' ? 'signal' : 'spot', amt, `Admin adjustment ${amt > 0 ? '+' : ''}${amt.toFixed(2)} USDT`);
-  await writeDemoAccounts(accounts);
+  await writeRealAccounts(accounts);
   const users = await readUsers();
   const user = users.find(u => u.id === req.params.userId);
   if (user) await pushMessage(user.id, "Balance updated", `Your ${wallet === 'signal' ? 'Signal' : 'Spot'} balance was adjusted by ${amt > 0 ? '+' : ''}${amt.toFixed(2)} USDT.`);
@@ -3334,9 +3337,9 @@ app.delete("/api/admin/user/:userId", requireAdmin, async (req, res) => {
   // Detach anyone this user referred so the referral tree doesn't point at a ghost UID
   for (const u of users) if (u.referredByUid && u.referredByUid === user.uid) u.referredByUid = null;
   await writeUsers(users);
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   delete accounts[req.params.userId];
-  await writeDemoAccounts(accounts);
+  await writeRealAccounts(accounts);
   const msgs = await readAllMessages();
   delete msgs[req.params.userId];
   await writeAllMessages(msgs);
@@ -3356,7 +3359,7 @@ app.post("/api/admin/user/:userId/reset", requireAdmin, async (req, res) => {
   const user = users.find(u => u.id === userId);
   if (!user) return res.status(404).json({ error: "User not found." });
 
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   // Completely reset the account to fresh state
   accounts[userId] = {
     balance: 0,
@@ -3375,7 +3378,7 @@ app.post("/api/admin/user/:userId/reset", requireAdmin, async (req, res) => {
     depositAddresses: accounts[userId]?.depositAddresses || {},
     dailySignalLimit: accounts[userId]?.dailySignalLimit || null,
   };
-  await writeDemoAccounts(accounts);
+  await writeRealAccounts(accounts);
   await pushMessage(userId, "Account Reset", "Your account has been reset by admin. All balances and history have been cleared.");
   await adminLog(req, 'user.reset', { userId });
   res.json({ ok: true });
@@ -3384,7 +3387,7 @@ app.post("/api/admin/user/:userId/reset", requireAdmin, async (req, res) => {
 
 // User deposit history
 app.get("/api/admin/user/:userId/deposits", requireAdmin, async (req, res) => {
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   const account = accounts[req.params.userId] || {};
   const ledger = (account.ledger || []).filter(e => e.type === 'deposit' || e.type === 'manual_credit');
   res.json({ ok: true, deposits: ledger.sort((a,b) => b.at - a.at) });
@@ -3392,7 +3395,7 @@ app.get("/api/admin/user/:userId/deposits", requireAdmin, async (req, res) => {
 
 // User withdrawal history
 app.get("/api/admin/user/:userId/withdrawals", requireAdmin, async (req, res) => {
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   const account = accounts[req.params.userId] || {};
   const withdrawals = (account.withdrawalRequests || []).sort((a,b) => b.createdAt - a.createdAt);
   res.json({ ok: true, withdrawals });
@@ -3400,7 +3403,7 @@ app.get("/api/admin/user/:userId/withdrawals", requireAdmin, async (req, res) =>
 
 // User signal history
 app.get("/api/admin/user/:userId/signals", requireAdmin, async (req, res) => {
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   const account = accounts[req.params.userId] || {};
   const positions = (account.positions || []).sort((a,b) => b.openedAt - a.openedAt);
   res.json({ ok: true, signals: positions });
@@ -3411,7 +3414,7 @@ app.get("/api/admin/user/:userId/signals", requireAdmin, async (req, res) => {
 // Merges deposits, withdrawals, signal trades, transfers, rewards, bonuses
 // into one chronological list with normalized fields for the admin panel.
 app.get("/api/admin/user/:userId/transactions", requireAdmin, async (req, res) => {
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   const users = await readUsers();
   const account = accounts[req.params.userId] || {};
   const user = users.find(u => u.id === req.params.userId);
@@ -3499,7 +3502,7 @@ app.get("/api/admin/user/:userId/transactions", requireAdmin, async (req, res) =
 
 app.get("/api/admin/user/:userId/team", requireAdmin, async (req, res) => {
   const users = await readUsers();
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   const user = users.find(u => u.id === req.params.userId);
   if (!user) return res.status(404).json({ error: "User not found." });
 
@@ -3633,15 +3636,15 @@ app.get("/api/admin/flag-config", requireAdmin, async (req, res) => {
 
 app.get("/api/signal-status", authenticate, userLock, async (req, res) => {
   const cfg = await readSignalConfig();
-  const accounts = await readDemoAccounts();
-  const account = getDemoAccount(accounts, req.user.sub);
+  const accounts = await readRealAccounts();
+  const account = getRealAccount(accounts, req.user.sub);
   const nowMs = Date.now();
   // Expire signals if the grant window has passed
   const expireAt = account.referralBonusExpireAt || 0;
   const isExpired = expireAt > 0 && nowMs >= expireAt;
   if (isExpired && account.referralBonusSignals > 0) {
     account.referralBonusSignals = 0;
-    await writeDemoAccounts(accounts);
+    await writeRealAccounts(accounts);
   }
   const bonusSignals = account.referralBonusSignals || 0;
   const daysRemaining = expireAt > nowMs ? Math.ceil((expireAt - nowMs) / (24 * 60 * 60 * 1000)) : 0;
@@ -3654,7 +3657,7 @@ app.get("/api/signal-status", authenticate, userLock, async (req, res) => {
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
   const todayPositions = (account.positions || []).filter(p => p.openedAt >= todayStart.getTime());
   const bonusUsedToday = todayPositions.filter(p => p.isReferralBonus).length;
-  // Daily limit info (same computation as /api/demo/predict) — display only
+  // Daily limit info (same computation as /api/real/predict) — display only
   const dailySignalLimit = account.dailySignalLimit || cfg.globalDailyLimit || DEFAULT_DAILY_SIGNAL_LIMIT;
   const signalsUsedToday = todayPositions.filter(p => !p.cancelled).length;
   // The announced settle time of the live signal (BTC only). The app prefills its time picker
@@ -3700,7 +3703,7 @@ app.get("/api/signal-status", authenticate, userLock, async (req, res) => {
 });
 
 // Referral bonus signal — auto direction, auto settle at window end
-app.post("/api/demo/referral-signal", authenticate, financialRateLimit, userLock, async (req, res) => {
+app.post(["/api/real/referral-signal", "/api/demo/referral-signal"], authenticate, financialRateLimit, userLock, async (req, res) => {
   try {
     const cfg = await readSignalConfig();
     if (!cfg.referralSignalTime || !cfg.referralDirection) {
@@ -3712,23 +3715,23 @@ app.post("/api/demo/referral-signal", authenticate, financialRateLimit, userLock
       return res.status(403).json({ error: `Referral signal window is 8:00 PM — 8:20 PM (PKT) daily.` });
     }
 
-    const accounts = await readDemoAccounts();
-    const account = getDemoAccount(accounts, req.user.sub);
+    const accounts = await readRealAccounts();
+    const account = getRealAccount(accounts, req.user.sub);
     await settleDuePositions(account, req.user.sub);
 
     const bonusSignals = account.referralBonusSignals || 0;
     if (bonusSignals <= 0) {
-      await writeDemoAccounts(accounts);
+      await writeRealAccounts(accounts);
       return res.status(400).json({ error: "No referral bonus signals available." });
     }
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const bonusUsedToday = (account.positions || []).filter(p => p.openedAt >= todayStart.getTime() && p.isReferralBonus).length;
     if (bonusUsedToday >= 1) {
-      await writeDemoAccounts(accounts);
+      await writeRealAccounts(accounts);
       return res.status(400).json({ error: "Today's bonus signal already used." });
     }
     if (account.signalBalance < 200) {
-      await writeDemoAccounts(accounts);
+      await writeRealAccounts(accounts);
       return res.status(400).json({ error: "Minimum $200 Signal balance required." });
     }
 
@@ -3756,7 +3759,7 @@ app.post("/api/demo/referral-signal", authenticate, financialRateLimit, userLock
       isReferralBonus: true,
     });
     noteOpenPosition(settleAt);
-    await writeDemoAccounts(accounts);
+    await writeRealAccounts(accounts);
     res.json({ ok: true, signalBalance: account.signalBalance, positions: account.positions, direction, pair: pairName, settleAt });
   } catch (err) {
     console.error("referral-signal error:", err);
@@ -3768,7 +3771,7 @@ const MAX_DURATION_MIN = 1440;
 
 const SIGNAL_STAKE_RATE = 0.01;
 
-app.post("/api/demo/predict", authenticate, financialRateLimit, userLock, async (req, res) => {
+app.post(["/api/real/predict", "/api/demo/predict"], authenticate, financialRateLimit, userLock, async (req, res) => {
   try {
     const signalCfg = await readSignalConfig();
     if (!signalCfg.signalActive) {
@@ -3795,14 +3798,14 @@ app.post("/api/demo/predict", authenticate, financialRateLimit, userLock, async 
       return res.status(400).json({ error: "Unsupported trading pair." });
     }
 
-    const accounts = await readDemoAccounts();
-    const account = getDemoAccount(accounts, req.user.sub);
+    const accounts = await readRealAccounts();
+    const account = getRealAccount(accounts, req.user.sub);
     await settleDuePositions(account, req.user.sub);
 
     // BLOCK: Only one active (unsettled, uncancelled) signal allowed at a time
     const activeSignal = (account.positions || []).find(p => !p.settled && !p.cancelled);
     if (activeSignal) {
-      await writeDemoAccounts(accounts);
+      await writeRealAccounts(accounts);
       return res.status(400).json({
         error: "You already have an active signal running. Please wait for it to complete or cancel it before placing a new one.",
         activeSignalId: activeSignal.id
@@ -3810,7 +3813,7 @@ app.post("/api/demo/predict", authenticate, financialRateLimit, userLock, async 
     }
 
     if (account.signalBalance < 200) {
-      await writeDemoAccounts(accounts);
+      await writeRealAccounts(accounts);
       return res.status(400).json({ error: "Minimum $200 Signal balance required to place signals. Transfer funds from Spot first." });
     }
 
@@ -3827,7 +3830,7 @@ app.post("/api/demo/predict", authenticate, financialRateLimit, userLock, async 
     const maxBonusPerDay = 1;
     const totalAllowed = userLimit + (bonusSignals > 0 && bonusUsedToday < maxBonusPerDay ? 1 : 0);
     if (todaySignals >= totalAllowed) {
-      await writeDemoAccounts(accounts);
+      await writeRealAccounts(accounts);
       const msg = bonusSignals > 0 && bonusUsedToday >= maxBonusPerDay
         ? `Daily limit reached (${userLimit} + 1 bonus used). Try again tomorrow.`
         : `Daily signal limit reached (${userLimit} per day). Try again tomorrow.`;
@@ -3842,14 +3845,14 @@ app.post("/api/demo/predict", authenticate, financialRateLimit, userLock, async 
         isReferralBonus = true;
         account.referralBonusSignals = bonusSignals - 1;
       } else {
-        await writeDemoAccounts(accounts);
+        await writeRealAccounts(accounts);
         return res.status(400).json({ error: `Bonus signal available only 8:00 PM — 8:20 PM (PKT) daily.` });
       }
     }
 
     const stake = Math.round(account.signalBalance * SIGNAL_STAKE_RATE * 100) / 100;
     if (!stake || stake <= 0) {
-      await writeDemoAccounts(accounts);
+      await writeRealAccounts(accounts);
       return res.status(400).json({ error: "Signal balance is too low to trade. Transfer funds from Spot first." });
     }
 
@@ -3937,7 +3940,7 @@ app.post("/api/demo/predict", authenticate, financialRateLimit, userLock, async 
       announcedSettleAt,
     });
     noteOpenPosition(settleAt);
-    await writeDemoAccounts(accounts);
+    await writeRealAccounts(accounts);
     res.json({ ok: true, signalBalance: account.signalBalance, positions: account.positions });
   } catch (err) {
     console.error("predict error:", err);
@@ -3945,20 +3948,20 @@ app.post("/api/demo/predict", authenticate, financialRateLimit, userLock, async 
   }
 });
 
-// --- CANCEL DEMO TRADE ROUTE ---
+// --- CANCEL TRADE ROUTE ---
 // Cancelling refunds the stake in full, so it must be impossible to use as an escape hatch once the
 // outcome is knowable. Two guards below: settle first (a due trade is decided, not cancellable) and
 // a lock-in window before the settle minute (the override direction becomes visible on the chart at
 // that minute, so a late cancel would be a risk-free way out of a losing follow).
 const CANCEL_LOCK_MS = 60 * 1000;
 
-app.post("/api/demo/cancel", authenticate, financialRateLimit, userLock, async (req, res) => {
+app.post(["/api/real/cancel", "/api/demo/cancel"], authenticate, financialRateLimit, userLock, async (req, res) => {
   try {
     const { id } = req.body;
     if (!id) return res.status(400).json({ error: "Missing position ID." });
 
-    const accounts = await readDemoAccounts();
-    const account = getDemoAccount(accounts, req.user.sub);
+    const accounts = await readRealAccounts();
+    const account = getRealAccount(accounts, req.user.sub);
     // Decide anything already due BEFORE looking at this position, so a trade whose settle minute
     // has passed cannot be refunded instead of won/lost just because the sweep hasn't run yet.
     await settleDuePositions(account, req.user.sub);
@@ -3966,19 +3969,19 @@ app.post("/api/demo/cancel", authenticate, financialRateLimit, userLock, async (
     // Find the specific trade
     const posIndex = account.positions.findIndex(p => p.id === id);
     if (posIndex === -1) {
-      await writeDemoAccounts(accounts);
+      await writeRealAccounts(accounts);
       return res.status(404).json({ error: "Trade not found." });
     }
 
     const position = account.positions[posIndex];
     if (position.settled) {
-      await writeDemoAccounts(accounts);
+      await writeRealAccounts(accounts);
       return res.status(400).json({ error: "Trade has already settled and cannot be cancelled." });
     }
 
     const settleAt = Number(position.settleAt);
     if (Number.isFinite(settleAt) && Date.now() >= settleAt - CANCEL_LOCK_MS) {
-      await writeDemoAccounts(accounts);
+      await writeRealAccounts(accounts);
       return res.status(400).json({ error: "Too close to settlement time — this trade can no longer be cancelled." });
     }
 
@@ -4001,7 +4004,7 @@ app.post("/api/demo/cancel", authenticate, financialRateLimit, userLock, async (
     position.cancelled = true;
     position.profit = 0;
 
-    await writeDemoAccounts(accounts);
+    await writeRealAccounts(accounts);
     res.json({ ok: true, message: "Trade cancelled successfully", signalBalance: account.signalBalance, positions: account.positions });
   } catch (err) {
     console.error("cancel trade error:", err);
@@ -4009,23 +4012,23 @@ app.post("/api/demo/cancel", authenticate, financialRateLimit, userLock, async (
   }
 });
 
-// ---- Spot trading (demo) — converts practice USDT into practice coin holdings and back ----
+// ---- Spot trading — converts USDT balance into coin holdings and back ----
 const NON_SIGNAL_CUT_RATE = 0.20;
 
-app.post("/api/demo/spot/buy", authenticate, financialRateLimit, userLock, async (req, res) => {
+app.post(["/api/real/spot/buy", "/api/demo/spot/buy"], authenticate, financialRateLimit, userLock, async (req, res) => {
   try {
     const { pair, usdtAmount } = req.body || {};
     if (!PAIR_TO_SYMBOL[pair]) return res.status(400).json({ error: "Unsupported trading pair." });
     const spend = Number(usdtAmount);
     if (!Number.isFinite(spend) || spend <= 0) return res.status(400).json({ error: "Enter a valid amount greater than 0." });
 
-    const accounts = await readDemoAccounts();
-    const account = getDemoAccount(accounts, req.user.sub);
+    const accounts = await readRealAccounts();
+    const account = getRealAccount(accounts, req.user.sub);
     await settleDuePositions(account, req.user.sub);
     // Balance must cover the spend PLUS the risk fee — otherwise the fee was silently waived
     const riskFee = Math.round(spend * NON_SIGNAL_CUT_RATE * 100) / 100;
     if (spend + riskFee > account.balance + 1e-9) {
-      await writeDemoAccounts(accounts);
+      await writeRealAccounts(accounts);
       return res.status(400).json({ error: `Insufficient balance. You need ${(spend + riskFee).toFixed(2)} USDT (${spend.toFixed(2)} + ${riskFee.toFixed(2)} risk fee).` });
     }
 
@@ -4036,7 +4039,7 @@ app.post("/api/demo/spot/buy", authenticate, financialRateLimit, userLock, async
     account.holdings[pair] = (account.holdings[pair] || 0) + quantity;
     account.trades.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type: "spot", side: "buy", pair, quantity, price, amount: spend, riskFee, at: Date.now() });
 
-    await writeDemoAccounts(accounts);
+    await writeRealAccounts(accounts);
     res.json({ ok: true, balance: account.balance, holdings: account.holdings, filledPrice: price, quantity, riskFee });
   } catch (err) {
     console.error("spot buy error:", err);
@@ -4044,19 +4047,19 @@ app.post("/api/demo/spot/buy", authenticate, financialRateLimit, userLock, async
   }
 });
 
-app.post("/api/demo/spot/sell", authenticate, financialRateLimit, userLock, async (req, res) => {
+app.post(["/api/real/spot/sell", "/api/demo/spot/sell"], authenticate, financialRateLimit, userLock, async (req, res) => {
   try {
     const { pair, quantity } = req.body || {};
     if (!PAIR_TO_SYMBOL[pair]) return res.status(400).json({ error: "Unsupported trading pair." });
     const qty = Number(quantity);
     if (!Number.isFinite(qty) || qty <= 0) return res.status(400).json({ error: "Enter a valid quantity greater than 0." });
 
-    const accounts = await readDemoAccounts();
-    const account = getDemoAccount(accounts, req.user.sub);
+    const accounts = await readRealAccounts();
+    const account = getRealAccount(accounts, req.user.sub);
     await settleDuePositions(account, req.user.sub);
     const held = account.holdings[pair] || 0;
     if (qty > held) {
-      await writeDemoAccounts(accounts);
+      await writeRealAccounts(accounts);
       return res.status(400).json({ error: `You only hold ${held} ${pair.split("/")[0]}.` });
     }
 
@@ -4069,7 +4072,7 @@ app.post("/api/demo/spot/sell", authenticate, financialRateLimit, userLock, asyn
     if (account.holdings[pair] < 1e-9) delete account.holdings[pair];
     account.trades.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type: "spot", side: "sell", pair, quantity: qty, price, amount: proceeds, riskFee, at: Date.now() });
 
-    await writeDemoAccounts(accounts);
+    await writeRealAccounts(accounts);
     res.json({ ok: true, balance: account.balance, holdings: account.holdings, filledPrice: price, proceeds, riskFee });
   } catch (err) {
     console.error("spot sell error:", err);
@@ -4077,10 +4080,10 @@ app.post("/api/demo/spot/sell", authenticate, financialRateLimit, userLock, asyn
   }
 });
 
-// ---- Futures trading (demo) — leveraged positions, closed manually, settled against the real price ----
+// ---- Futures trading — leveraged positions, closed manually, settled against the real price ----
 const FUTURES_LEVERAGE_OPTIONS = [1, 5, 10, 20, 50];
 
-app.post("/api/demo/futures/open", authenticate, financialRateLimit, userLock, async (req, res) => {
+app.post(["/api/real/futures/open", "/api/demo/futures/open"], authenticate, financialRateLimit, userLock, async (req, res) => {
   try {
     const { pair, direction, margin, leverage } = req.body || {};
     if (!PAIR_TO_SYMBOL[pair]) return res.status(400).json({ error: "Unsupported trading pair." });
@@ -4091,13 +4094,13 @@ app.post("/api/demo/futures/open", authenticate, financialRateLimit, userLock, a
     const marginAmount = Number(margin);
     if (!Number.isFinite(marginAmount) || marginAmount <= 0) return res.status(400).json({ error: "Enter a valid margin amount greater than 0." });
 
-    const accounts = await readDemoAccounts();
-    const account = getDemoAccount(accounts, req.user.sub);
+    const accounts = await readRealAccounts();
+    const account = getRealAccount(accounts, req.user.sub);
     await settleDuePositions(account, req.user.sub);
     // Balance must cover margin PLUS the risk fee
     const riskFee = Math.round(marginAmount * NON_SIGNAL_CUT_RATE * 100) / 100;
     if (marginAmount + riskFee > account.balance + 1e-9) {
-      await writeDemoAccounts(accounts);
+      await writeRealAccounts(accounts);
       return res.status(400).json({ error: `Insufficient balance. You need ${(marginAmount + riskFee).toFixed(2)} USDT (${marginAmount.toFixed(2)} margin + ${riskFee.toFixed(2)} risk fee).` });
     }
 
@@ -4111,7 +4114,7 @@ app.post("/api/demo/futures/open", authenticate, financialRateLimit, userLock, a
       openedAt: now,
       closed: false,
     });
-    await writeDemoAccounts(accounts);
+    await writeRealAccounts(accounts);
     res.json({ ok: true, balance: account.balance, futures: account.futures, riskFee });
   } catch (err) {
     console.error("futures open error:", err);
@@ -4119,11 +4122,11 @@ app.post("/api/demo/futures/open", authenticate, financialRateLimit, userLock, a
   }
 });
 
-app.post("/api/demo/futures/close", authenticate, financialRateLimit, userLock, async (req, res) => {
+app.post(["/api/real/futures/close", "/api/demo/futures/close"], authenticate, financialRateLimit, userLock, async (req, res) => {
   try {
     const { positionId } = req.body || {};
-    const accounts = await readDemoAccounts();
-    const account = getDemoAccount(accounts, req.user.sub);
+    const accounts = await readRealAccounts();
+    const account = getRealAccount(accounts, req.user.sub);
     const position = account.futures.find((p) => p.id === positionId && !p.closed);
     if (!position) return res.status(404).json({ error: "Open position not found." });
 
@@ -4131,7 +4134,7 @@ app.post("/api/demo/futures/close", authenticate, financialRateLimit, userLock, 
     const priceMove = (closePrice - position.entryPrice) / position.entryPrice;
     const directionSign = position.direction === "long" ? 1 : -1;
     const pnl = position.margin * position.leverage * priceMove * directionSign;
-    // Liquidation floor — a demo position can never lose more than the margin put up
+    // Liquidation floor — a position can never lose more than the margin put up
     const payout = Math.max(0, position.margin + pnl);
 
     account.balance = Math.round((account.balance + payout) * 100) / 100;
@@ -4140,7 +4143,7 @@ app.post("/api/demo/futures/close", authenticate, financialRateLimit, userLock, 
     position.closedAt = Date.now();
     position.pnl = Math.round((payout - position.margin) * 100) / 100;
 
-    await writeDemoAccounts(accounts);
+    await writeRealAccounts(accounts);
     res.json({ ok: true, balance: account.balance, futures: account.futures });
   } catch (err) {
     console.error("futures close error:", err);
@@ -4154,7 +4157,7 @@ app.post("/api/admin/livechat/broadcast", requireAdmin, async (req, res) => {
   if (!text || !String(text).trim()) return res.status(400).json({ error: "Message cannot be empty." });
 
   // filter to users who have actually deposited (totalDeposited > 0)
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   const targetUids = Object.entries(accounts)
     .filter(([uid, acc]) => (acc.totalDeposited || 0) > 0)
     .map(([uid]) => uid);
@@ -4226,7 +4229,7 @@ function scheduleDailyChatClear() {
 // A user often pastes the TXID seconds after sending, before the chain has enough confirmations,
 // so the instant check fails and the deposit sits in "pending" until an admin approves it.
 // This job re-runs the exact same blockchain verification every few minutes and credits the
-// deposit the moment it passes — identical crediting logic to /api/demo/deposit/request.
+// deposit the moment it passes — identical crediting logic to /api/real/deposit/request.
 // Anything that still doesn't verify stays pending for admin review (no rule change).
 const DEPOSIT_RECHECK_INTERVAL_MS = 3 * 60 * 1000;
 const DEPOSIT_RECHECK_MAX_AGE_MS = 48 * 60 * 60 * 1000;   // after 48h leave it to the admin
@@ -4237,7 +4240,7 @@ async function creditVerifiedDeposit(userId, requestId, onChainAmount, note) {
   // Per-user lock + fresh read so we never clobber a concurrent request by the same user
   const unlock = await acquireTransferLock(userId);
   try {
-    const accounts = await readDemoAccounts();
+    const accounts = await readRealAccounts();
     const account = accounts[userId];
     const dr = (account?.depositRequests || []).find(d => d.id === requestId);
     if (!dr || dr.status !== 'pending') return false; // admin already handled it
@@ -4253,7 +4256,7 @@ async function creditVerifiedDeposit(userId, requestId, onChainAmount, note) {
     const users = await readUsers();
     await checkAndRewardLevelUp(userId, users, accounts);
     await writeUsers(users);
-    await writeDemoAccounts(accounts);
+    await writeRealAccounts(accounts);
     await pushMessage(userId, "Deposit confirmed", `${amt.toFixed(2)} USDT deposited to your Spot wallet via ${dr.network.toUpperCase()}. Auto-verified on blockchain.`);
     const user = users.find(u => u.id === userId);
     if (user) {
@@ -4269,13 +4272,13 @@ async function creditVerifiedDeposit(userId, requestId, onChainAmount, note) {
 async function noteDepositRecheck(userId, requestId, reason) {
   const unlock = await acquireTransferLock(userId);
   try {
-    const accounts = await readDemoAccounts();
+    const accounts = await readRealAccounts();
     const dr = (accounts[userId]?.depositRequests || []).find(d => d.id === requestId);
     if (!dr || dr.status !== 'pending') return;
     dr.lastRecheckAt = Date.now();
     dr.recheckCount = (dr.recheckCount || 0) + 1;
     if (reason) dr.verificationNote = reason;
-    await writeDemoAccounts(accounts);
+    await writeRealAccounts(accounts);
   } finally { unlock(); }
 }
 
@@ -4286,7 +4289,7 @@ async function recheckPendingDeposits() {
   if (_pendingDepositHint === false) return;
   _depositRecheckRunning = true;
   try {
-    const accounts = await readDemoAccounts();
+    const accounts = await readRealAccounts();
     const cfg = await readSignalConfig();
     const wallets = cfg.adminWallets || {};
     const now = Date.now();
@@ -4341,7 +4344,7 @@ async function settleAllDuePositions() {
   _settleJobRunning = true;
   try {
     const now = Date.now();
-    const accounts = await readDemoAccounts();
+    const accounts = await readRealAccounts();
     // One pass computes both the due list and the next wake-up time, from the snapshot we just paid
     // for. Positions with an unparseable settleAt are treated as due so they can never get stuck.
     let earliestFuture = Infinity, sawDue = false;
@@ -4359,13 +4362,13 @@ async function settleAllDuePositions() {
     for (const userId of dueUsers) {
       const unlock = await acquireTransferLock(userId);
       try {
-        const fresh = await readDemoAccounts();          // re-read under the lock
+        const fresh = await readRealAccounts();          // re-read under the lock
         const account = fresh[userId];
         if (!account) continue;
         const before = (account.positions || []).filter(p => !p.settled).length;
         await settleDuePositions(account, userId);
         const after = (account.positions || []).filter(p => !p.settled).length;
-        if (after !== before) await writeDemoAccounts(fresh);
+        if (after !== before) await writeRealAccounts(fresh);
       } finally { unlock(); }
     }
     // Re-arm. If this pass had work, look again next minute in case a settle or write failed —
@@ -4392,7 +4395,7 @@ async function sendReferralWindowReminder() {
     if (_referralReminderLastDay === dayKey) return;
     _referralReminderLastDay = dayKey;
 
-    const accounts = await readDemoAccounts();
+    const accounts = await readRealAccounts();
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     let sent = 0;
     for (const [userId, acct] of Object.entries(accounts)) {
@@ -4430,7 +4433,7 @@ async function sendDailyAdminSummary() {
     const DAY = 24 * 3600 * 1000;
     const since = Date.now() - DAY;
     const users = await readUsers();
-    const accounts = await readDemoAccounts();
+    const accounts = await readRealAccounts();
     let newUsers = 0, kycPending = 0, depDone = 0, depDoneAmt = 0, depPending = 0, wdPending = 0, wdPendingAmt = 0, wdDone = 0, wdDoneAmt = 0, signals = 0, totalBalance = 0;
     for (const u of users) {
       const c = u.createdAt ? new Date(u.createdAt).getTime() : 0;
@@ -4482,7 +4485,7 @@ app.post("/api/admin/deposits/recheck", requireAdmin, async (req, res) => {
   res.json({ ok: true, before, after, credited: Math.max(0, before - after) });
 });
 async function countPendingDeposits() {
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   let n = 0;
   for (const a of Object.values(accounts)) for (const d of a.depositRequests || []) if (d.status === 'pending') n++;
   return n;
@@ -4619,6 +4622,13 @@ const BACKUP_MIN_PKT  = 10;   // 4:10 AM PKT — quiet, and clear of the 3 AM / 
 // live_chats is wiped every day by design, so snapshotting it only stores noise. backup:* is
 // excluded so a snapshot can never nest earlier snapshots inside itself and grow geometrically.
 const BACKUP_SKIP_PREFIXES = [BACKUP_PREFIX, 'live_chats'];
+// Neon's free plan caps storage at 0.5 GB for the WHOLE database, and every snapshot is a full copy
+// of that database — so it is the backup history, not the live data, that would realistically blow
+// the limit. The counts above express the intent; this byte budget enforces it, because a growing
+// database silently makes every snapshot bigger and the counts alone would not notice. Exceeding
+// Neon's storage cap suspends the project and takes the app down, so a shorter backup history is
+// strictly the better failure of the two.
+const BACKUP_MAX_TOTAL_BYTES = 120 * 1024 * 1024;   // 120 MB of the 512 MB allowance
 let _backupLastDay = null;
 
 async function takeBackup(kind = BACKUP_MANUAL) {
@@ -4643,6 +4653,23 @@ async function pruneBackups() {
   for (const [prefix, keep] of Object.entries(BACKUP_KEEP)) {
     const mine = rows.filter(r => r.key.startsWith(prefix)).map(r => r.key).sort().reverse();
     for (const key of mine.slice(keep)) await dbDelete(key);
+  }
+
+  // Byte backstop, re-read because the deletes above changed the picture. Oldest goes first, but the
+  // newest daily is never dropped — running with no snapshot at all would defeat the whole feature,
+  // and one snapshot cannot by itself be what breaks a 512 MB budget.
+  const left = (await dbListKeys()).filter(r => r.key.startsWith(BACKUP_PREFIX));
+  let total = left.reduce((sum, r) => sum + r.bytes, 0);
+  if (total <= BACKUP_MAX_TOTAL_BYTES) return;
+  const newestDaily = left.filter(r => r.key.startsWith(BACKUP_DAILY))
+                          .map(r => r.key).sort().reverse()[0];
+  const oldestFirst = left.slice().sort((a, b) => (a.updatedAt > b.updatedAt ? 1 : -1));
+  for (const row of oldestFirst) {
+    if (total <= BACKUP_MAX_TOTAL_BYTES) break;
+    if (row.key === newestDaily) continue;
+    await dbDelete(row.key);
+    total -= row.bytes;
+    console.warn(`[Backup] Over storage budget — dropped ${row.key} (${Math.round(row.bytes / 1024)} KB)`);
   }
 }
 
@@ -4680,7 +4707,12 @@ async function runDailyBackup() {
 }
 
 app.get('/api/admin/backup/list', requireAdmin, async (req, res) => {
-  try { res.json({ ok: true, backups: await listBackups() }); }
+  try {
+    // Neon's free plan gives 0.5 GB and suspends the project when it runs out, so the size is
+    // reported next to the snapshots — it is the one number that decides whether the plan still fits.
+    const [backups, dbBytes] = await Promise.all([listBackups(), dbTotalBytes()]);
+    res.json({ ok: true, backups, dbBytes, dbLimitBytes: 512 * 1024 * 1024 });
+  }
   catch (e) { res.status(500).json({ error: e?.message || 'Could not list backups.' }); }
 });
 
@@ -4765,15 +4797,16 @@ app.post('/api/admin/backup/restore', requireAdmin, async (req, res) => {
 
 // Core auto-scheduler — called every 30 seconds.
 //
-// Render FREE plan constraints this is built around:
-//   • the instance can be restarted at any time, and spins down after 15 min without inbound
-//     traffic → in-process setTimeout() is NOT a reliable clock. Every deadline is therefore
-//     persisted in the DB and re-evaluated on each 30s tick.
+// Constraints this is built around. The instance runs on a PAID Render plan, so it no longer spins
+// down after idle — but it is still restarted on every deploy, and can be restarted by a crash or by
+// Render itself at any time, so none of the durability below is optional:
+//   • a restart wipes in-process state → setTimeout() is NOT a reliable clock. Every deadline is
+//     therefore persisted in the DB and re-evaluated on each 30s tick.
 //   • AUTO_FIRE_WINDOW_MIN: the owner's spec is "fire somewhere inside 3:00–3:05". The chosen
 //     minute is persisted (autoPlan) so a restart mid-window resumes the SAME planned minute
 //     instead of re-rolling or skipping.
-//   • AUTO_CATCHUP_MIN: if the box was asleep/restarting through the whole window, the signal
-//     still goes out (late) up to this many minutes past the hour rather than being lost.
+//   • AUTO_CATCHUP_MIN: if the box was restarting through the whole window, the signal still goes
+//     out (late) up to this many minutes past the hour rather than being lost.
 const AUTO_FIRE_WINDOW_MIN = 5;    // 3:00–3:05 → fire minute is one of :00 :01 :02 :03 :04
 // Catch-up bound. The owner spec puts the fire inside the first 5 minutes of the hour, so a very
 // late catch-up would break it: firing at 3:29 announces settlement around 3:45–3:49, long after
@@ -4806,7 +4839,7 @@ async function runAutoSignalScheduler() {
     if (_autoSignalClaimed.has(fireKey)) continue;  // fire in flight right now
 
     // Plan the exact fire minute once, and persist it. Restart-safe: the plan survives a Render
-    // restart or spin-down, so the signal still lands on the minute that was rolled originally.
+    // restart, so the signal still lands on the minute that was rolled originally.
     const plan = await ensureAutoFirePlan(fireKey, hourPKT);
     if (!plan) continue;
     if (Date.now() < plan.plannedFireAt) continue;  // not yet — wait for a later tick
@@ -4900,7 +4933,7 @@ async function fireAutoSignal(cfg, fireKey = null) {
 
   // 2) Activate signal NOW — users can place their trade any time before signal time.
   //    livePlan persists the deadline so deactivation is driven by the 30s tick, NOT by an
-  //    in-process setTimeout (which a Render restart / spin-down would silently lose).
+  //    in-process setTimeout (which a Render restart would silently lose).
   //    Direction is deliberately NOT stored here — signal_config feeds /api/signal-status.
   const sigCfg = await readSignalConfig();
   sigCfg.signalActive = true;
@@ -4936,7 +4969,7 @@ async function fireAutoSignal(cfg, fireKey = null) {
 }
 
 // End-of-signal lifecycle, driven by the persisted deadline (livePlan.deactivateAt) so it survives
-// a Render restart or spin-down. Idempotent — safe to call from the tick and from a setTimeout.
+// a Render restart. Idempotent — safe to call from the tick and from a setTimeout.
 //
 // Owner spec at 3:20 (signal time 3:19):
 //   • 3:19 followers  → already settled by settleAllDuePositions() → WIN / LOSS by direction
@@ -4989,7 +5022,7 @@ async function enforceSignalLifecycle() {
 async function timeoutOpenPositions(plan = null) {
   const sessionAnnounced = plan && Number.isFinite(Number(plan.announcedAt))
     ? Number(plan.announcedAt) : null;
-  const snapshot = await readDemoAccounts();
+  const snapshot = await readRealAccounts();
   const candidates = Object.entries(snapshot)
     .filter(([, a]) => (a?.positions || []).some(p => !p.settled && !p.cancelled && !p.timedOut))
     .map(([userId]) => userId);
@@ -4999,7 +5032,7 @@ async function timeoutOpenPositions(plan = null) {
     const unlock = await acquireTransferLock(userId);
     try {
       const nowTs = Date.now();
-      const fresh = await readDemoAccounts();
+      const fresh = await readRealAccounts();
       const account = fresh[userId];
       if (!account || !Array.isArray(account.positions)) continue;
       let userCount = 0;
@@ -5021,7 +5054,7 @@ async function timeoutOpenPositions(plan = null) {
         userCount++;
       }
       if (!userCount) continue;
-      await writeDemoAccounts(fresh);
+      await writeRealAccounts(fresh);
       count += userCount;
       await pushMessage(userId, "Signal refunded", "The signal session has ended before your settle time, so your stake has been refunded.").catch(() => {});
     } finally { unlock(); }
@@ -5031,7 +5064,7 @@ async function timeoutOpenPositions(plan = null) {
 
 // Shared helper — send broadcast to all deposited users (chat + push)
 async function sendBroadcastMessage(text) {
-  const accounts = await readDemoAccounts();
+  const accounts = await readRealAccounts();
   const targetUids = Object.entries(accounts)
     .filter(([, acc]) => (acc.totalDeposited || 0) > 0)
     .map(([uid]) => uid);
@@ -5082,9 +5115,51 @@ app.get('/api/admin/auto-signal-config', requireAdmin, async (req, res) => {
 
 // Fire a signal right now — lets the admin verify the whole auto flow without waiting for 3 PM.
 // Same code path as the scheduler (fireAutoSignal), so a successful test proves auto mode works.
+//
+// Guarded against eating a scheduled window. A manual session stays open up to 21 minutes (20 max
+// settlement + 1 override minute), fireAutoSignal refuses while one is in flight, and the scheduler
+// gives up once the hour is past AUTO_CATCHUP_MIN — so a manual fire shortly before 3/5/7 PM would
+// silently cost that window its signal entirely. Blocked rather than warned: the admin cannot see
+// that consequence from the button, and losing a real window is worse than waiting.
+function windowCollision(cfg) {
+  // All instants here are REAL epoch ms, same convention as ensureAutoFirePlan: pktNow() is only
+  // used to read which PKT calendar day and hour we are in, and the offset is subtracted straight
+  // back off. Mixing shifted and real ms is what makes this kind of code print times 5 hours out.
+  const nowPkt   = pktNow();
+  const nowMs    = Date.now();
+  const maxMin   = Math.max(cfg.settlementMinMax || 20, cfg.settlementMinMin || 15);
+  const busyTill = nowMs + (maxMin + 1) * 60 * 1000;   // worst-case close of the session about to open
+  for (const win of (cfg.windows || [])) {
+    const h = Number(win?.hourPKT);
+    if (!Number.isInteger(h)) continue;
+    // Both today's and tomorrow's occurrence, so a late-night fire cannot skip an early window.
+    for (const dayShift of [0, 1]) {
+      const start = Date.UTC(
+        nowPkt.getUTCFullYear(), nowPkt.getUTCMonth(), nowPkt.getUTCDate() + dayShift, h, 0, 0, 0
+      ) - 5 * 60 * 60 * 1000;
+      const giveUp = start + AUTO_CATCHUP_MIN * 60 * 1000;
+      // Collision when the manual session is still open past the point the scheduler stops trying.
+      if (busyTill > start && nowMs < giveUp) return { start, giveUp, busyTill };
+    }
+  }
+  return null;
+}
+
 app.post('/api/admin/auto-signal-fire-now', requireAdmin, async (req, res) => {
   try {
     const cfg = await readAutoSignalConfig();
+
+    const clash = windowCollision(cfg);
+    if (clash && !req.body?.force) {
+      return res.status(409).json({
+        error: `Too close to the ${fmtPKT(clash.start)} PKT window — a manual signal now stays open `
+             + `until about ${fmtPKT(clash.busyTill)} PKT, past the ${fmtPKT(clash.giveUp)} PKT `
+             + `catch-up limit, so that window would be skipped for today. `
+             + `Fire after it closes, or resend with force to override.`,
+        needsForce: true,
+      });
+    }
+
     const result = await fireAutoSignal(cfg);   // no fireKey → does not consume a real window
     // fireAutoSignal refuses while a session is still in flight, so the admin gets a clear reason
     // instead of an empty 200 that looks like it worked.
@@ -5096,7 +5171,7 @@ app.post('/api/admin/auto-signal-fire-now', requireAdmin, async (req, res) => {
           : 'Could not fire signal right now.',
       });
     }
-    await adminLog(req, 'auto-signal.fire-now', result);
+    await adminLog(req, 'auto-signal.fire-now', { ...result, forced: !!(clash && req.body?.force) });
     res.json({ ok: true, ...result });
   } catch (e) {
     console.error('[AutoSignal] Manual fire-now failed:', e);
@@ -5158,9 +5233,9 @@ initDb().then(() => initVapid()).then(() => {
     // Time-of-day jobs (checked every minute; each fires once per PKT day)
     setInterval(() => { sendReferralWindowReminder(); sendDailyAdminSummary(); runDailyBackup(); }, 60 * 1000);
     // Auto signal scheduler — fires every 30s, handles 3/5/7 PM PKT windows.
-    // On Render's free plan the instance can restart or spin down at any moment, so BOTH the fire
-    // time and the close time live in the DB and are re-evaluated on every tick. Nothing important
-    // depends on a setTimeout surviving.
+    // The instance can still be restarted at any moment (deploy, crash, Render maintenance) even on
+    // the paid plan, so BOTH the fire time and the close time live in the DB and are re-evaluated on
+    // every tick. Nothing important depends on a setTimeout surviving.
     // Load persisted fired-window log first so a restart mid-window doesn't double-fire.
     const tickScheduler = async () => {
       try { await enforceSignalLifecycle(); }

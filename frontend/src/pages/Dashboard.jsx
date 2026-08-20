@@ -128,7 +128,7 @@ const Dashboard = () => {
   useEffect(() => {
     const loadBalance = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/demo/account`, { headers: { Authorization: `Bearer ${getToken()}` } });
+        const res = await fetch(`${API_URL}/api/real/account`, { headers: { Authorization: `Bearer ${getToken()}` } });
         const data = await res.json();
         if (res.ok) {
           setBalance(data.balance);

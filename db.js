@@ -66,6 +66,13 @@ export async function dbListKeys() {
   }));
 }
 
+// Physical on-disk size of the table, indexes and TOAST included — this is the number that counts
+// against Neon's free-plan storage allowance, not the length of the JSON we sent it.
+export async function dbTotalBytes() {
+  const r = await pool.query("SELECT pg_total_relation_size('kv_store') AS bytes");
+  return Number(r.rows[0]?.bytes) || 0;
+}
+
 export async function dbDumpAll(excludePrefixes = []) {
   const r = await pool.query("SELECT key, value FROM kv_store ORDER BY key");
   const out = {};

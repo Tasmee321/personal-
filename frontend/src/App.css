@@ -13,7 +13,7 @@ import Disclaimer from './pages/legal/Disclaimer';
 import ContactUs from './pages/legal/ContactUs';
 
 function App() {
-  const isAuthenticated = false; // Demo mode active
+  const isAuthenticated = false;
 
   return (
     <Router>

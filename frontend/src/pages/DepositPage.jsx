@@ -41,9 +41,9 @@ const DepositPage = () => {
     (async () => {
       try {
         const [addrRes, acctRes, histRes] = await Promise.all([
-          fetch(`${API_URL}/api/demo/deposit/addresses`, { headers: authHeaders() }),
-          fetch(`${API_URL}/api/demo/account`, { headers: authHeaders() }),
-          fetch(`${API_URL}/api/demo/deposit/history`, { headers: authHeaders() }),
+          fetch(`${API_URL}/api/real/deposit/addresses`, { headers: authHeaders() }),
+          fetch(`${API_URL}/api/real/account`, { headers: authHeaders() }),
+          fetch(`${API_URL}/api/real/deposit/history`, { headers: authHeaders() }),
         ]);
         const addrData = await addrRes.json();
         const acctData = await acctRes.json();
@@ -69,7 +69,7 @@ const DepositPage = () => {
     depInFlight.current = true;
     setSubmitting(true); setDepError(''); setDepMsg('');
     try {
-      const res = await fetch(`${API_URL}/api/demo/deposit/request`, {
+      const res = await fetch(`${API_URL}/api/real/deposit/request`, {
         method: 'POST', headers: authHeaders(),
         body: JSON.stringify({ amount: amt, network: depNet, txHash: txHash.trim() }),
       });

@@ -28,7 +28,7 @@ const TransferPage = () => {
 
   const loadAccount = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/demo/account`, { headers: authHeaders() });
+      const res = await fetch(`${API_URL}/api/real/account`, { headers: authHeaders() });
       const data = await res.json();
       if (res.ok) {
         setBalance(data.balance || 0);
@@ -56,7 +56,7 @@ const TransferPage = () => {
     try {
       const body = { direction, amount: amt };
       if (confirm) body.confirmPenalty = true;
-      const res = await fetch(`${API_URL}/api/demo/transfer`, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+      const res = await fetch(`${API_URL}/api/real/transfer`, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
       const data = await res.json();
       if (!res.ok) { setMsg(data.error); setMsgType('error'); }
       else if (data.warning) { setPenaltyWarning(data); }

@@ -235,7 +235,7 @@ const Trade = () => {
 
   const loadAccount = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/demo/account`, { headers: authHeaders() });
+      const res = await fetch(`${API_URL}/api/real/account`, { headers: authHeaders() });
       const data = await res.json();
       if (res.ok) {
         setBalance(data.balance);
@@ -407,25 +407,25 @@ const Trade = () => {
   const handleBuy = async () => {
     const amt = Number(buyAmount);
     if (!amt || amt <= 0) return setError('Enter an amount greater than 0.');
-    const ok = await runAction('/api/demo/spot/buy', { pair: selectedCoin.pair, usdtAmount: amt });
+    const ok = await runAction('/api/real/spot/buy', { pair: selectedCoin.pair, usdtAmount: amt });
     if (ok) setBuyAmount('');
   };
 
   const handleSell = async () => {
     const qty = Number(sellQty);
     if (!qty || qty <= 0) return setError('Enter a quantity greater than 0.');
-    const ok = await runAction('/api/demo/spot/sell', { pair: selectedCoin.pair, quantity: qty });
+    const ok = await runAction('/api/real/spot/sell', { pair: selectedCoin.pair, quantity: qty });
     if (ok) setSellQty('');
   };
 
   const openFutures = async (direction) => {
     const m = Number(margin);
     if (!m || m <= 0) return setError('Enter a margin amount greater than 0.');
-    const ok = await runAction('/api/demo/futures/open', { pair: selectedCoin.pair, direction, margin: m, leverage });
+    const ok = await runAction('/api/real/futures/open', { pair: selectedCoin.pair, direction, margin: m, leverage });
     if (ok) setMargin('');
   };
 
-  const closeFutures = (positionId) => runAction('/api/demo/futures/close', { positionId });
+  const closeFutures = (positionId) => runAction('/api/real/futures/close', { positionId });
 
   const heldQty = holdings[selectedCoin.pair] || 0;
   const selectedLive = livePrices[selectedCoin.symbol];

@@ -763,6 +763,7 @@ This cannot be undone!`)) return;
   // ---- Backups ----
   const [backups, setBackups] = useState([]);
   const [backupBusy, setBackupBusy] = useState(false);
+  const [dbUsage, setDbUsage] = useState(null);
 
   const loadBackups = async () => {
     setBackupBusy(true);
@@ -771,6 +772,7 @@ This cannot be undone!`)) return;
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not list backups');
       setBackups(data.backups || []);
+      setDbUsage(data.dbBytes != null ? { used: data.dbBytes, limit: data.dbLimitBytes } : null);
     } catch (err) { setError(err.message); }
     finally { setBackupBusy(false); }
   };
@@ -2146,8 +2148,24 @@ This cannot be undone!`)) return;
                   if (!window.confirm('Fire a real signal RIGHT NOW? All deposited users get the broadcast.')) return;
                   setAutoFiring(true);
                   try {
-                    const res = await fetch(`${API_URL}/api/admin/auto-signal-fire-now`, { method: 'POST', headers: adminHeaders(adminKey) });
-                    const data = await res.json();
+                    const fire = (force) => fetch(`${API_URL}/api/admin/auto-signal-fire-now`, {
+                      method: 'POST',
+                      headers: { ...adminHeaders(adminKey), 'Content-Type': 'application/json' },
+                      body: JSON.stringify(force ? { force: true } : {}),
+                    });
+                    let res  = await fire(false);
+                    let data = await res.json();
+                    // The server refuses when firing now would swallow a scheduled 3/5/7 PM window.
+                    // Surfaced as a decision rather than a dead end, but the default is to back off:
+                    // the consequence is losing a real window, which cannot be undone afterwards.
+                    if (!res.ok && data.needsForce) {
+                      if (!window.confirm(`${data.error}\n\nFire anyway and give up that window?`)) {
+                        setAutoFiring(false);
+                        return;
+                      }
+                      res  = await fire(true);
+                      data = await res.json();
+                    }
                     if (!res.ok) throw new Error(data.error || 'Fire failed');
                     showToast(`Fired — BTC ${String(data.direction).toUpperCase()} · settles ${data.signalTimeLabel} PKT`);
                     loadAll(adminKey);
@@ -2382,6 +2400,31 @@ This cannot be undone!`)) return;
                 </button>
               </div>
             </div>
+
+            {dbUsage && (() => {
+              const pct = Math.min(100, Math.round((dbUsage.used / dbUsage.limit) * 100));
+              // Green / amber / red. Amber starts at 60% because the daily snapshot adds a full copy
+              // of the database each night — by the time it reads 80% there is very little runway left.
+              const tone = pct >= 80 ? '#ef4444' : pct >= 60 ? '#f59e0b' : '#22c55e';
+              return (
+                <div style={{ ...card, marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '15px' }}>Neon storage</div>
+                    <div style={{ fontSize: '13px', color: tone, fontWeight: 'bold' }}>
+                      {(dbUsage.used / 1024 / 1024).toFixed(1)} MB / {Math.round(dbUsage.limit / 1024 / 1024)} MB ({pct}%)
+                    </div>
+                  </div>
+                  <div style={{ height: '8px', borderRadius: '4px', backgroundColor: theme.border, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${pct}%`, backgroundColor: tone, transition: 'width .3s' }} />
+                  </div>
+                  <div style={{ fontSize: '12px', color: theme.subtext, marginTop: '8px', lineHeight: 1.7 }}>
+                    Neon's free plan stops the database when this fills up, which takes the app down.
+                    Old snapshots are dropped automatically past 120 MB, so this should stay flat.
+                    If it climbs past <b style={{ color: theme.text }}>60%</b>, say so before it becomes urgent.
+                  </div>
+                </div>
+              );
+            })()}
 
             <div style={card}>
               <div style={{ fontWeight: 'bold', fontSize: '15px', marginBottom: '12px' }}>Snapshots ({backups.length})</div>

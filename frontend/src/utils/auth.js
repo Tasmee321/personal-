@@ -86,7 +86,10 @@ export function installAuthFetchGuard() {
         }
         // Only when the request used our (now-rejected) bearer token, and it's not a fund-password /
         // 2FA style 401 on an endpoint that keeps the session valid.
-        const isSessionEndpoint = /\/api\/demo\/withdraw$|\/api\/account\/(2fa|password|email|fund-password)/.test(url);
+        // Matches both the current /api/real path and the legacy /api/demo alias: if this ever stops
+        // matching the withdraw route, a wrong fund password would log the user out instead of just
+        // showing the error.
+        const isSessionEndpoint = /\/api\/(real|demo)\/withdraw$|\/api\/account\/(2fa|password|email|fund-password)/.test(url);
         if (auth.startsWith('Bearer ') && auth.slice(7) === getToken() && !isSessionEndpoint) {
           localStorage.removeItem(TOKEN_KEY);
           if (!window.location.pathname.startsWith('/auth')) {

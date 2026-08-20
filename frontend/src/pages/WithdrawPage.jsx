@@ -41,7 +41,7 @@ const WithdrawPage = () => {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/api/demo/account`, { headers: authHeaders() });
+        const res = await fetch(`${API_URL}/api/real/account`, { headers: authHeaders() });
         const data = await res.json();
         if (res.ok) { setBalance(data.balance || 0); setWithdrawalRequests(data.withdrawalRequests || []); }
       } catch {}
@@ -58,7 +58,7 @@ const WithdrawPage = () => {
     wdInFlight.current = true;
     setWdBusy(true); setWdMsg('');
     try {
-      const res = await fetch(`${API_URL}/api/demo/withdraw`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ amount: amt, network: wdNet, walletAddress: wdAddr, fundPassword: wdPin }) });
+      const res = await fetch(`${API_URL}/api/real/withdraw`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ amount: amt, network: wdNet, walletAddress: wdAddr, fundPassword: wdPin }) });
       const data = await res.json();
       if (!res.ok) { setWdMsg(data.error); } else {
         setWdAmt(''); setWdAddr(''); setWdPin('');

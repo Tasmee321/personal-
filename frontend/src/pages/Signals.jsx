@@ -181,7 +181,7 @@ const Signals = () => {
   const overrideEngineRef = useRef(null);  // createOverrideEngine() for the selected coin
 
   const getEndpoint = (path) => {
-    const base = '/api/demo';
+    const base = '/api/real';
     return `${API_URL}${base}${path}`;
   };
 
@@ -534,7 +534,7 @@ const Signals = () => {
   // session is not active, so showing the green "following signal" state then would promise a win
   // for a trade that cannot even be placed.
   const announcedSettleAt = bonusInfo.signalActive && bonusInfo.signalSettleAt && bonusInfo.signalSettleAt > now ? bonusInfo.signalSettleAt : null;
-  // Must mirror the server's rule exactly (see /api/demo/predict): the announced COIN and the
+  // Must mirror the server's rule exactly (see /api/real/predict): the announced COIN and the
   // announced MINUTE, compared as whole minutes with no tolerance window. A ±60s window used to
   // show the green "following" banner for the minute before the announced one, and omitting the
   // coin check showed it for altcoins the server force-loses.
@@ -674,7 +674,7 @@ const Signals = () => {
                     setPlacingBonus(true);
                     setActionError('');
                     try {
-                      const res = await fetch(`${API_URL}/api/demo/referral-signal`, { method: 'POST', headers: authHeaders() });
+                      const res = await fetch(`${API_URL}/api/real/referral-signal`, { method: 'POST', headers: authHeaders() });
                       const data = await res.json();
                       if (!res.ok) throw new Error(data.error);
                       setSignalBalance(data.signalBalance);
@@ -749,7 +749,7 @@ const Signals = () => {
           )}
 
           <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '14px' }}>
-            Current time: <b style={{ color: theme.text }}>{fmtClock(now)}</b> · Settles at <b style={{ color: theme.text }}>{fmtClock(settlePreviewDate.getTime())}</b>
+            Current time: <b style={{ color: theme.text }}>{fmtClock(now)}</b> · Settles at <b style={{ color: theme.text }}>{fmtClock(settleAtTarget)}</b>
           </div>
 
           <button
@@ -762,7 +762,7 @@ const Signals = () => {
               boxShadow: pendingDirection === 'up' ? '0 4px 14px rgba(16,185,129,0.3)' : '0 4px 14px rgba(239,68,68,0.3)',
             }}
           >
-            {placing ? 'Placing...' : `Confirm ${pendingDirection.toUpperCase()} — Settles at ${fmtClock(settlePreviewDate.getTime())}`}
+            {placing ? 'Placing...' : `Confirm ${pendingDirection.toUpperCase()} — Settles at ${fmtClock(settleAtTarget)}`}
           </button>
         </div>
       )}

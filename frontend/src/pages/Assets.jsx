@@ -239,7 +239,7 @@ function DepositPanel({ depositAddresses, rewardSummary, onDeposited }) {
     if (!amt || amt <= 0) return setDepMsg('Enter an amount greater than 0.');
     setDepBusy(true); setDepMsg('');
     try {
-      const res = await fetch(`${API_URL}/api/demo/deposit/simulate`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ amount: amt, network: depNet }) });
+      const res = await fetch(`${API_URL}/api/real/deposit/simulate`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ amount: amt, network: depNet }) });
       const data = await res.json();
       if (!res.ok) { setDepMsg(data.error); } else { setDepAmt(''); setDepMsg(`${amt.toFixed(2)} USDT deposited via ${net.label}`); onDeposited(data.balance); }
     } catch { setDepMsg('Network error.'); }
@@ -312,7 +312,7 @@ function WithdrawPanel({ balance, withdrawalRequests, onWithdrawn }) {
     if (!wdPin) return setWdMsg('Enter your fund password.');
     setWdBusy(true); setWdMsg('');
     try {
-      const res = await fetch(`${API_URL}/api/demo/withdraw`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ amount: amt, network: wdNet, walletAddress: wdAddr, fundPassword: wdPin }) });
+      const res = await fetch(`${API_URL}/api/real/withdraw`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ amount: amt, network: wdNet, walletAddress: wdAddr, fundPassword: wdPin }) });
       const data = await res.json();
       if (!res.ok) { setWdMsg(data.error); } else { setWdAmt(''); setWdAddr(''); setWdPin(''); setWdMsg(`Withdrawal submitted! ${data.netPayout.toFixed(2)} USDT pending review.`); onWithdrawn(data.balance); }
     } catch { setWdMsg('Network error.'); }
@@ -392,7 +392,7 @@ const Assets = () => {
 
   const loadAccount = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/demo/account`, { headers: authHeaders() });
+      const res = await fetch(`${API_URL}/api/real/account`, { headers: authHeaders() });
       const data = await res.json();
       if (res.ok) {
         setBalance(data.balance);
@@ -498,7 +498,7 @@ const Assets = () => {
 
   const transfer = async (direction, amount, confirmPenalty = false) => {
     try {
-      const res = await fetch(`${API_URL}/api/demo/transfer`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ direction, amount, confirmPenalty }) });
+      const res = await fetch(`${API_URL}/api/real/transfer`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ direction, amount, confirmPenalty }) });
       const data = await res.json();
       if (!res.ok) return { error: data.error };
       if (data.warning) return { warning: true, penaltyAmount: data.penaltyAmount, receiveAmount: data.receiveAmount, volumeProgress: data.volumeProgress };

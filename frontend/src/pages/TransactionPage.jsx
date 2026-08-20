@@ -146,9 +146,9 @@ const TransactionPage = () => {
     (async () => {
       try {
         const [accRes, depRes, withRes] = await Promise.all([
-          fetch(`${API_URL}/api/demo/account`, { headers: authHeaders() }),
-          fetch(`${API_URL}/api/demo/deposit/history`, { headers: authHeaders() }),
-          fetch(`${API_URL}/api/demo/withdrawals`, { headers: authHeaders() }),
+          fetch(`${API_URL}/api/real/account`, { headers: authHeaders() }),
+          fetch(`${API_URL}/api/real/deposit/history`, { headers: authHeaders() }),
+          fetch(`${API_URL}/api/real/withdrawals`, { headers: authHeaders() }),
         ]);
         const accData = await accRes.json();
         if (accRes.ok) {
