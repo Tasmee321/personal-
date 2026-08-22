@@ -50,7 +50,9 @@ function glassCard(theme) {
   };
 }
 
-const RiskWarningModal = ({ theme, onAccept, onCancel, t }) => (
+const RiskWarningModal = ({ theme, onAccept, onCancel }) => {
+  const { t } = useLanguage();
+  return (
   <div style={{
     position: 'fixed', inset: 0, zIndex: 9999,
     backgroundColor: 'rgba(0,0,0,0.65)',
@@ -103,7 +105,8 @@ const RiskWarningModal = ({ theme, onAccept, onCancel, t }) => (
       </div>
     </div>
   </div>
-);
+  );
+};
 
 const CoinPicker = ({ theme, coins, livePrices, selected, onSelect }) => {
   const [open, setOpen] = useState(false);
