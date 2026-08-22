@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { X, Copy, CheckCheck } from 'lucide-react';
 import { useLanguage } from '../LanguageContext';
+import { fmtLocalDateTime } from '../utils/localTime';
 
 function fmt(n) {
   return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function fmtDate(ts) {
-  return ts ? new Date(ts).toLocaleString('en-GB', { timeZone: 'Asia/Karachi', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
+  // Device-local date/time so each user sees the transaction in their own timezone.
+  return ts ? fmtLocalDateTime(ts) : '—';
 }
 function glassCard(theme) {
   return { backgroundColor: theme.card, borderRadius: '16px', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadow, backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)' };

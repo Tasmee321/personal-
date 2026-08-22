@@ -6,6 +6,7 @@ import { CoinIcon } from '../components/CoinIcons';
 import { getToken } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
 import { useLanguage } from '../LanguageContext';
+import { deviceTzOffsetSec, deviceTzLabel } from '../utils/localTime';
 import ALL_COINS, { buildWsStreamUrl } from '../config/coins';
 import { API_URL } from '../config';
 const LEVERAGE_OPTIONS = [1, 5, 10, 20, 50];
@@ -27,13 +28,16 @@ function fmt(n, digits = 2) {
   return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-const PKT_OFFSET_SEC = 5 * 60 * 60;
+// Chart x-axis renders in the DEVICE's own timezone (lightweight-charts draws `time` as if UTC, so
+// we shift by the local UTC offset). The override engine subtracts the same offset back out, so the
+// real instant it computes is unchanged. Evaluated once at chunk load — device tz is stable per session.
+const TZ_OFFSET_SEC = deviceTzOffsetSec();
 import { buildChartStreamUrl, mergeTradeTick, TF_SECONDS, createOverrideEngine } from '../utils/liveCandles';
 import { noteServerTime, serverNow } from '../utils/serverClock';
 import { attachHistoryLoader, klineToCandle } from '../utils/candleHistory';
 import { createCandleChart } from '../utils/candleChart';
 
-const toCandle = (k) => klineToCandle(k, PKT_OFFSET_SEC);
+const toCandle = (k) => klineToCandle(k, TZ_OFFSET_SEC);
 
 function glassCard(theme) {
   return {
@@ -302,7 +306,7 @@ const Trade = () => {
     const api = createCandleChart(container, { theme, height: 320 });
     chartRef.current = api;
     // Admin override display model (realistic, exact-to-the-second) — see liveCandles.js
-    const engine = createOverrideEngine({ symbol: selectedCoin.symbol, tfSec, timeOffsetSec: PKT_OFFSET_SEC });
+    const engine = createOverrideEngine({ symbol: selectedCoin.symbol, tfSec, timeOffsetSec: TZ_OFFSET_SEC });
     overrideEngineRef.current = engine;
 
     // Resize observer — more reliable than window resize for mobile
@@ -343,11 +347,11 @@ const Trade = () => {
         let c;
         if (data.e === 'kline' && data.k) {
           const k = data.k;
-          c = { time: Math.floor(k.t / 1000) + PKT_OFFSET_SEC, open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c), volume: parseFloat(k.v) || 0 };
+          c = { time: Math.floor(k.t / 1000) + TZ_OFFSET_SEC, open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c), volume: parseFloat(k.v) || 0 };
           lastRawCandle = c;
         } else if (data.e === 'aggTrade') {
           const tms = Number(data.T || data.E || Date.now());
-          const bucket = Math.floor(tms / 1000 / tfSec) * tfSec + PKT_OFFSET_SEC;
+          const bucket = Math.floor(tms / 1000 / tfSec) * tfSec + TZ_OFFSET_SEC;
           const merged = mergeTradeTick(lastRawCandle, parseFloat(data.p), bucket, parseFloat(data.q));
           if (!merged) return;
           lastRawCandle = merged;
@@ -463,7 +467,7 @@ const Trade = () => {
         <div ref={chartContainerRef} style={{ borderRadius: '16px 16px 0 0', minHeight: '320px', width: '100%', position: 'relative' }} />
         {/* Timeframe selector */}
         <div style={{ display: 'flex', gap: '4px', padding: '8px 12px', borderTop: `1px solid ${theme.cardBorder}`, alignItems: 'center' }}>
-          <span style={{ fontSize: '10px', color: theme.faint, fontWeight: '600', marginRight: '4px' }}>PKT</span>
+          <span style={{ fontSize: '10px', color: theme.faint, fontWeight: '600', marginRight: '4px' }}>{deviceTzLabel()}</span>
           {TIMEFRAMES.map((tf) => (
             <button
               key={tf.interval}

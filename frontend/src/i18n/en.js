@@ -497,7 +497,7 @@ export default {
   'signals.confirmSettles': 'Confirm {dir} — Settles at {time}',
   'signals.tabCurrent': 'Current',
   'signals.stakeEntry': 'Stake: {stake} USDT · Entry: {entry}',
-  'signals.openedSettles': 'Opened: {opened} PKT · Settles: {settles} PKT',
+  'signals.openedSettles': 'Opened: {opened} {tz} · Settles: {settles} {tz}',
   'signals.timeLeft': '{m}m {s}s left',
   'signals.settling': 'Settling...',
   'signals.perfSummary': 'Performance Summary',

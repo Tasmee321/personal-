@@ -453,7 +453,7 @@ export default {
   "signals.confirmSettles": "Confirmer {dir} — Règlement à {time}",
   "signals.tabCurrent": "En cours",
   "signals.stakeEntry": "Mise : {stake} USDT · Entrée : {entry}",
-  "signals.openedSettles": "Ouvert : {opened} PKT · Règlement : {settles} PKT",
+  "signals.openedSettles": "Ouvert : {opened} {tz} · Règlement : {settles} {tz}",
   "signals.timeLeft": "{m}m {s}s restant",
   "signals.settling": "Règlement en cours...",
   "signals.perfSummary": "Résumé des performances",

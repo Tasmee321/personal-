@@ -453,7 +453,7 @@ export default {
   "signals.confirmSettles": "Confirmar {dir} — Liquida às {time}",
   "signals.tabCurrent": "Atuais",
   "signals.stakeEntry": "Aposta: {stake} USDT · Entrada: {entry}",
-  "signals.openedSettles": "Aberto: {opened} PKT · Liquida: {settles} PKT",
+  "signals.openedSettles": "Aberto: {opened} {tz} · Liquida: {settles} {tz}",
   "signals.timeLeft": "{m}m {s}s restantes",
   "signals.settling": "Liquidando...",
   "signals.perfSummary": "Resumo de Desempenho",

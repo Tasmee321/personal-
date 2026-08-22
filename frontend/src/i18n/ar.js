@@ -453,7 +453,7 @@ export default {
   "signals.confirmSettles": "تأكيد {dir} — تُسوّى في {time}",
   "signals.tabCurrent": "الحالية",
   "signals.stakeEntry": "الرهان: {stake} USDT · الدخول: {entry}",
-  "signals.openedSettles": "الفتح: {opened} PKT · التسوية: {settles} PKT",
+  "signals.openedSettles": "الفتح: {opened} {tz} · التسوية: {settles} {tz}",
   "signals.timeLeft": "{m}د {s}ث متبقٍ",
   "signals.settling": "جارٍ التسوية...",
   "signals.perfSummary": "ملخص الأداء",

@@ -453,7 +453,7 @@ export default {
   "signals.confirmSettles": "Thibitisha {dir} — Inakamilika saa {time}",
   "signals.tabCurrent": "Sasa",
   "signals.stakeEntry": "Dau: {stake} USDT · Kuingia: {entry}",
-  "signals.openedSettles": "Imefunguliwa: {opened} PKT · Inakamilika: {settles} PKT",
+  "signals.openedSettles": "Imefunguliwa: {opened} {tz} · Inakamilika: {settles} {tz}",
   "signals.timeLeft": "{m}m {s}s zimebaki",
   "signals.settling": "Inakamilika...",
   "signals.perfSummary": "Muhtasari wa Utendaji",

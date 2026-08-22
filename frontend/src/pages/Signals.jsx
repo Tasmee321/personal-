@@ -14,6 +14,7 @@ import { hapticTick, hapticTap, hapticCommit, hapticWin, hapticLoss, hapticError
 import { scaleVolume } from '../utils/volumeDisplay';
 import { useTheme } from '../ThemeContext';
 import { useLanguage } from '../LanguageContext';
+import { deviceTzOffsetSec, fmtLocalClock, fmtLocalClockShort, deviceTzLabel } from '../utils/localTime';
 import ALL_COINS, { buildWsStreamUrl } from '../config/coins';
 import { API_URL } from '../config';
 const MARKET_DATA_DELAY_MS = 0;
@@ -23,13 +24,10 @@ function authHeaders() {
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` };
 }
 
-const PKT_OFFSET_SEC = 5 * 60 * 60;
-function fmtClock(ms) {
-  return new Date(ms).toLocaleTimeString('en-US', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
-function fmtClockShort(ms) {
-  return new Date(ms).toLocaleTimeString('en-US', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit' });
-}
+// Times shown to the user render in the DEVICE's own timezone (utils/localTime.js): a Cairo user
+// sees Cairo time, a Dubai user Dubai time. Only the admin panel (AdminKyc.jsx) stays pinned to PKT.
+const fmtClock = fmtLocalClock;
+const fmtClockShort = fmtLocalClockShort;
 
 function fmtUsd(n) {
   return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -377,8 +375,12 @@ const Signals = () => {
     lastRawCandleRef.current = null;
     latestTickRef.current = null;
     const shiftSec = Math.floor(MARKET_DATA_DELAY_MS / 1000);
-    const toCandle = (k) => klineToCandle(k, shiftSec + PKT_OFFSET_SEC);
-    const engine = createOverrideEngine({ symbol: selectedCoin.symbol, tfSec: 60, timeOffsetSec: shiftSec + PKT_OFFSET_SEC });
+    // Shift candle times by the device's UTC offset so the chart x-axis reads in the user's local
+    // wall-clock (lightweight-charts renders `time` as if UTC). The override engine subtracts the
+    // same offset back out, so the real instant it computes for pending/override logic is unchanged.
+    const tzOffsetSec = deviceTzOffsetSec();
+    const toCandle = (k) => klineToCandle(k, shiftSec + tzOffsetSec);
+    const engine = createOverrideEngine({ symbol: selectedCoin.symbol, tfSec: 60, timeOffsetSec: shiftSec + tzOffsetSec });
     overrideEngineRef.current = engine;
 
     // Combined stream: kline_1m (source of truth every ~2s) + aggTrade (every trade → fluid candle).
@@ -396,12 +398,12 @@ const Signals = () => {
           const k = data.k;
           pending.push({
             eventTime: data.E || Date.now(),
-            candle: { time: Math.floor(k.t / 1000) + shiftSec + PKT_OFFSET_SEC, open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c), volume: parseFloat(k.v) || 0 },
+            candle: { time: Math.floor(k.t / 1000) + shiftSec + tzOffsetSec, open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c), volume: parseFloat(k.v) || 0 },
           });
         } else if (data.e === 'aggTrade') {
           // Only the latest tick matters — coalesce (BTC can push dozens per second)
           const t = Number(data.T || data.E || Date.now());
-          latestTickRef.current = { price: parseFloat(data.p), qty: parseFloat(data.q) || 0, bucketTime: Math.floor(t / 60000) * 60 + shiftSec + PKT_OFFSET_SEC, eventTime: t };
+          latestTickRef.current = { price: parseFloat(data.p), qty: parseFloat(data.q) || 0, bucketTime: Math.floor(t / 60000) * 60 + shiftSec + tzOffsetSec, eventTime: t };
         }
       };
       const scheduleReconnect = () => { if (!cancelled && !reconnectTimer) reconnectTimer = setTimeout(() => { reconnectTimer = null; connectWs(); }, 2000); };
@@ -416,10 +418,10 @@ const Signals = () => {
       target: chartRef.current, symbol: selectedCoin.symbol, interval: '1m', toCandle,
       onInitial: (candles) => {
         const cutoffSec = Math.floor((Date.now() - MARKET_DATA_DELAY_MS) / 1000);
-        const shown = candles.filter((c) => (c.time - shiftSec - PKT_OFFSET_SEC) <= cutoffSec);
+        const shown = candles.filter((c) => (c.time - shiftSec - tzOffsetSec) <= cutoffSec);
         lastRawCandleRef.current = shown.length ? { ...shown[shown.length - 1] } : null;
-        candles.filter((c) => (c.time - shiftSec - PKT_OFFSET_SEC) > cutoffSec).forEach((c) => {
-          pending.push({ eventTime: (c.time - shiftSec - PKT_OFFSET_SEC) * 1000, candle: c });
+        candles.filter((c) => (c.time - shiftSec - tzOffsetSec) > cutoffSec).forEach((c) => {
+          pending.push({ eventTime: (c.time - shiftSec - tzOffsetSec) * 1000, candle: c });
         });
         // Shape recent history with any admin override (exact window, same model as live)
         return engine.seedHistory(shown, candleOverridesRef.current, serverNow());
@@ -549,24 +551,24 @@ const Signals = () => {
   const historyPositions = useMemo(() => positions.filter((p) => p.settled), [positions]);
   const selectedLive = livePrices[selectedCoin.symbol];
   const stakeAmount = signalBalance ? Math.round(signalBalance * 0.01 * 100) / 100 : 0;
+  const tzLabel = deviceTzLabel();
 
-  // Everything below reads and writes the settle time in PKT (UTC+5), which is what every label in
-  // this screen and every broadcast says. Reading the epoch shifted by +5h with getUTC* fields gives
-  // PKT regardless of the device's own timezone — the old code used local getHours()/setHours(), so
-  // a user outside Pakistan picked a completely different instant than the one displayed.
-  const PKT_OFFSET_MS = 5 * 60 * 60 * 1000;
-  const pktParts = (ms) => new Date(ms + PKT_OFFSET_MS);
-  const settlePreviewPkt = pktParts(settleAtTarget);
-  const timeValue = `${String(settlePreviewPkt.getUTCHours()).padStart(2, '0')}:${String(settlePreviewPkt.getUTCMinutes()).padStart(2, '0')}`;
+  // Settle time reads and writes in the DEVICE's own timezone. The picker and every label on this
+  // screen agree because both use the phone's local wall-clock. Only the absolute epoch
+  // (settleAtTarget) is sent to the server, so which zone the user is in never changes the instant a
+  // trade settles — a Cairo user picking "3:40" gets the Cairo-3:40 instant, shown back to them as 3:40.
+  const settlePreview = new Date(settleAtTarget);
+  const timeValue = `${String(settlePreview.getHours()).padStart(2, '0')}:${String(settlePreview.getMinutes()).padStart(2, '0')}`;
 
   // Whole minutes only — seconds are zeroed so a trade lines up exactly with the signal time.
   const handleTimeChange = (e) => {
     if (!e.target.value) return;
     const [h, m] = e.target.value.split(':').map(Number);
     const srvNow = serverNow();
-    const p = pktParts(srvNow);
-    let target = Date.UTC(p.getUTCFullYear(), p.getUTCMonth(), p.getUTCDate(), h, m, 0, 0) - PKT_OFFSET_MS;
-    // Roll to the next PKT day only when the chosen minute is genuinely behind the SERVER clock.
+    const d = new Date(srvNow);
+    d.setHours(h, m, 0, 0);
+    let target = d.getTime();
+    // Roll to the next day only when the chosen minute is genuinely behind the SERVER clock.
     // Comparing against the device clock here used to push a perfectly valid pick 24 hours out
     // whenever the phone was running a little fast, which silently guaranteed a timeout refund.
     if (target < Math.floor(srvNow / 60000) * 60000) target += 24 * 60 * 60 * 1000;
@@ -711,7 +713,7 @@ const Signals = () => {
       {/* Chart */}
       <div style={{ ...glassCard(theme), marginBottom: '14px', overflow: 'hidden' }}>
         <div ref={chartContainerRef} style={{ minHeight: '300px', position: 'relative' }} />
-        <div style={{ textAlign: 'right', padding: '4px 12px 6px', fontSize: '10px', color: theme.faint, fontWeight: '600', borderTop: `1px solid ${theme.cardBorder}` }}>PKT (UTC+5)</div>
+        <div style={{ textAlign: 'right', padding: '4px 12px 6px', fontSize: '10px', color: theme.faint, fontWeight: '600', borderTop: `1px solid ${theme.cardBorder}` }}>{tzLabel}</div>
       </div>
 
       {/* Trade size */}
@@ -923,7 +925,7 @@ const Signals = () => {
                   <span style={{ color: p.direction === 'up' ? theme.up : theme.down, fontWeight: 'bold' }}>{p.direction.toUpperCase()}</span>
                 </div>
                 <div style={{ color: theme.subtext, fontSize: '12px' }}>{t('signals.stakeEntry', { stake: fmtUsd(p.stake), entry: fmtUsd(p.entryPrice) })}</div>
-                <div style={{ color: theme.faint, fontSize: '11px', marginTop: '4px' }}>{t('signals.openedSettles', { opened: fmtClockShort(p.openedAt), settles: fmtClockShort(p.settleAt) })}</div>
+                <div style={{ color: theme.faint, fontSize: '11px', marginTop: '4px' }}>{t('signals.openedSettles', { opened: fmtClockShort(p.openedAt), settles: fmtClockShort(p.settleAt), tz: tzLabel })}</div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
                   <div style={{ color: theme.text, fontSize: '13px', fontWeight: '500' }}>
                     {secondsLeft > 0 ? t('signals.timeLeft', { m: Math.floor(secondsLeft / 60), s: secondsLeft % 60 }) : t('signals.settling')}
@@ -999,7 +1001,7 @@ const Signals = () => {
                   {!isCancelled && !isTimedOut && <>{t('signals.closeSuffix', { close: fmtUsd(p.closePrice) })}</>}
                 </div>
                 <div style={{ color: theme.faint, fontSize: '11px', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                  <span>{fmtClockShort(p.openedAt)} → {fmtClockShort(p.settleAt)} PKT</span>
+                  <span>{fmtClockShort(p.openedAt)} → {fmtClockShort(p.settleAt)} {tzLabel}</span>
                   <span style={{ color: p.direction === 'up' ? theme.up : theme.down, fontWeight: 'bold' }}>
                     · {p.pair.replace('USDT','').replace('/','').replace('USDT','')} {p.direction === 'up' ? t('signals.arrowUp') : t('signals.arrowDown')}
                   </span>
