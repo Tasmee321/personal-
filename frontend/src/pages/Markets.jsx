@@ -4,6 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import { CoinIcon } from '../components/CoinIcons';
 import { useTheme } from '../ThemeContext';
+import { useLanguage } from '../LanguageContext';
 import ALL_COINS, { buildWsStreamUrl } from '../config/coins';
 
 const COINS = ALL_COINS;
@@ -19,6 +20,12 @@ function loadFavorites() {
 }
 
 const TABS = ['Favorites', 'All', 'Gainers', 'Losers'];
+const TAB_LABELS = {
+  Favorites: 'markets.favorites',
+  All: 'markets.all',
+  Gainers: 'markets.gainers',
+  Losers: 'markets.losers',
+};
 
 function fmtPrice(n) {
   const abs = Math.abs(n);
@@ -79,6 +86,7 @@ async function fetchKlines(symbol) {
 
 const Markets = () => {
   const { theme } = useTheme();
+  const { t, isRTL } = useLanguage();
   const navigate = useNavigate();
   const [tickers, setTickers] = useState({});
   const [search, setSearch] = useState('');
@@ -153,43 +161,43 @@ const Markets = () => {
   return (
     <div style={{ padding: '20px', paddingBottom: '90px', color: theme.text, backgroundColor: theme.bg, minHeight: '100vh' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <h3 style={{ margin: 0 }}>Markets</h3>
+        <h3 style={{ margin: 0 }}>{t('markets.title')}</h3>
         <Link to="/settings" style={{ color: theme.subtext, display: 'flex' }}><Settings size={20} /></Link>
       </div>
 
       <div style={{ position: 'relative', marginBottom: '14px' }}>
-        <Search size={16} color={theme.faint} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
+        <Search size={16} color={theme.faint} style={{ position: 'absolute', [isRTL ? 'right' : 'left']: '14px', top: '50%', transform: 'translateY(-50%)' }} />
         <input
           type="text"
-          placeholder="Search markets"
+          placeholder={t('markets.search')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          style={{ width: '100%', padding: '12px 12px 12px 38px', borderRadius: '12px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.card, color: theme.text, fontSize: '14px', boxSizing: 'border-box', boxShadow: theme.shadow, outline: 'none' }}
+          style={{ width: '100%', padding: isRTL ? '12px 38px 12px 12px' : '12px 12px 12px 38px', borderRadius: '12px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.card, color: theme.text, fontSize: '14px', boxSizing: 'border-box', boxShadow: theme.shadow, outline: 'none' }}
         />
       </div>
 
       <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', overflowX: 'auto', scrollbarWidth: 'none' }}>
-        {TABS.map((t) => (
-          <button key={t} onClick={() => setTab(t)} style={{
+        {TABS.map((tabId) => (
+          <button key={tabId} onClick={() => setTab(tabId)} style={{
             flexShrink: 0, padding: '8px 16px', borderRadius: '20px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold',
-            border: `1px solid ${tab === t ? theme.primary : theme.cardBorder}`,
-            backgroundColor: tab === t ? theme.primarySoft : theme.card,
-            color: tab === t ? theme.primary : theme.subtext,
+            border: `1px solid ${tab === tabId ? theme.primary : theme.cardBorder}`,
+            backgroundColor: tab === tabId ? theme.primarySoft : theme.card,
+            color: tab === tabId ? theme.primary : theme.subtext,
             display: 'flex', alignItems: 'center', gap: '4px',
             transition: 'all 0.2s ease',
           }}>
-            {t === 'Favorites' && <Star size={13} fill={tab === t ? theme.primary : 'none'} />}
-            {t}
-            {t === 'Favorites' && favorites.length > 0 && <span style={{ fontSize: '11px', opacity: 0.7 }}>({favorites.length})</span>}
+            {tabId === 'Favorites' && <Star size={13} fill={tab === tabId ? theme.primary : 'none'} />}
+            {t(TAB_LABELS[tabId])}
+            {tabId === 'Favorites' && favorites.length > 0 && <span style={{ fontSize: '11px', opacity: 0.7 }}>({favorites.length})</span>}
           </button>
         ))}
       </div>
 
       {/* Column headers */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: theme.faint, fontSize: '11px', padding: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-        <span style={{ flex: 1 }}>Pair</span>
-        <span style={{ width: '76px', textAlign: 'center' }}>Chart</span>
-        <span style={{ minWidth: '90px', textAlign: 'right' }}>Price / 24h</span>
+        <span style={{ flex: 1 }}>{t('markets.pair')}</span>
+        <span style={{ width: '76px', textAlign: 'center' }}>{t('markets.chart')}</span>
+        <span style={{ minWidth: '90px', textAlign: isRTL ? 'left' : 'right' }}>{t('markets.priceChange')}</span>
       </div>
 
       <div style={{
@@ -201,7 +209,7 @@ const Markets = () => {
       }}>
         {rows.length === 0 && (
           <p style={{ color: theme.faint, fontSize: '13px', padding: '16px 0' }}>
-            {tab === 'Favorites' ? 'No favorites yet — tap ★ on any coin.' : 'No markets match this filter.'}
+            {tab === 'Favorites' ? t('markets.noFavorites') : t('markets.noMatch')}
           </p>
         )}
 
@@ -235,7 +243,7 @@ const Markets = () => {
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 'bold', fontSize: '13px', whiteSpace: 'nowrap' }}>{coin.pair}</div>
                   <div style={{ color: theme.faint, fontSize: '10px' }}>
-                    {updAt ? fmtLocalTime(updAt) : (coin.live ? `Vol ${(coin.live.volume / 1_000_000).toFixed(1)}M` : '—')}
+                    {updAt ? fmtLocalTime(updAt) : (coin.live ? `${t('dashboard.vol')} ${(coin.live.volume / 1_000_000).toFixed(1)}M` : '—')}
                   </div>
                 </div>
               </div>
@@ -246,7 +254,7 @@ const Markets = () => {
               </div>
 
               {/* Price + change */}
-              <div style={{ textAlign: 'right', minWidth: '88px', flexShrink: 0 }}>
+              <div style={{ textAlign: isRTL ? 'left' : 'right', minWidth: '88px', flexShrink: 0 }}>
                 <div
                   key={`${coin.symbol}-${coin.live?.flashKey || 0}`}
                   style={{

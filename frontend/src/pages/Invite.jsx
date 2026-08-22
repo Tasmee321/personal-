@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { getToken } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
+import { useLanguage } from '../LanguageContext';
 import { API_URL } from '../config';
 
 function glassCard(theme, extra = {}) {
@@ -47,6 +48,7 @@ function CopyRow({ label, value, theme }) {
 
 /* ── Member Row ── */
 function MemberRow({ item, i, theme }) {
+  const { t } = useLanguage();
   return (
     <div style={{
       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -61,9 +63,9 @@ function MemberRow({ item, i, theme }) {
           {String(item.uid).slice(-2)}
         </div>
         <div>
-          <div style={{ fontWeight: '600', fontSize: '14px' }}>UID {item.uid}</div>
+          <div style={{ fontWeight: '600', fontSize: '14px' }}>{t('invite.uidLabel', { uid: item.uid })}</div>
           <div style={{ color: theme.faint, fontSize: '11px', marginTop: '1px' }}>
-            Joined {new Date(item.joinedAt).toLocaleDateString()}
+            {t('invite.joined', { date: new Date(item.joinedAt).toLocaleDateString() })}
             {item.memberLevel > 0 && ` · Lv${item.memberLevel}`}
           </div>
         </div>
@@ -75,17 +77,17 @@ function MemberRow({ item, i, theme }) {
             backgroundColor: item.isQualified ? theme.upSoft : theme.downSoft,
             color: item.isQualified ? theme.up : theme.down,
           }}>
-            {item.isQualified ? '✓ Qualified' : 'Unqualified'}
+            {item.isQualified ? t('invite.qualified') : t('invite.unqualified')}
           </span>
         )}
         {item.totalDeposited !== undefined && (
           <div style={{ color: theme.faint, fontSize: '11px', marginTop: '3px' }}>
-            Deposited: ${fmt2(item.totalDeposited)}
+            {t('invite.deposited', { amt: fmt2(item.totalDeposited) })}
           </div>
         )}
         {item.balance !== undefined && (
           <div style={{ color: theme.faint, fontSize: '11px' }}>
-            Balance: ${fmt2(item.balance)}
+            {t('invite.balance', { amt: fmt2(item.balance) })}
           </div>
         )}
       </div>
@@ -95,6 +97,7 @@ function MemberRow({ item, i, theme }) {
 
 /* ── Requirement Card ── */
 function ReqCard({ req, levelInfo, qualifiedTeamCount, currentLevel, theme }) {
+  const { t } = useLanguage();
   const qdCount = levelInfo?.qualifiedDirectCount || 0;
   const qdDeposit = levelInfo?.qualifiedTeamDeposit || 0;
   const qtCount = qualifiedTeamCount || 0;
@@ -132,23 +135,23 @@ function ReqCard({ req, levelInfo, qualifiedTeamCount, currentLevel, theme }) {
           }}>
             {achieved ? <CheckCircle size={15} color={theme.up} /> : isNext ? <Star size={15} color={theme.primary} /> : <Lock size={15} color={theme.faint} />}
           </div>
-          <span style={{ fontWeight: '700', fontSize: '14px' }}>Level {req.level}</span>
-          {isNext && <span style={{ fontSize: '10px', fontWeight: '700', color: theme.primary, backgroundColor: theme.primarySoft, padding: '2px 7px', borderRadius: '10px' }}>NEXT</span>}
-          {achieved && <span style={{ fontSize: '10px', fontWeight: '700', color: theme.up, backgroundColor: theme.upSoft, padding: '2px 7px', borderRadius: '10px' }}>ACHIEVED</span>}
+          <span style={{ fontWeight: '700', fontSize: '14px' }}>{t('invite.level', { n: req.level })}</span>
+          {isNext && <span style={{ fontSize: '10px', fontWeight: '700', color: theme.primary, backgroundColor: theme.primarySoft, padding: '2px 7px', borderRadius: '10px' }}>{t('invite.next')}</span>}
+          {achieved && <span style={{ fontSize: '10px', fontWeight: '700', color: theme.up, backgroundColor: theme.upSoft, padding: '2px 7px', borderRadius: '10px' }}>{t('invite.achieved')}</span>}
         </div>
       </div>
 
       {/* Direct qualified */}
-      <ReqRow label="Qualified Direct" have={qdCount} need={req.direct} ok={directOk} theme={theme} />
+      <ReqRow label={t('invite.qualifiedDirect')} have={qdCount} need={req.direct} ok={directOk} theme={theme} />
 
       {/* Team members required */}
       {req.teamDeposit > 0 && (
-        <ReqRow label="Team Members" have={qtCount} need={req.teamDeposit} ok={depositOk} prefix="" theme={theme} />
+        <ReqRow label={t('invite.teamMembers')} have={qtCount} need={req.teamDeposit} ok={depositOk} prefix="" theme={theme} />
       )}
 
       {/* Sub-level requirements */}
       {subLevelRows.map(({ lvl, need, have, ok }) => (
-        <ReqRow key={lvl} label={`Direct Lv${lvl} members`} have={have} need={need} ok={ok} theme={theme} />
+        <ReqRow key={lvl} label={t('invite.directLvMembers', { lvl })} have={have} need={need} ok={ok} theme={theme} />
       ))}
     </div>
   );
@@ -190,6 +193,7 @@ function Drawer({ open, onClose, title, children, theme }) {
 /* ── Main ── */
 const Invite = () => {
   const { theme, iconBadges } = useTheme();
+  const { t } = useLanguage();
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState('');
   const [showLog, setShowLog] = useState(false);
@@ -201,7 +205,7 @@ const Invite = () => {
       try {
         const res = await fetch(`${API_URL}/api/invite/summary`, { headers: { Authorization: `Bearer ${getToken()}` } });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Could not load invite details.');
+        if (!res.ok) throw new Error(data.error || t('invite.couldNotLoad'));
         setSummary(data);
       } catch (err) {
         setError(err.message);
@@ -213,9 +217,9 @@ const Invite = () => {
   const invitationLink = summary ? `${window.location.origin}/auth?ref=${summary.inviteCode}` : '';
 
   const shareLink = async () => {
-    const text = `Join KYNEX — trade crypto with me! Use my code: ${summary?.inviteCode}\n${invitationLink}`;
+    const text = t('invite.shareText', { code: summary?.inviteCode, link: invitationLink });
     if (navigator.share) {
-      try { await navigator.share({ title: 'Join KYNEX', text, url: invitationLink }); } catch { }
+      try { await navigator.share({ title: t('invite.shareTitle'), text, url: invitationLink }); } catch { }
     } else {
       navigator.clipboard.writeText(text);
     }
@@ -236,19 +240,19 @@ const Invite = () => {
 
   const statCards = summary ? [
     {
-      key: 'team', label: 'Team Members', value: summary.teamMembers,
+      key: 'team', label: t('invite.teamMembers'), value: summary.teamMembers,
       Icon: Users, badge: iconBadges.purple,
-      hint: 'All direct invites',
+      hint: t('invite.allDirectInvites'),
     },
     {
-      key: 'topup', label: 'Top Up Users', value: summary.topUpUsers,
+      key: 'topup', label: t('invite.topUpUsers'), value: summary.topUpUsers,
       Icon: TrendingUp, badge: iconBadges.green,
-      hint: 'Made a deposit',
+      hint: t('invite.madeADeposit'),
     },
     {
-      key: 'reqs', label: 'My Level', value: currentLevel,
+      key: 'reqs', label: t('invite.myLevel'), value: currentLevel,
       Icon: Star, badge: iconBadges.amber,
-      hint: 'Tap for progress',
+      hint: t('invite.tapForProgress'),
     },
   ] : [];
 
@@ -257,7 +261,7 @@ const Invite = () => {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px', borderBottom: `1px solid ${theme.cardBorder}`, backgroundColor: theme.card, backdropFilter: theme.cardGlass, WebkitBackdropFilter: theme.cardGlass }}>
         <Link to="/profile" style={{ color: theme.text, display: 'flex' }}><ArrowLeft size={20} /></Link>
-        <span style={{ fontWeight: 'bold', fontSize: '16px' }}>Invite Friends</span>
+        <span style={{ fontWeight: 'bold', fontSize: '16px' }}>{t('invite.title')}</span>
       </div>
 
       <div style={{ padding: '20px', maxWidth: '520px', margin: '0 auto', paddingBottom: '40px' }}>
@@ -280,11 +284,11 @@ const Invite = () => {
             {/* UID card */}
             <div style={{ ...glassCard(theme, { background: theme.brandGradient || `linear-gradient(135deg, ${theme.primarySoft} 0%, ${theme.brandSoft} 100%)`, color: '#1A1305', padding: '20px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }) }}>
               <div>
-                <div style={{ color: 'rgba(26,19,5,0.72)', fontSize: '12px', marginBottom: '4px' }}>My UID</div>
+                <div style={{ color: 'rgba(26,19,5,0.72)', fontSize: '12px', marginBottom: '4px' }}>{t('invite.myUid')}</div>
                 <div style={{ fontWeight: 'bold', fontSize: '18px', color: '#1A1305' }}>{summary.uid}</div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ color: 'rgba(26,19,5,0.72)', fontSize: '12px', marginBottom: '4px' }}>Referrer UID</div>
+                <div style={{ color: 'rgba(26,19,5,0.72)', fontSize: '12px', marginBottom: '4px' }}>{t('invite.referrerUid')}</div>
                 <div style={{ fontWeight: 'bold', fontSize: '18px', color: '#1A1305' }}>{summary.referrerUid || '--'}</div>
               </div>
             </div>
@@ -314,7 +318,7 @@ const Invite = () => {
             {/* Level tabs — qualified direct counts per level */}
             {levelReqs.length > 0 && (
               <div style={{ ...glassCard(theme, { padding: '14px 16px', marginBottom: '20px' }) }}>
-                <div style={{ fontSize: '12px', color: theme.subtext, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px' }}>Level Breakdown</div>
+                <div style={{ fontSize: '12px', color: theme.subtext, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px' }}>{t('invite.levelBreakdown')}</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                   {levelReqs.map((req) => {
                     const membersForLevel = levelMembers(req.level);
@@ -345,21 +349,21 @@ const Invite = () => {
                   })}
                 </div>
                 <div style={{ marginTop: '10px', fontSize: '11px', color: theme.faint }}>
-                  Count = qualified direct members meeting each level's requirements · Tap a level to see members
+                  {t('invite.levelBreakdownHint')}
                 </div>
               </div>
             )}
 
             {/* Invite code + link */}
-            <CopyRow label="My Invitation Code" value={summary.inviteCode} theme={theme} />
-            <CopyRow label="Invitation Link" value={invitationLink} theme={theme} />
+            <CopyRow label={t('invite.myInviteCode')} value={summary.inviteCode} theme={theme} />
+            <CopyRow label={t('invite.invitationLink')} value={invitationLink} theme={theme} />
 
             {/* Share */}
             <button
               onClick={shareLink}
               style={{ width: '100%', padding: '14px', borderRadius: '14px', border: 'none', cursor: 'pointer', background: theme.primaryGradient || theme.primary, color: 'white', fontWeight: 'bold', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 6px 18px rgba(59,130,246,0.3)', marginBottom: '16px' }}
             >
-              <Share2 size={16} /> Share Invite Link
+              <Share2 size={16} /> {t('invite.shareInviteLink')}
             </button>
 
             {/* Invite log toggle */}
@@ -367,44 +371,44 @@ const Invite = () => {
               onClick={() => setShowLog(!showLog)}
               style={{ width: '100%', padding: '12px 16px', borderRadius: '12px', cursor: 'pointer', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.card, color: theme.subtext, fontWeight: '600', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', backdropFilter: theme.cardGlass, WebkitBackdropFilter: theme.cardGlass }}
             >
-              <span>Invite Log ({summary.invites?.length || 0})</span>
+              <span>{t('invite.inviteLog', { n: summary.invites?.length || 0 })}</span>
               {showLog ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
 
             {showLog && (
               <div style={{ ...glassCard(theme, { padding: '4px 16px' }) }}>
                 {(summary.invites || []).length === 0
-                  ? <p style={{ color: theme.faint, fontSize: '13px', textAlign: 'center', padding: '16px 0' }}>No one has joined yet. Share your link to build your team.</p>
+                  ? <p style={{ color: theme.faint, fontSize: '13px', textAlign: 'center', padding: '16px 0' }}>{t('invite.noOneJoined')}</p>
                   : (summary.invites || []).map((inv, i) => <MemberRow key={inv.uid} item={inv} i={i} theme={theme} />)
                 }
               </div>
             )}
 
             <p style={{ color: theme.faint, fontSize: '12px', marginTop: '16px', lineHeight: '1.6', textAlign: 'center' }}>
-              Share your code — anyone who signs up is added to your team. You earn <b style={{ color: theme.brand }}>6%</b> referral reward on their first deposit.
+              {t('invite.referralRewardPre')} <b style={{ color: theme.brand }}>6%</b> {t('invite.referralRewardPost')}
             </p>
           </>
         )}
       </div>
 
       {/* ── Team Members Drawer ── */}
-      <Drawer open={drawer === 'team'} onClose={() => setDrawer(null)} title={`Team Members (${summary?.teamMembers || 0})`} theme={theme}>
+      <Drawer open={drawer === 'team'} onClose={() => setDrawer(null)} title={t('invite.teamMembersTitle', { n: summary?.teamMembers || 0 })} theme={theme}>
         {(summary?.invites || []).length === 0
-          ? <p style={{ color: theme.faint, fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No team members yet.</p>
+          ? <p style={{ color: theme.faint, fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>{t('invite.noTeamMembers')}</p>
           : (summary?.invites || []).map((item, i) => <MemberRow key={item.uid} item={item} i={i} theme={theme} />)
         }
       </Drawer>
 
       {/* ── Top Up Drawer ── */}
-      <Drawer open={drawer === 'topup'} onClose={() => setDrawer(null)} title={`Top Up Users (${summary?.topUpUsers || 0})`} theme={theme}>
+      <Drawer open={drawer === 'topup'} onClose={() => setDrawer(null)} title={t('invite.topUpUsersTitle', { n: summary?.topUpUsers || 0 })} theme={theme}>
         {(summary?.topUpList || []).length === 0
-          ? <p style={{ color: theme.faint, fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No top-up users yet. Members who make a deposit will appear here.</p>
+          ? <p style={{ color: theme.faint, fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>{t('invite.noTopUp')}</p>
           : (summary?.topUpList || []).map((item, i) => <MemberRow key={item.uid} item={item} i={i} theme={theme} />)
         }
       </Drawer>
 
       {/* ── Level Requirements Drawer ── */}
-      <Drawer open={drawer === 'reqs'} onClose={() => setDrawer(null)} title={`My Level (${currentLevel}) · Progress`} theme={theme}>
+      <Drawer open={drawer === 'reqs'} onClose={() => setDrawer(null)} title={t('invite.myLevelProgress', { n: currentLevel })} theme={theme}>
         <div style={{ paddingTop: '8px' }}>
           {(summary?.levelRequirements || []).map((req) => (
             <ReqCard
@@ -423,7 +427,7 @@ const Invite = () => {
       <Drawer
         open={drawer === 'level'}
         onClose={() => { setDrawer(null); setLevelDrawerN(null); }}
-        title={`Level ${levelDrawerN} Members (${levelDrawerN ? levelMembers(levelDrawerN).length : 0})`}
+        title={t('invite.levelMembersTitle', { n: levelDrawerN, count: levelDrawerN ? levelMembers(levelDrawerN).length : 0 })}
         theme={theme}
       >
         {/* Requirement summary for this level */}
@@ -432,21 +436,21 @@ const Invite = () => {
           if (!req) return null;
           return (
             <div style={{ ...glassCard(theme, { padding: '12px 14px', marginBottom: '14px', marginTop: '8px', backgroundColor: theme.inputBg }) }}>
-              <div style={{ fontSize: '12px', fontWeight: '700', color: theme.subtext, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Level {levelDrawerN} Requirements</div>
+              <div style={{ fontSize: '12px', fontWeight: '700', color: theme.subtext, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.6px' }}>{t('invite.levelRequirements', { n: levelDrawerN })}</div>
               <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
                 <div>
-                  <div style={{ fontSize: '11px', color: theme.faint }}>Qualified Direct</div>
+                  <div style={{ fontSize: '11px', color: theme.faint }}>{t('invite.qualifiedDirect')}</div>
                   <div style={{ fontSize: '15px', fontWeight: '700', color: theme.text }}>{req.direct}</div>
                 </div>
                 {req.teamDeposit > 0 && (
                   <div>
-                    <div style={{ fontSize: '11px', color: theme.faint }}>Team Members</div>
+                    <div style={{ fontSize: '11px', color: theme.faint }}>{t('invite.teamMembers')}</div>
                     <div style={{ fontSize: '15px', fontWeight: '700', color: theme.text }}>{req.teamDeposit.toLocaleString()}</div>
                   </div>
                 )}
                 {Object.entries(req.directLevels || {}).map(([lvl, cnt]) => (
                   <div key={lvl}>
-                    <div style={{ fontSize: '11px', color: theme.faint }}>Lv{lvl} Directs</div>
+                    <div style={{ fontSize: '11px', color: theme.faint }}>{t('invite.lvDirects', { lvl })}</div>
                     <div style={{ fontSize: '15px', fontWeight: '700', color: theme.text }}>{cnt}</div>
                   </div>
                 ))}
@@ -457,7 +461,7 @@ const Invite = () => {
 
         {levelDrawerN && levelMembers(levelDrawerN).length === 0
           ? <p style={{ color: theme.faint, fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>
-              No qualified members for Level {levelDrawerN} yet. Members must have ≥$200 balance + KYC certified to qualify.
+              {t('invite.noQualifiedMembers', { n: levelDrawerN })}
             </p>
           : (levelDrawerN ? levelMembers(levelDrawerN) : []).map((item, i) => <MemberRow key={item.uid} item={item} i={i} theme={theme} />)
         }

@@ -4,6 +4,7 @@ import { ArrowLeft, Copy, Check, AlertTriangle, Clock, Shield, ChevronDown } fro
 import { QRCodeSVG } from 'qrcode.react';
 import { getToken } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
+import { useLanguage } from '../LanguageContext';
 import { API_URL } from '../config';
 import TxDetailModal from '../components/TxDetailModal';
 function authHeaders() { return { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` }; }
@@ -21,6 +22,7 @@ const NETWORKS = [
 
 const DepositPage = () => {
   const { theme } = useTheme();
+  const { t, isRTL } = useLanguage();
   const [depNet, setDepNet] = useState('trc20');
   const [depositAddresses, setDepositAddresses] = useState({});
   const [copied, setCopied] = useState(false);
@@ -63,9 +65,9 @@ const DepositPage = () => {
   const submitDeposit = async () => {
     if (depInFlight.current) return;
     const amt = Number(depAmt);
-    if (!amt || amt <= 0) { setDepError('Enter a valid amount.'); return; }
-    if (amt < net.min) { setDepError(`Minimum deposit is ${net.min} USDT.`); return; }
-    if (!txHash.trim()) { setDepError('Enter the transaction hash (TXID).'); return; }
+    if (!amt || amt <= 0) { setDepError(t('deposit.enterValidAmount')); return; }
+    if (amt < net.min) { setDepError(t('deposit.minDeposit', { min: net.min })); return; }
+    if (!txHash.trim()) { setDepError(t('deposit.enterTxid')); return; }
     depInFlight.current = true;
     setSubmitting(true); setDepError(''); setDepMsg('');
     try {
@@ -76,10 +78,10 @@ const DepositPage = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       if (data.autoVerified) {
-        setDepMsg(`Deposit verified! ${amt.toFixed(2)} USDT credited to your Spot wallet instantly.`);
+        setDepMsg(t('deposit.verifiedMsg', { amt: amt.toFixed(2) }));
         setDepPopup({ type: 'credited', amount: amt, network: net.label });
       } else {
-        setDepMsg(`Deposit submitted! ${amt.toFixed(2)} USDT via ${net.label} is pending review.`);
+        setDepMsg(t('deposit.submittedMsg', { amt: amt.toFixed(2), net: net.label }));
         setDepPopup({ type: 'pending', amount: amt, network: net.label });
       }
       setDepAmt(''); setTxHash('');
@@ -97,9 +99,9 @@ const DepositPage = () => {
 
   const statusBadge = (status) => {
     const map = {
-      pending: { bg: 'rgba(245,158,11,0.12)', color: '#F59E0B', label: 'Pending' },
-      done: { bg: 'rgba(16,185,129,0.12)', color: '#10B981', label: 'Confirmed' },
-      rejected: { bg: 'rgba(239,68,68,0.12)', color: '#EF4444', label: 'Rejected' },
+      pending: { bg: 'rgba(245,158,11,0.12)', color: '#F59E0B', label: t('status.pending') },
+      done: { bg: 'rgba(16,185,129,0.12)', color: '#10B981', label: t('status.confirmed') },
+      rejected: { bg: 'rgba(239,68,68,0.12)', color: '#EF4444', label: t('status.rejected') },
     };
     const s = map[status] || map.pending;
     return <span style={{ fontSize: '10px', fontWeight: '700', color: s.color, padding: '2px 8px', borderRadius: '6px', backgroundColor: s.bg }}>{s.label}</span>;
@@ -116,7 +118,7 @@ const DepositPage = () => {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: `1px solid ${theme.cardBorder}`, backgroundColor: theme.card, backdropFilter: theme.cardGlass || 'blur(16px)', position: 'sticky', top: 0, zIndex: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <Link to="/assets" style={{ color: theme.text, display: 'flex' }}><ArrowLeft size={20} /></Link>
-          <span style={{ fontWeight: 'bold', fontSize: '16px' }}>Deposit</span>
+          <span style={{ fontWeight: 'bold', fontSize: '16px' }}>{t('deposit.title')}</span>
         </div>
         <div style={{ display: 'flex', gap: '4px' }}>
           {['deposit', 'history'].map(v => (
@@ -124,7 +126,7 @@ const DepositPage = () => {
               background: view === v ? theme.primarySoft : 'none', border: view === v ? `1px solid ${theme.primary}` : `1px solid transparent`,
               color: view === v ? theme.primary : theme.subtext, fontWeight: '600', fontSize: '13px', cursor: 'pointer',
               padding: '6px 14px', borderRadius: '8px',
-            }}>{v === 'deposit' ? 'Deposit' : 'History'}</button>
+            }}>{v === 'deposit' ? t('deposit.title') : t('common.history')}</button>
           ))}
         </div>
       </div>
@@ -134,15 +136,15 @@ const DepositPage = () => {
           <>
             {/* Coin */}
             <div style={{ ...glassCard(theme), padding: '14px 16px', marginBottom: '12px' }}>
-              <div style={{ fontSize: '11px', color: theme.faint, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '600' }}>Coin</div>
+              <div style={{ fontSize: '11px', color: theme.faint, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '600' }}>{t('field.coin')}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#26A17B', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: '800', fontSize: '16px' }}>₮</div>
                 <div>
                   <div style={{ fontWeight: '700', fontSize: '15px' }}>USDT</div>
                   <div style={{ fontSize: '11px', color: theme.subtext }}>Tether USD</div>
                 </div>
-                <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                  <div style={{ fontSize: '11px', color: theme.faint }}>Available</div>
+                <div style={{ [isRTL ? 'marginRight' : 'marginLeft']: 'auto', textAlign: isRTL ? 'left' : 'right' }}>
+                  <div style={{ fontSize: '11px', color: theme.faint }}>{t('field.available')}</div>
                   <div style={{ fontWeight: '700', fontSize: '14px', color: theme.primary }}>{fmt(balance)}</div>
                 </div>
               </div>
@@ -151,7 +153,7 @@ const DepositPage = () => {
             {/* Network */}
             <div style={{ position: 'relative', zIndex: 40, marginBottom: '12px' }}>
               <div style={{ ...glassCard(theme), padding: '14px 16px' }}>
-                <div style={{ fontSize: '11px', color: theme.faint, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '600' }}>Network</div>
+                <div style={{ fontSize: '11px', color: theme.faint, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '600' }}>{t('field.network')}</div>
                 <button onClick={() => setShowNetDropdown(!showNetDropdown)} style={{
                   width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   padding: '10px 12px', borderRadius: '10px', border: `1px solid ${theme.cardBorder}`,
@@ -190,7 +192,7 @@ const DepositPage = () => {
                   <QRCodeSVG value={addr} size={180} level="M" bgColor="#FFFFFF" fgColor="#000000" />
                 </div>
                 <div style={{ fontSize: '11px', color: theme.faint, marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '600' }}>
-                  {net.label} Deposit Address
+                  {net.label} {t('deposit.addressLabel')}
                 </div>
                 <p style={{ fontSize: '13px', color: theme.text, wordBreak: 'break-all', fontFamily: 'monospace', lineHeight: '2', textAlign: 'center', letterSpacing: '0.5px', fontWeight: '600', margin: '0 0 12px 0', padding: '14px 16px', background: theme.inputBg || theme.bg, borderRadius: '12px', border: `1px solid ${theme.cardBorder}` }}>{addr}</p>
                 <button onClick={copyAddr} style={{
@@ -198,28 +200,28 @@ const DepositPage = () => {
                   background: copied ? theme.up : theme.primary, color: 'white', fontWeight: '700', fontSize: '13px',
                   cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', transition: 'background 0.2s',
                 }}>
-                  {copied ? <><Check size={16} /> Copied</> : <><Copy size={16} /> Copy Address</>}
+                  {copied ? <><Check size={16} /> {t('common.copied')}</> : <><Copy size={16} /> {t('deposit.copyAddress')}</>}
                 </button>
               </div>
             ) : (
               <div style={{ ...glassCard(theme), padding: '30px 20px', marginBottom: '12px', textAlign: 'center' }}>
-                <div style={{ color: theme.faint, fontSize: '13px' }}>Deposit address not available yet. Contact support.</div>
+                <div style={{ color: theme.faint, fontSize: '13px' }}>{t('deposit.addrNotAvailable')}</div>
               </div>
             )}
 
             {/* Submit Deposit */}
             <div style={{ ...glassCard(theme), padding: '16px', marginBottom: '12px' }}>
-              <div style={{ fontSize: '13px', fontWeight: '700', marginBottom: '12px' }}>Confirm Deposit</div>
+              <div style={{ fontSize: '13px', fontWeight: '700', marginBottom: '12px' }}>{t('deposit.confirmDeposit')}</div>
               <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '12px' }}>
-                After sending USDT to the address above, fill in the details below to confirm your deposit.
+                {t('deposit.confirmDepositDesc')}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <input type="number" min="0" value={depAmt} onChange={(e) => { setDepAmt(e.target.value); setDepError(''); }}
-                  placeholder={`Amount (min ${net.min} USDT)`} style={inputStyle} />
+                  placeholder={t('deposit.amountPlaceholder', { min: net.min })} style={inputStyle} />
                 <input type="text" value={txHash} onChange={(e) => { setTxHash(e.target.value); setDepError(''); }}
-                  placeholder="Transaction Hash (TXID)" style={{ ...inputStyle, fontFamily: 'monospace', fontSize: '12px' }} />
+                  placeholder={t('deposit.txidPlaceholder')} style={{ ...inputStyle, fontFamily: 'monospace', fontSize: '12px' }} />
                 <div style={{ fontSize: '11px', color: theme.subtext, lineHeight: 1.5, marginTop: '-4px' }}>
-                  💡 Tip: wait 1–2 minutes after sending, then paste the TXID — confirmed transactions are credited <b>instantly</b>. If it's still confirming, we'll keep re-checking automatically and credit it as soon as it confirms.
+                  {t('deposit.tip')}
                 </div>
                 <button onClick={submitDeposit} disabled={submitting} style={{
                   padding: '14px', borderRadius: '12px', border: 'none', fontWeight: '700', fontSize: '14px',
@@ -227,7 +229,7 @@ const DepositPage = () => {
                   background: `linear-gradient(135deg, ${theme.primary}, ${theme.up})`, color: 'white',
                   boxShadow: '0 4px 16px rgba(99,102,241,0.25)',
                 }}>
-                  {submitting ? 'Submitting...' : 'Submit Deposit Request'}
+                  {submitting ? t('common.submitting') : t('deposit.submitBtn')}
                 </button>
               </div>
               {depError && <p style={{ fontSize: '12px', color: theme.down, marginTop: '10px', marginBottom: 0, fontWeight: '600' }}>{depError}</p>}
@@ -236,13 +238,13 @@ const DepositPage = () => {
 
             {/* Info */}
             <div style={{ ...glassCard(theme), padding: '16px', marginBottom: '12px' }}>
-              {infoRow('Network', net.chain)}
-              {infoRow('Minimum Deposit', `${net.min} USDT`)}
-              {infoRow('Confirmations', `${net.confirmations} blocks`)}
-              {infoRow('Estimated Time', net.estTime)}
+              {infoRow(t('field.network'), net.chain)}
+              {infoRow(t('deposit.minDepositLabel'), `${net.min} USDT`)}
+              {infoRow(t('deposit.confirmations'), `${net.confirmations} ${t('deposit.blocks')}`)}
+              {infoRow(t('deposit.estTime'), net.estTime)}
               <div style={{ padding: '10px 0' }}>
-                <span style={{ fontSize: '13px', color: theme.subtext }}>Deposit Fee</span>
-                <span style={{ float: 'right', fontSize: '13px', fontWeight: '600', color: theme.up }}>Free</span>
+                <span style={{ fontSize: '13px', color: theme.subtext }}>{t('deposit.depositFee')}</span>
+                <span style={{ float: isRTL ? 'left' : 'right', fontSize: '13px', fontWeight: '600', color: theme.up }}>{t('deposit.free')}</span>
               </div>
             </div>
 
@@ -251,25 +253,25 @@ const DepositPage = () => {
               <div style={{ padding: '12px 14px', backgroundColor: 'rgba(245,158,11,0.08)', borderBottom: '1px solid rgba(245,158,11,0.12)', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
                 <AlertTriangle size={16} style={{ color: theme.brand, flexShrink: 0, marginTop: '1px' }} />
                 <span style={{ fontSize: '12px', color: theme.brand, fontWeight: '600', lineHeight: '1.5' }}>
-                  Send only <b>USDT</b> on the <b>{net.chain}</b> network. Deposits via other networks will not be credited.
+                  {t('deposit.warn1', { chain: net.chain })}
                 </span>
               </div>
               <div style={{ padding: '12px 14px', backgroundColor: 'rgba(239,68,68,0.06)', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
                 <Shield size={16} style={{ color: '#EF4444', flexShrink: 0, marginTop: '1px' }} />
                 <span style={{ fontSize: '12px', color: '#EF4444', lineHeight: '1.5' }}>
-                  Funds sent to the wrong address or network cannot be recovered.
+                  {t('deposit.warn2')}
                 </span>
               </div>
             </div>
 
             {/* Tips */}
             <div style={{ ...glassCard(theme), padding: '14px 16px' }}>
-              <div style={{ fontSize: '12px', fontWeight: '700', color: theme.subtext, marginBottom: '10px' }}>How to Deposit</div>
+              <div style={{ fontSize: '12px', fontWeight: '700', color: theme.subtext, marginBottom: '10px' }}>{t('deposit.howToDeposit')}</div>
               {[
-                { step: '1', text: 'Copy the deposit address above or scan the QR code.' },
-                { step: '2', text: `Send USDT via ${net.label} network from your external wallet.` },
-                { step: '3', text: 'Enter the amount and transaction hash (TXID) in the form above.' },
-                { step: '4', text: 'Your deposit will be reviewed and credited within 30 minutes.' },
+                { step: '1', text: t('deposit.step1') },
+                { step: '2', text: t('deposit.step2', { net: net.label }) },
+                { step: '3', text: t('deposit.step3') },
+                { step: '4', text: t('deposit.step4') },
               ].map((tip, i) => (
                 <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', marginBottom: i < 3 ? '10px' : 0 }}>
                   <span style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: theme.primarySoft, color: theme.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '700', flexShrink: 0 }}>{tip.step}</span>
@@ -282,12 +284,12 @@ const DepositPage = () => {
 
         {view === 'history' && (
           <>
-            <div style={{ fontSize: '14px', fontWeight: '700', marginBottom: '16px', color: theme.text }}>Deposit History</div>
+            <div style={{ fontSize: '14px', fontWeight: '700', marginBottom: '16px', color: theme.text }}>{t('deposit.historyTitle')}</div>
             {depositHistory.length === 0 && (
               <div style={{ ...glassCard(theme), padding: '50px 20px', textAlign: 'center' }}>
                 <div style={{ fontSize: '32px', marginBottom: '10px', opacity: 0.4 }}>📥</div>
-                <div style={{ color: theme.faint, fontSize: '13px' }}>No deposit records yet</div>
-                <div style={{ color: theme.faint, fontSize: '11px', marginTop: '4px' }}>Your deposits will appear here once submitted</div>
+                <div style={{ color: theme.faint, fontSize: '13px' }}>{t('deposit.noRecords')}</div>
+                <div style={{ color: theme.faint, fontSize: '11px', marginTop: '4px' }}>{t('deposit.noRecordsHint')}</div>
               </div>
             )}
             {depositHistory.map(entry => {
@@ -327,7 +329,7 @@ const DepositPage = () => {
                           +{fmt(entry.amount)} USDT
                         </div>
                         <div style={{ fontSize: '11px', color: theme.subtext, marginTop: '1px' }}>
-                          via {netInfo.label || entry.network?.toUpperCase()} · {netInfo.chain || ''}
+                          {t('common.via')} {netInfo.label || entry.network?.toUpperCase()} · {netInfo.chain || ''}
                         </div>
                       </div>
                     </div>
@@ -341,29 +343,29 @@ const DepositPage = () => {
                       color: '#fff',
                       boxShadow: isDone ? '0 2px 8px rgba(16,185,129,0.4)' : isPending ? '0 2px 8px rgba(245,158,11,0.3)' : '0 2px 8px rgba(239,68,68,0.3)',
                     }}>
-                      {isDone ? 'Confirmed' : isPending ? 'Pending' : 'Rejected'}
+                      {isDone ? t('status.confirmed') : isPending ? t('status.pending') : t('status.rejected')}
                     </div>
                   </div>
                   {/* Detail rows */}
                   <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                      <span style={{ color: theme.subtext }}>Date</span>
+                      <span style={{ color: theme.subtext }}>{t('field.date')}</span>
                       <span style={{ color: theme.text, fontWeight: '600' }}>{new Date(entry.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                      <span style={{ color: theme.subtext }}>Network</span>
+                      <span style={{ color: theme.subtext }}>{t('field.network')}</span>
                       <span style={{ color: theme.text, fontWeight: '600' }}>{netInfo.chain || entry.network?.toUpperCase()}</span>
                     </div>
                     {entry.txHash && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', gap: '8px' }}>
                         <span style={{ color: theme.subtext, flexShrink: 0 }}>TXID</span>
-                        <span style={{ color: theme.primary, fontWeight: '600', fontFamily: 'monospace', fontSize: '11px', wordBreak: 'break-all', textAlign: 'right' }}>{entry.txHash}</span>
+                        <span style={{ color: theme.primary, fontWeight: '600', fontFamily: 'monospace', fontSize: '11px', wordBreak: 'break-all', textAlign: isRTL ? 'left' : 'right' }}>{entry.txHash}</span>
                       </div>
                     )}
                     {entry.autoVerified && (
-                      <div style={{ marginTop: '2px', fontSize: '11px', color: theme.up, fontWeight: '600' }}>⚡ Auto-verified</div>
+                      <div style={{ marginTop: '2px', fontSize: '11px', color: theme.up, fontWeight: '600' }}>⚡ {t('deposit.autoVerified')}</div>
                     )}
-                    <div style={{ fontSize: '11px', color: theme.primary, fontWeight: '600', marginTop: '2px' }}>Tap for full details →</div>
+                    <div style={{ fontSize: '11px', color: theme.primary, fontWeight: '600', marginTop: '2px' }}>{t('common.tapDetails')}</div>
                   </div>
                 </div>
               );
@@ -404,16 +406,16 @@ const DepositPage = () => {
               {depPopup.type === 'credited' ? '✓' : '⏳'}
             </div>
             <div style={{ fontWeight: '800', fontSize: '18px', color: theme.text, marginBottom: '8px' }}>
-              {depPopup.type === 'credited' ? '💚 Deposit Credited!' : '⏳ Deposit Submitted!'}
+              {depPopup.type === 'credited' ? `💚 ${t('deposit.creditedTitle')}` : `⏳ ${t('deposit.submittedTitle')}`}
             </div>
             <div style={{ fontSize: '22px', fontWeight: '800', color: depPopup.type === 'credited' ? theme.up : theme.brand, marginBottom: '8px' }}>
               +{depPopup.amount?.toFixed(2)} USDT
             </div>
-            <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '6px' }}>via {depPopup.network}</div>
+            <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '6px' }}>{t('common.via')} {depPopup.network}</div>
             <div style={{ fontSize: '13px', color: theme.subtext, lineHeight: '1.6', marginBottom: '24px' }}>
               {depPopup.type === 'credited'
-                ? 'Your deposit has been verified and credited to your Spot wallet instantly.'
-                : 'Your deposit is under review. It will be credited within 30 minutes.'}
+                ? t('deposit.creditedDesc')
+                : t('deposit.submittedDesc')}
             </div>
             <button onClick={() => setDepPopup(null)} style={{
               padding: '12px 32px', borderRadius: '12px', border: 'none',
@@ -422,7 +424,7 @@ const DepositPage = () => {
                 : 'linear-gradient(135deg, #F59E0B, #D97706)',
               color: '#fff', fontWeight: '700', fontSize: '14px', cursor: 'pointer',
               boxShadow: depPopup.type === 'credited' ? '0 4px 14px rgba(16,185,129,0.4)' : '0 4px 14px rgba(245,158,11,0.35)',
-            }}>OK</button>
+            }}>{t('common.ok')}</button>
           </div>
         </div>
       )}

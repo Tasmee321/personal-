@@ -2,13 +2,17 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Send, ChevronDown, ChevronRight, ArrowLeft, RefreshCw, MessageSquare } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from '../ThemeContext';
+import { useLanguage } from '../LanguageContext';
 import { getToken } from '../utils/auth';
 import { API_URL } from '../config';
 import { registerFcmToken } from '../firebase';
+import { longPressProps, justLongPressed } from '../utils/longPress';
+import { hapticTap } from '../utils/haptics';
 
 const DRAG_KEY = 'kynex_chat_btn_pos';
 const IDLE_MS = 4000;
 const CHAT_BTN = 50; // floating button size (px) — compact, not oversized
+const CHAT_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏']; // emoji reactions a user can add to a message
 
 // Device safe-area insets (notch / home indicator) measured from CSS env() — JS can't read env() directly
 function getSafeInsets() {
@@ -392,15 +396,19 @@ const BotFace = ({ size = 30, blink = false }) => (
 
 // ── Bot guide card ─────────────────────────────────────────────────────────
 function BotGuide({ guide, theme, time }) {
+  const { t } = useLanguage();
+  const base = `livechat.guide.${guide.id}`;
+  const steps = t(`${base}.steps`).split('\n');
+  const extraItems = guide.extra ? t(`${base}.extraItems`).split('\n') : [];
   return (
     <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
       <div style={{ width: '26px', height: '26px', borderRadius: '9px', flexShrink: 0, background: 'linear-gradient(135deg,#3B82F6,#F59E0B)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '2px' }}>
         <BotFace size={19} />
       </div>
       <div style={{ maxWidth: '92%', background: theme.inputBg, border: `1px solid ${theme.cardBorder}`, borderRadius: '4px 16px 16px 16px', padding: '12px 14px', fontSize: '12.5px', boxShadow: '0 2px 10px rgba(0,0,0,0.07)', animation: 'chatSlideIn 0.22s ease-out', flex: 1 }}>
-        <div style={{ fontWeight: '800', color: theme.text, marginBottom: '10px', fontSize: '13.5px' }}>{guide.title}</div>
+        <div style={{ fontWeight: '800', color: theme.text, marginBottom: '10px', fontSize: '13.5px' }}>{t(`${base}.title`)}</div>
 
-        {guide.steps.map((step, i) => {
+        {steps.map((step, i) => {
           if (step.startsWith('—')) {
             return (
               <div key={i} style={{ fontSize: '10px', fontWeight: '800', color: theme.brand, textTransform: 'uppercase', letterSpacing: '0.6px', marginTop: i === 0 ? 0 : '10px', marginBottom: '4px' }}>
@@ -418,8 +426,8 @@ function BotGuide({ guide, theme, time }) {
 
         {guide.extra && (
           <div style={{ marginTop: '10px', padding: '8px 10px', background: theme.primarySoft, borderRadius: '10px' }}>
-            <div style={{ fontSize: '11px', fontWeight: '700', color: theme.primary, marginBottom: '6px' }}>{guide.extra.title}</div>
-            {guide.extra.items.map((item, i) => (
+            <div style={{ fontSize: '11px', fontWeight: '700', color: theme.primary, marginBottom: '6px' }}>{t(`${base}.extraTitle`)}</div>
+            {extraItems.map((item, i) => (
               <div key={i} style={{ display: 'flex', gap: '6px', marginBottom: '3px' }}>
                 <span style={{ color: theme.brand, flexShrink: 0 }}>•</span>
                 <span style={{ fontSize: '11px', color: theme.subtext, lineHeight: '1.5' }}>{item}</span>
@@ -431,7 +439,7 @@ function BotGuide({ guide, theme, time }) {
         {guide.timing && (
           <div style={{ marginTop: '10px', borderTop: `1px solid ${theme.cardBorder}`, paddingTop: '8px' }}>
             <div style={{ fontSize: '11px', fontWeight: '700', color: theme.text, marginBottom: '5px' }}>
-              {guide.timing[0]?.t1 === 'You get' ? '💰 Referral Rewards' : '⏰ Signal Times by Country'}
+              {guide.timing[0]?.t1 === 'You get' ? t('livechat.timingReferral') : t('livechat.timingSignal')}
             </div>
             {guide.timing.map((row, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', padding: '3px 0', borderBottom: i < guide.timing.length - 1 ? `1px solid ${theme.cardBorder}` : 'none' }}>
@@ -444,7 +452,7 @@ function BotGuide({ guide, theme, time }) {
 
         {guide.note && (
           <div style={{ marginTop: '10px', padding: '8px 10px', background: theme.primarySoft, borderRadius: '8px', fontSize: '11.5px', color: theme.primary, lineHeight: '1.55' }}>
-            {guide.note}
+            {t(`${base}.note`)}
           </div>
         )}
 
@@ -459,6 +467,7 @@ function BotGuide({ guide, theme, time }) {
 // ── Main component ─────────────────────────────────────────────────────────
 const LiveChat = () => {
   const { theme } = useTheme();
+  const { t, isRTL } = useLanguage();
   const navigate = useNavigate();
 
   // view: 'welcome' | 'bot' | 'agent' | 'resolved'
@@ -487,7 +496,11 @@ const LiveChat = () => {
   const lastSendAtRef = useRef(0);         // ignore poll responses that started before our last send
   const [kbInset, setKbInset] = useState(0); // on-screen keyboard height (visualViewport)
   const [attach, setAttach] = useState(null); // { dataUrl, name } pending image
+  const [reactPickerId, setReactPickerId] = useState(null); // message id whose emoji picker is open
   const fileRef = useRef(null);
+  // Android WebView wrappers (e.g. a sideloaded APK) often don't implement onShowFileChooser,
+  // so <input type=file> silently no-ops. Real Chrome / TWA / PWA are unaffected (no "wv" UA token).
+  const isAndroidWebView = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent) && /\bwv\b/.test(navigator.userAgent);
   // Compress a picked image to ≤1024px JPEG so it stays well under the server cap
   const pickImage = (file) => {
     if (!file || !file.type.startsWith('image/')) return;
@@ -583,7 +596,7 @@ const LiveChat = () => {
           // OS-level notification when page is not focused (tab background / phone minimized)
           if ('Notification' in window && Notification.permission === 'granted' && !document.hasFocus()) {
             try {
-              const n = new Notification(latestNew.broadcast ? '📢 KYNEX Announcement' : 'KYNEX Support', {
+              const n = new Notification(latestNew.broadcast ? t('livechat.notifAnnouncement') : t('livechat.headerTitle'), {
                 body: latestNew.text,
                 icon: '/icons/icon-192.png',
                 tag: 'kynex-chat',
@@ -815,7 +828,7 @@ const LiveChat = () => {
     // Local user bubble — never sent to admin
     const userBubble = {
       id: 'u-' + Date.now(), type: 'user-bubble',
-      text: topic.msg || `I need help with: ${topic.label}`, at: Date.now(),
+      text: t('livechat.topicMsg.' + topic.id), at: Date.now(),
     };
     setLocalMsgs([userBubble]);
     setBotTyping(true);
@@ -823,14 +836,14 @@ const LiveChat = () => {
       setBotTyping(false);
       const guide = GUIDES[topic.id];
       if (guide) {
-        setLocalMsgs(prev => [...prev, { id: 'guide-' + Date.now(), type: 'bot-guide', guide, at: Date.now() }]);
+        setLocalMsgs(prev => [...prev, { id: 'guide-' + Date.now(), type: 'bot-guide', guide: { ...guide, id: topic.id }, at: Date.now() }]);
       }
       setTimeout(() => {
         setLocalMsgs(prev => [...prev, { id: 'rp-' + Date.now(), type: 'resolve-prompt', at: Date.now() + 1 }]);
         setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
       }, 1800);
     }, 1500);
-  }, [navigate]);
+  }, [navigate, t]);
 
   // ── Resolve prompt handlers ────────────────────────────────────────────
   const resolveIssue = useCallback((promptId, resolved) => {
@@ -860,11 +873,11 @@ const LiveChat = () => {
       });
       const data = await res.json();
       if (res.ok && data.ok) { lastSendAtRef.current = Date.now(); setMessages(prev => [...prev, data.message]); }
-      else setPendingMsgs(prev => [...prev, { localId: `l${Date.now()}`, text, at: Date.now(), status: 'failed', error: data.error || 'Could not send' }]);
-    } catch { setPendingMsgs(prev => [...prev, { localId: `l${Date.now()}`, text, at: Date.now(), status: 'failed', error: 'Network error' }]); }
+      else setPendingMsgs(prev => [...prev, { localId: `l${Date.now()}`, text, at: Date.now(), status: 'failed', error: data.error || t('livechat.errCouldNotSend') }]);
+    } catch { setPendingMsgs(prev => [...prev, { localId: `l${Date.now()}`, text, at: Date.now(), status: 'failed', error: t('livechat.errNetwork') }]); }
     setSending(false);
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-  }, [selectedTopic]);
+  }, [selectedTopic, t]);
 
   // ── Send user message (agent mode — goes to admin) ─────────────────────
   // Deliver one message: optimistic bubble → server → replace with server copy, or mark failed (tap to retry)
@@ -889,8 +902,8 @@ const LiveChat = () => {
         setPendingMsgs(prev => prev.filter(m => m.localId !== id));
         return true;
       }
-      failure = data.error || (res.status === 429 ? 'Too many messages — slow down a little.' : 'Could not send. Tap to retry.');
-    } catch { failure = 'No connection. Tap to retry.'; }
+      failure = data.error || (res.status === 429 ? t('livechat.errTooMany') : t('livechat.errRetry'));
+    } catch { failure = t('livechat.errNoConn'); }
     setPendingMsgs(prev => prev.map(m => m.localId === id ? { ...m, status: 'failed', error: failure } : m));
     return false;
   };
@@ -909,6 +922,29 @@ const LiveChat = () => {
   };
   const retryPending = (m) => { if (m.status !== 'failed') return; touchAgentActivity(); deliver(m.text, m.localId, m.image || null); };
   const discardPending = (localId) => setPendingMsgs(prev => prev.filter(m => m.localId !== localId));
+  // Add / toggle the user's emoji reaction on a message (optimistic; reverts on failure)
+  const reactMsg = async (id, emoji) => {
+    if (!id) return;
+    setReactPickerId(null);
+    let prevList;
+    setMessages(list => {
+      prevList = list;
+      return list.map(m => {
+        if (m.id !== id) return m;
+        const r = { ...(m.reactions || {}) };
+        if (!emoji || r.user === emoji) delete r.user; else r.user = emoji;
+        return { ...m, reactions: Object.keys(r).length ? r : undefined };
+      });
+    });
+    try {
+      const res = await fetch(`${API_URL}/api/livechat/react`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ id, emoji }),
+      });
+      if (!res.ok) throw new Error('react failed');
+    } catch { if (prevList) setMessages(prevList); }
+  };
 
   // Track whether the user is scrolled near the bottom of the agent list
   const onListScroll = (e) => {
@@ -993,10 +1029,10 @@ const LiveChat = () => {
       if (c.right !== pos.right || c.bottom !== pos.bottom) { try { localStorage.setItem(DRAG_KEY, JSON.stringify(c)); } catch { /* ignore */ } return c; }
       return pos;
     });
-    const t = setTimeout(fix, 50); // after the page (and its bottom nav) has rendered
+    const timer = setTimeout(fix, 50); // after the page (and its bottom nav) has rendered
     window.addEventListener('resize', fix);
     window.addEventListener('orientationchange', fix);
-    return () => { clearTimeout(t); window.removeEventListener('resize', fix); window.removeEventListener('orientationchange', fix); };
+    return () => { clearTimeout(timer); window.removeEventListener('resize', fix); window.removeEventListener('orientationchange', fix); };
   }, [location.pathname]);
 
   // ── Layout helpers ─────────────────────────────────────────────────────
@@ -1016,7 +1052,7 @@ const LiveChat = () => {
     <>
       {/* ── Chat Window ─────────────────────────────────────────────── */}
       {open && (
-        <div style={{
+        <div dir={isRTL ? 'rtl' : 'ltr'} style={{
           position: 'fixed', bottom: `${kbInset ? kbInset + 8 : chatBottom}px`, right: `${chatRight}px`, zIndex: 1000,
           width: 'min(352px, calc(100vw - 24px))',
           height: view === 'resolved' ? 'auto' : (kbInset ? `calc(100vh - ${kbInset + 24}px)` : 'min(560px, calc(100vh - 150px))'),
@@ -1038,16 +1074,16 @@ const LiveChat = () => {
             {/* Left: back arrow (bot view) or New Topic (agent view) */}
             {view === 'bot' && (
               <button onClick={() => resetToWelcome(false)}
-                title="Back to topics"
+                title={t('livechat.backTopics')}
                 style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: 'white', padding: '5px', borderRadius: '8px', flexShrink: 0, display: 'flex' }}>
                 <ArrowLeft size={15} />
               </button>
             )}
             {view === 'agent' && (
               <button onClick={() => resetToWelcome(false)}
-                title="New topic"
+                title={t('livechat.newTopicTitle')}
                 style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: 'white', padding: '5px 9px', borderRadius: '8px', flexShrink: 0, fontSize: '11px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <ArrowLeft size={12} /> Topics
+                <ArrowLeft size={12} /> {t('livechat.topicsBtn')}
               </button>
             )}
 
@@ -1056,11 +1092,11 @@ const LiveChat = () => {
               <BotFace blink />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ color: 'white', fontWeight: '800', fontSize: '14px' }}>KYNEX Support</div>
+              <div style={{ color: 'white', fontWeight: '800', fontSize: '14px' }}>{t('livechat.headerTitle')}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                 <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#4ADE80', animation: 'chatOnlinePulse 2s ease-in-out infinite' }} />
                 <div style={{ color: 'rgba(255,255,255,0.9)', fontSize: '11px' }}>
-                  {view === 'agent' ? 'Live Agent Session · history clears daily 5 AM PKT' : 'Support · usually replies within minutes'}
+                  {view === 'agent' ? t('livechat.statusAgent') : t('livechat.statusSupport')}
                 </div>
               </div>
             </div>
@@ -1068,9 +1104,9 @@ const LiveChat = () => {
             {/* Right: End Chat (agent) or minimize */}
             {view === 'agent' && (
               <button onClick={() => setShowExitConfirm(true)}
-                title="End chat session"
+                title={t('livechat.endChatTitle')}
                 style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: 'white', padding: '5px 9px', borderRadius: '8px', flexShrink: 0, fontSize: '11px', fontWeight: '700' }}>
-                End
+                {t('livechat.endBtn')}
               </button>
             )}
             <button onClick={() => { setOpen(false); setView('welcome'); }} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', padding: '6px', borderRadius: '8px', flexShrink: 0 }}>
@@ -1081,9 +1117,9 @@ const LiveChat = () => {
           {/* ── Exit confirm inline banner ── */}
           {showExitConfirm && (
             <div style={{ padding: '10px 14px', background: theme.primarySoft, borderBottom: `1px solid ${theme.cardBorder}`, display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
-              <div style={{ flex: 1, fontSize: '12px', color: theme.text, fontWeight: '600' }}>End this support session?</div>
-              <button onClick={() => resetToWelcome(true)} style={{ padding: '5px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer', background: theme.primary, color: 'white', fontSize: '12px', fontWeight: '700' }}>Yes, end</button>
-              <button onClick={() => setShowExitConfirm(false)} style={{ padding: '5px 12px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, cursor: 'pointer', background: 'transparent', color: theme.subtext, fontSize: '12px' }}>Cancel</button>
+              <div style={{ flex: 1, fontSize: '12px', color: theme.text, fontWeight: '600' }}>{t('livechat.exitConfirm')}</div>
+              <button onClick={() => resetToWelcome(true)} style={{ padding: '5px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer', background: theme.primary, color: 'white', fontSize: '12px', fontWeight: '700' }}>{t('livechat.exitYes')}</button>
+              <button onClick={() => setShowExitConfirm(false)} style={{ padding: '5px 12px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, cursor: 'pointer', background: 'transparent', color: theme.subtext, fontSize: '12px' }}>{t('common.cancel')}</button>
             </div>
           )}
 
@@ -1091,16 +1127,16 @@ const LiveChat = () => {
           {view === 'resolved' && (
             <div style={{ padding: '32px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
               <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'linear-gradient(135deg,#10B981,#059669)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px', boxShadow: '0 8px 24px rgba(16,185,129,0.35)', fontSize: '28px', color: 'white', fontWeight: '800' }}>✓</div>
-              <div style={{ fontWeight: '800', fontSize: '18px', color: theme.text, marginBottom: '8px' }}>Issue Resolved!</div>
+              <div style={{ fontWeight: '800', fontSize: '18px', color: theme.text, marginBottom: '8px' }}>{t('livechat.resolvedTitle')}</div>
               <div style={{ fontSize: '13px', color: theme.subtext, marginBottom: '24px', lineHeight: '1.6' }}>
-                Great! We're glad we could help you today. This support session has ended.
+                {t('livechat.resolvedDesc')}
               </div>
               <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
                 <button onClick={() => resetToWelcome(false)} style={{ flex: 1, padding: '12px', borderRadius: '14px', border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#3B82F6,#F59E0B)', color: 'white', fontWeight: '700', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                  <RefreshCw size={14} /> New Topic
+                  <RefreshCw size={14} /> {t('livechat.newTopic')}
                 </button>
                 <button onClick={() => resetToWelcome(true)} style={{ flex: 1, padding: '12px', borderRadius: '14px', border: `1.5px solid ${theme.cardBorder}`, cursor: 'pointer', background: 'transparent', color: theme.subtext, fontWeight: '700', fontSize: '13px' }}>
-                  Close Chat
+                  {t('livechat.closeChat')}
                 </button>
               </div>
             </div>
@@ -1117,9 +1153,9 @@ const LiveChat = () => {
                     <MessageSquare size={15} color="white" />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '12px', fontWeight: '700', color: theme.primary, marginBottom: '2px' }}>Active Conversation</div>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: theme.primary, marginBottom: '2px' }}>{t('livechat.activeConv')}</div>
                     <div style={{ fontSize: '11px', color: theme.subtext, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {messages[messages.length - 1]?.text?.slice(0, 48) || 'Tap to continue'}
+                      {messages[messages.length - 1]?.text?.slice(0, 48) || t('livechat.tapContinue')}
                     </div>
                   </div>
                   <ChevronRight size={14} color={theme.primary} />
@@ -1134,10 +1170,10 @@ const LiveChat = () => {
                   ))}
                 </div>
                 <div>
-                  <div style={{ fontWeight:'700', fontSize:'13px', color:theme.text }}>KYNEX Support Team</div>
+                  <div style={{ fontWeight:'700', fontSize:'13px', color:theme.text }}>{t('livechat.teamName')}</div>
                   <div style={{ fontSize:'11px', color:theme.up || '#22C55E', display:'flex', alignItems:'center', gap:'4px', marginTop:'2px' }}>
                     <div style={{ width:'5px',height:'5px',borderRadius:'50%',backgroundColor:theme.up||'#22C55E' }} />
-                    Available · Replies in minutes
+                    {t('livechat.available')}
                   </div>
                 </div>
               </div>
@@ -1148,20 +1184,20 @@ const LiveChat = () => {
                   <BotFace size={20} blink />
                 </div>
                 <div style={{ background:theme.inputBg, border:`1px solid ${theme.cardBorder}`, borderRadius:'4px 16px 16px 16px', padding:'10px 12px', fontSize:'13px', lineHeight:'1.6', color:theme.text, flex:1, boxShadow:'0 2px 6px rgba(0,0,0,0.05)' }}>
-                  <span style={{ fontWeight:'800', display:'block', marginBottom:'2px' }}>👋 Hi! Welcome to KYNEX Support</span>
-                  Select a topic below to get an instant guide, or talk to a live agent.
+                  <span style={{ fontWeight:'800', display:'block', marginBottom:'2px' }}>{t('livechat.greetingTitle')}</span>
+                  {t('livechat.greetingBody')}
                 </div>
               </div>
 
               {/* Topics grid */}
               <div style={{ display:'flex', flexDirection:'column', gap:'6px', marginBottom:'14px' }}>
-                {TOPICS.map(t => (
-                  <button key={t.id} onClick={() => selectTopic(t)}
+                {TOPICS.map(tp => (
+                  <button key={tp.id} onClick={() => selectTopic(tp)}
                     style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'12px', border:`1.5px solid ${theme.cardBorder}`, backgroundColor:theme.inputBg, cursor:'pointer', textAlign:'left', width:'100%', transition:'all 0.14s', boxSizing:'border-box' }}
                     onMouseEnter={e => { e.currentTarget.style.borderColor=theme.primary; e.currentTarget.style.transform='translateX(3px)'; }}
                     onMouseLeave={e => { e.currentTarget.style.borderColor=theme.cardBorder; e.currentTarget.style.transform='translateX(0)'; }}>
-                    <span style={{ width:'30px',height:'30px',borderRadius:'9px',flexShrink:0,background:theme.primarySoft,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px' }}>{t.emoji}</span>
-                    <span style={{ flex:1, fontSize:'13px', fontWeight:'600', color:theme.text }}>{t.label}</span>
+                    <span style={{ width:'30px',height:'30px',borderRadius:'9px',flexShrink:0,background:theme.primarySoft,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px' }}>{tp.emoji}</span>
+                    <span style={{ flex:1, fontSize:'13px', fontWeight:'600', color:theme.text }}>{t('livechat.topic.' + tp.id)}</span>
                     <ChevronRight size={14} color={theme.faint} />
                   </button>
                 ))}
@@ -1186,13 +1222,13 @@ const LiveChat = () => {
                   if (msg.type === 'resolve-prompt') return (
                     <div key={msg.id} style={{ animation:'chatSlideIn 0.22s ease-out' }}>
                       <div style={{ background:theme.inputBg, border:`1px solid ${theme.cardBorder}`, borderRadius:'16px', padding:'12px 14px', textAlign:'center' }}>
-                        <div style={{ fontSize:'13px', fontWeight:'700', color:theme.text, marginBottom:'10px' }}>Was your issue resolved? 🤔</div>
+                        <div style={{ fontSize:'13px', fontWeight:'700', color:theme.text, marginBottom:'10px' }}>{t('livechat.resolvePrompt')}</div>
                         <div style={{ display:'flex', gap:'8px' }}>
                           <button onClick={() => resolveIssue(msg.id, true)} style={{ flex:1, padding:'10px', borderRadius:'12px', border:'none', cursor:'pointer', background:theme.upSoft, color:theme.up, fontWeight:'700', fontSize:'13px' }}>
-                            👍 Yes, Resolved
+                            {t('livechat.resolveYes')}
                           </button>
                           <button onClick={() => resolveIssue(msg.id, false)} style={{ flex:1, padding:'10px', borderRadius:'12px', border:'none', cursor:'pointer', background:theme.downSoft, color:theme.down, fontWeight:'700', fontSize:'13px' }}>
-                            👎 Not Solved
+                            {t('livechat.resolveNo')}
                           </button>
                         </div>
                       </div>
@@ -1202,17 +1238,17 @@ const LiveChat = () => {
                     <div key={msg.id} style={{ animation:'chatSlideIn 0.22s ease-out' }}>
                       <div style={{ background:theme.inputBg, border:`1px solid ${theme.cardBorder}`, borderRadius:'16px', padding:'12px 14px' }}>
                         <div style={{ fontSize:'12px', color:theme.subtext, marginBottom:'10px', fontWeight:'600' }}>
-                          Still having trouble? Choose an option:
+                          {t('livechat.stillTrouble')}
                         </div>
                         <div style={{ display:'flex', flexDirection:'column', gap:'7px' }}>
                           <button onClick={talkToAgent} style={{ padding:'10px 14px', borderRadius:'11px', border:'none', cursor:'pointer', background:'linear-gradient(135deg,#3B82F6,#6366F1)', color:'white', fontWeight:'700', fontSize:'13px', display:'flex', alignItems:'center', gap:'8px' }}>
-                            <span>💬</span> Talk to a Live Agent
+                            <span>💬</span> {t('livechat.talkLiveAgent')}
                           </button>
                           <button onClick={() => resetToWelcome(false)} style={{ padding:'10px 14px', borderRadius:'11px', border:`1.5px solid ${theme.cardBorder}`, cursor:'pointer', background:theme.primarySoft, color:theme.primary, fontWeight:'700', fontSize:'13px', display:'flex', alignItems:'center', gap:'8px' }}>
-                            <span>📋</span> Browse Other Topics
+                            <span>📋</span> {t('livechat.browseTopics')}
                           </button>
                           <button onClick={() => resetToWelcome(true)} style={{ padding:'10px 14px', borderRadius:'11px', border:`1.5px solid ${theme.cardBorder}`, cursor:'pointer', background:'transparent', color:theme.subtext, fontWeight:'600', fontSize:'13px', display:'flex', alignItems:'center', gap:'8px' }}>
-                            <span>✕</span> End Chat
+                            <span>✕</span> {t('livechat.endChat')}
                           </button>
                         </div>
                       </div>
@@ -1240,11 +1276,11 @@ const LiveChat = () => {
 
           {/* ── AGENT VIEW (live messages — admin sees these) ── */}
           {view === 'agent' && (
-            <div ref={listRef} onScroll={onListScroll} style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', backgroundColor:theme.bg||theme.card, position:'relative' }}>
+            <div ref={listRef} onScroll={onListScroll} onClick={() => { if (reactPickerId && !justLongPressed()) setReactPickerId(null); }} style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', backgroundColor:theme.bg||theme.card, position:'relative' }}>
               {newBelow && (
                 <button onClick={() => { setNewBelow(false); bottomRef.current?.scrollIntoView({ behavior:'smooth' }); }}
                   style={{ position:'sticky', top:'8px', alignSelf:'center', zIndex:2, padding:'5px 12px', borderRadius:'14px', border:'none', background:theme.primary, color:'white', fontSize:'11px', fontWeight:700, cursor:'pointer', boxShadow:theme.shadow }}>
-                  ↓ New messages
+                  ↓ {t('livechat.newMessages')}
                 </button>
               )}
               <div style={{ padding:'12px', display:'flex', flexDirection:'column', gap:'10px', flex:1 }}>
@@ -1252,7 +1288,7 @@ const LiveChat = () => {
                 {messages.length === 0 && (
                   <div style={{ display:'flex', justifyContent:'center', padding:'16px 0' }}>
                     <div style={{ display:'inline-flex', alignItems:'center', gap:'6px', backgroundColor:theme.primarySoft, color:theme.primary, padding:'8px 16px', borderRadius:'20px', fontSize:'12px', fontWeight:'600' }}>
-                      ⏳ Connecting you to a live agent…
+                      ⏳ {t('livechat.connecting')}
                     </div>
                   </div>
                 )}
@@ -1261,14 +1297,14 @@ const LiveChat = () => {
                   if (msg.type === 'notice') return (
                     <div key={msg.id} style={{ display:'flex', justifyContent:'center' }}>
                       <div style={{ display:'inline-flex', alignItems:'center', gap:'5px', backgroundColor:theme.primarySoft, color:theme.primary, padding:'7px 14px', borderRadius:'20px', fontSize:'12px', fontWeight:'600', animation:'chatSlideIn 0.2s ease-out' }}>
-                        ✓ {msg.text || 'An agent will contact you shortly'}
+                        ✓ {msg.text || t('livechat.agentContact')}
                       </div>
                     </div>
                   );
                   if (msg.broadcast) return (
                     <div key={msg.id || msg.at} style={{ display:'flex', justifyContent:'flex-start', animation:'chatSlideIn 0.18s ease-out' }}>
                       <div style={{ maxWidth:'85%', padding:'9px 13px', borderRadius:'4px 18px 18px 18px', backgroundColor:theme.brandSoft, border:`1.5px solid ${theme.brand}66`, color:theme.text, fontSize:'13px', lineHeight:'1.5', wordBreak:'break-word', boxShadow:'0 2px 8px rgba(0,0,0,0.07)' }}>
-                        <div style={{ fontSize:'10px', fontWeight:'800', color:theme.brand, textTransform:'uppercase', letterSpacing:'0.7px', marginBottom:'4px' }}>📢 Admin Announcement</div>
+                        <div style={{ fontSize:'10px', fontWeight:'800', color:theme.brand, textTransform:'uppercase', letterSpacing:'0.7px', marginBottom:'4px' }}>📢 {t('livechat.adminAnnouncement')}</div>
                         <div>{msg.text}</div>
                         <div style={{ fontSize:'10px', marginTop:'4px', color:theme.faint, textAlign:'right' }}>{fmtTime(msg.at)}</div>
                       </div>
@@ -1281,13 +1317,33 @@ const LiveChat = () => {
                           <BotFace size={18} />
                         </div>
                       )}
-                      <div style={{ maxWidth:'75%', padding:'9px 13px', borderRadius:msg.from==='user'?'18px 18px 4px 18px':'4px 18px 18px 18px', backgroundColor:msg.from==='user'?theme.primary:theme.inputBg, border:msg.from==='user'?'none':`1px solid ${theme.cardBorder}`, color:msg.from==='user'?'white':theme.text, fontSize:'13px', lineHeight:'1.5', wordBreak:'break-word', boxShadow:'0 2px 8px rgba(0,0,0,0.07)', animation:'chatSlideIn 0.18s ease-out' }}>
+                      <div
+                        {...(msg.id ? longPressProps(() => { hapticTap(); setReactPickerId(msg.id); }) : {})}
+                        style={{ maxWidth:'75%', padding:'9px 13px', borderRadius:msg.from==='user'?'18px 18px 4px 18px':'4px 18px 18px 18px', backgroundColor:msg.from==='user'?theme.primary:theme.inputBg, border:msg.from==='user'?'none':`1px solid ${theme.cardBorder}`, color:msg.from==='user'?'white':theme.text, fontSize:'13px', lineHeight:'1.5', wordBreak:'break-word', boxShadow:'0 2px 8px rgba(0,0,0,0.07)', animation:'chatSlideIn 0.18s ease-out', WebkitUserSelect:'none', userSelect:'none', WebkitTouchCallout:'none' }}>
                         {msg.image && <img src={msg.image} alt="attachment" onClick={() => window.open(msg.image, '_blank')} style={{ display:'block', maxWidth:'100%', maxHeight:'220px', borderRadius:'10px', marginBottom:msg.text?'6px':0, cursor:'zoom-in' }} />}
                         {msg.text && <div>{msg.text}</div>}
-                        <div style={{ fontSize:'10px', marginTop:'4px', color:msg.from==='user'?'rgba(255,255,255,0.7)':theme.faint, textAlign:'right', display:'flex', alignItems:'center', justifyContent:'flex-end', gap:'3px' }}>
+                        <div style={{ fontSize:'10px', marginTop:'4px', color:msg.from==='user'?'rgba(255,255,255,0.7)':theme.faint, textAlign:'right', display:'flex', alignItems:'center', justifyContent:'flex-end', gap:'5px' }}>
                           {fmtTime(msg.at)}
                           {msg.from==='user' && <span style={{ color:msg.read?'#FFFFFF':'rgba(255,255,255,0.6)' }}>{msg.read?'✓✓':'✓'}</span>}
                         </div>
+                        {(msg.reactions?.user || msg.reactions?.admin) && (
+                          <div style={{ display:'flex', gap:'4px', marginTop:'5px', flexWrap:'wrap' }}>
+                            {msg.reactions?.admin && <span style={{ fontSize:'12px', lineHeight:1.2, padding:'2px 7px', borderRadius:'10px', backgroundColor:msg.from==='user'?'rgba(255,255,255,0.22)':theme.bg, border:msg.from==='user'?'none':`1px solid ${theme.cardBorder}` }}>{msg.reactions.admin}</span>}
+                            {msg.reactions?.user && <span onClick={() => reactMsg(msg.id, msg.reactions.user)} title={t('livechat.tapRemove')} style={{ cursor:'pointer', fontSize:'12px', lineHeight:1.2, padding:'2px 7px', borderRadius:'10px', backgroundColor:msg.from==='user'?'rgba(255,255,255,0.34)':theme.primarySoft, border:msg.from==='user'?'none':`1px solid ${theme.primary}55` }}>{msg.reactions.user}</span>}
+                          </div>
+                        )}
+                        {reactPickerId === msg.id && (
+                          <div style={{ display:'flex', alignItems:'center', gap:'2px', marginTop:'6px', padding:'4px', borderRadius:'14px', backgroundColor:msg.from==='user'?'rgba(255,255,255,0.18)':theme.bg, flexWrap:'wrap', animation:'chatSlideIn 0.15s ease-out' }}>
+                            {CHAT_REACTIONS.map(e => (
+                              <button key={e} onClick={() => reactMsg(msg.id, e)} style={{ background:'none', border:'none', cursor:'pointer', fontSize:'17px', padding:'2px 4px', lineHeight:1, borderRadius:'8px' }}>{e}</button>
+                            ))}
+                            {/* Bubbles disable text selection so the hold gesture works — copy stays reachable here */}
+                            {msg.text && (
+                              <button onClick={() => { try { navigator.clipboard?.writeText(msg.text); } catch { /* clipboard blocked */ } setReactPickerId(null); }}
+                                title={t('common.copy')} style={{ background:'none', border:'none', cursor:'pointer', fontSize:'14px', padding:'2px 4px', lineHeight:1, borderRadius:'8px', opacity:0.8 }}>📋</button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -1307,12 +1363,12 @@ const LiveChat = () => {
                 )}
                 {pendingMsgs.map(pm => (
                   <div key={pm.localId} style={{ display:'flex', justifyContent:'flex-end' }}>
-                    <div onClick={() => retryPending(pm)} title={pm.status==='failed' ? 'Tap to retry' : ''} style={{ maxWidth:'75%', padding:'9px 13px', borderRadius:'18px 18px 4px 18px', backgroundColor:theme.primary, opacity:pm.status==='sending'?0.6:1, color:'white', fontSize:'13px', lineHeight:'1.5', wordBreak:'break-word', cursor:pm.status==='failed'?'pointer':'default', border:pm.status==='failed'?`1.5px solid ${theme.down}`:'none' }}>
+                    <div onClick={() => retryPending(pm)} title={pm.status==='failed' ? t('livechat.retry') : ''} style={{ maxWidth:'75%', padding:'9px 13px', borderRadius:'18px 18px 4px 18px', backgroundColor:theme.primary, opacity:pm.status==='sending'?0.6:1, color:'white', fontSize:'13px', lineHeight:'1.5', wordBreak:'break-word', cursor:pm.status==='failed'?'pointer':'default', border:pm.status==='failed'?`1.5px solid ${theme.down}`:'none' }}>
                       {pm.image && <img src={pm.image} alt="" style={{ display:'block', maxWidth:'100%', maxHeight:'220px', borderRadius:'10px', marginBottom:pm.text?'6px':0 }} />}
                       {pm.text && <div>{pm.text}</div>}
                       <div style={{ fontSize:'10px', marginTop:'4px', color:'rgba(255,255,255,0.75)', textAlign:'right' }}>
-                        {pm.status==='sending' ? 'Sending…' : (
-                          <span style={{ color:'#FFE4E6' }}>⚠ {pm.error} · <b>Retry</b> · <span onClick={(e)=>{e.stopPropagation(); discardPending(pm.localId);}} style={{ textDecoration:'underline' }}>discard</span></span>
+                        {pm.status==='sending' ? t('livechat.sending') : (
+                          <span style={{ color:'#FFE4E6' }}>⚠ {pm.error} · <b>{t('livechat.retry')}</b> · <span onClick={(e)=>{e.stopPropagation(); discardPending(pm.localId);}} style={{ textDecoration:'underline' }}>{t('livechat.discard')}</span></span>
                         )}
                       </div>
                     </div>
@@ -1333,8 +1389,8 @@ const LiveChat = () => {
                     style={{ display:'flex', alignItems:'center', gap:'8px', padding:'7px 12px', borderRadius:'12px', border:`1.5px solid ${theme.primary}`, background:theme.primarySoft, cursor:'pointer', width:'100%', textAlign:'left', animation:'chatSlideIn 0.18s ease-out' }}>
                     <span style={{ fontSize:'16px' }}>{suggestedTopic.emoji}</span>
                     <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:'11px', color:theme.primary, fontWeight:'700' }}>💡 Detected topic</div>
-                      <div style={{ fontSize:'12px', color:theme.text, fontWeight:'600' }}>{suggestedTopic.label} — Tap for instant guide</div>
+                      <div style={{ fontSize:'11px', color:theme.primary, fontWeight:'700' }}>💡 {t('livechat.detectedTopic')}</div>
+                      <div style={{ fontSize:'12px', color:theme.text, fontWeight:'600' }}>{t('livechat.topic.' + suggestedTopic.id)} — {t('livechat.tapGuide')}</div>
                     </div>
                     <ChevronRight size={14} color={theme.primary} />
                   </button>
@@ -1344,20 +1400,25 @@ const LiveChat = () => {
                 <div style={{ padding:'8px 12px 0', display:'flex', alignItems:'center', gap:'8px' }}>
                   <img src={attach.dataUrl} alt="" style={{ width:'44px', height:'44px', objectFit:'cover', borderRadius:'8px', border:`1px solid ${theme.cardBorder}` }} />
                   <span style={{ fontSize:'11px', color:theme.subtext, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{attach.name}</span>
-                  <button onClick={() => setAttach(null)} style={{ background:'none', border:'none', color:theme.down, cursor:'pointer', fontSize:'12px', fontWeight:700 }}>Remove</button>
+                  <button onClick={() => setAttach(null)} style={{ background:'none', border:'none', color:theme.down, cursor:'pointer', fontSize:'12px', fontWeight:700 }}>{t('livechat.remove')}</button>
+                </div>
+              )}
+              {isAndroidWebView && !attach && (
+                <div style={{ padding:'0 12px 6px', fontSize:'10.5px', color:theme.faint, lineHeight:1.4 }}>
+                  📎 Agar photo attach na ho, to app ko browser ya Add-to-Home-Screen (PWA) mein khol kar bhejein.
                 </div>
               )}
               <div style={{ padding:'10px 12px', display:'flex', gap:'8px', alignItems:'flex-end' }}>
                 <input ref={fileRef} type="file" accept="image/*" style={{ display:'none' }} onChange={(e) => { pickImage(e.target.files?.[0]); e.target.value=''; }} />
-                <button onClick={() => fileRef.current?.click()} title="Attach screenshot" style={{ width:'38px', height:'42px', borderRadius:'12px', border:`1.5px solid ${theme.cardBorder}`, background:theme.inputBg||theme.bg, color:theme.subtext, cursor:'pointer', fontSize:'16px', flexShrink:0 }}>📎</button>
+                <button onClick={() => fileRef.current?.click()} title={t('livechat.attachTitle')} style={{ width:'38px', height:'42px', borderRadius:'12px', border:`1.5px solid ${theme.cardBorder}`, background:theme.inputBg||theme.bg, color:theme.subtext, cursor:'pointer', fontSize:'16px', flexShrink:0 }}>📎</button>
                 <textarea value={input} onChange={handleInputChange} onKeyDown={handleKey} maxLength={1000}
-                  placeholder={view === 'welcome' ? 'Or type your question…' : view === 'bot' ? 'Type for live agent…' : 'Type a message…'}
+                  placeholder={view === 'welcome' ? t('livechat.phWelcome') : view === 'bot' ? t('livechat.phBot') : t('livechat.phAgent')}
                   rows={1}
                   style={{ flex:1, resize:'none', padding:'10px 12px', borderRadius:'14px', border:`1.5px solid ${theme.cardBorder}`, backgroundColor:theme.inputBg||theme.bg, color:theme.text, fontSize:'13px', outline:'none', fontFamily:'inherit', maxHeight:'80px', overflowY:'auto', transition:'border-color 0.15s' }}
                   onFocus={e => e.target.style.borderColor=theme.primary}
                   onBlur={e => e.target.style.borderColor=theme.cardBorder}
                 />
-                <button onClick={send} disabled={(!input.trim()&&!attach)||sending} style={{ width:'42px', height:'42px', borderRadius:'14px', border:'none', cursor:(input.trim()||attach)&&!sending?'pointer':'not-allowed', background:input.trim()&&!sending?'linear-gradient(135deg,#3B82F6,#F59E0B)':theme.cardBorder, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'all 0.15s', boxShadow:input.trim()&&!sending?'0 4px 12px rgba(59,130,246,0.4)':'none' }}>
+                <button onClick={send} disabled={(!input.trim()&&!attach)||sending} style={{ width:'42px', height:'42px', borderRadius:'14px', border:'none', cursor:(input.trim()||attach)&&!sending?'pointer':'not-allowed', background:(input.trim()||attach)&&!sending?'linear-gradient(135deg,#3B82F6,#F59E0B)':theme.cardBorder, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'all 0.15s', boxShadow:(input.trim()||attach)&&!sending?'0 4px 12px rgba(59,130,246,0.4)':'none' }}>
                   <Send size={16} color="white" />
                 </button>
               </div>
@@ -1376,12 +1437,12 @@ const LiveChat = () => {
             <div style={{ fontSize:'20px', flexShrink:0 }}>{toast.broadcast ? '📢' : '💬'}</div>
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:'10px', fontWeight:'800', color:toast.broadcast ? theme.brand : theme.primary, textTransform:'uppercase', letterSpacing:'0.7px', marginBottom:'3px' }}>
-                {toast.broadcast ? 'Admin Announcement · KYNEX' : 'New Message · KYNEX'}
+                {toast.broadcast ? t('livechat.toastBroadcast') : t('livechat.toastNew')}
               </div>
               <div style={{ fontSize:'13px', color:theme.text, lineHeight:'1.5', fontWeight:'500', overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>
                 {toast.text}
               </div>
-              <div style={{ fontSize:'10px', color:theme.faint, marginTop:'4px' }}>Tap to open chat</div>
+              <div style={{ fontSize:'10px', color:theme.faint, marginTop:'4px' }}>{t('livechat.tapOpen')}</div>
             </div>
             <button onClick={e => { e.stopPropagation(); setToast(null); clearTimeout(toastTimerRef.current); }} style={{ background:'transparent', border:'none', cursor:'pointer', color:theme.faint, padding:'2px', flexShrink:0, fontSize:'14px', lineHeight:1 }}>✕</button>
           </div>

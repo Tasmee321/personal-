@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, ShieldCheck, Clock, XCircle, ShieldAlert, Upload, Check } from 'lucide-react';
 import { getToken } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
+import { useLanguage } from '../LanguageContext';
 import { API_URL } from '../config';
 
 function authHeaders() {
@@ -48,9 +49,9 @@ const COUNTRIES = [
   'Zambia', 'Zimbabwe',
 ];
 const DOC_TYPES = [
-  { value: 'passport', label: 'Passport' },
-  { value: 'driving_license', label: "Driving License" },
-  { value: 'national_id', label: 'National ID Card' },
+  { value: 'passport', labelKey: 'verification.docPassport' },
+  { value: 'driving_license', labelKey: 'verification.docDrivingLicense' },
+  { value: 'national_id', labelKey: 'verification.docNationalId' },
 ];
 
 function fileToDataUrl(file) {
@@ -63,11 +64,12 @@ function fileToDataUrl(file) {
 }
 
 function StatusBadge({ status, theme, iconBadges }) {
+  const { t } = useLanguage();
   const map = {
-    not_started: { label: 'Not Verified', color: theme.subtext, Icon: ShieldAlert, badge: iconBadges.amber },
-    pending: { label: 'Pending Review', color: theme.brand, Icon: Clock, badge: iconBadges.amber },
-    certified: { label: 'Certified', color: theme.up, Icon: ShieldCheck, badge: iconBadges.green },
-    rejected: { label: 'Rejected', color: theme.down, Icon: XCircle, badge: iconBadges.pink },
+    not_started: { label: t('status.notVerified'), color: theme.subtext, Icon: ShieldAlert, badge: iconBadges.amber },
+    pending: { label: t('status.pendingReview'), color: theme.brand, Icon: Clock, badge: iconBadges.amber },
+    certified: { label: t('status.certified'), color: theme.up, Icon: ShieldCheck, badge: iconBadges.green },
+    rejected: { label: t('status.rejected'), color: theme.down, Icon: XCircle, badge: iconBadges.pink },
   };
   const { label, color, Icon, badge } = map[status] || map.not_started;
   return (
@@ -81,10 +83,10 @@ function StatusBadge({ status, theme, iconBadges }) {
       <div>
         <div style={{ fontWeight: 'bold', color }}>{label}</div>
         <div style={{ fontSize: '12px', color: theme.faint }}>
-          {status === 'not_started' && 'Verify your identity to raise your account limits.'}
-          {status === 'pending' && "We're reviewing your submission — this usually takes a short while."}
-          {status === 'certified' && 'Your identity has been confirmed.'}
-          {status === 'rejected' && 'Your submission was not accepted. You can try again below.'}
+          {status === 'not_started' && t('verification.statusNotStartedDesc')}
+          {status === 'pending' && t('verification.statusPendingDesc')}
+          {status === 'certified' && t('verification.statusCertifiedDesc')}
+          {status === 'rejected' && t('verification.statusRejectedDesc')}
         </div>
       </div>
     </div>
@@ -92,16 +94,17 @@ function StatusBadge({ status, theme, iconBadges }) {
 }
 
 function Tiers({ theme }) {
+  const { t } = useLanguage();
   const rows = [
-    { label: 'Withdrawal limit', basic: 'Limited', trusted: 'Unlimited' },
-    { label: 'Deposit limit', basic: 'Unlimited', trusted: 'Unlimited' },
-    { label: 'P2P Trading', basic: 'Limited', trusted: 'Unlimited' },
+    { label: t('verification.withdrawalLimit'), basic: t('verification.limited'), trusted: t('verification.unlimited') },
+    { label: t('verification.depositLimit'), basic: t('verification.unlimited'), trusted: t('verification.unlimited') },
+    { label: t('verification.p2pTrading'), basic: t('verification.limited'), trusted: t('verification.unlimited') },
   ];
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '24px' }}>
       <div />
-      <div style={{ textAlign: 'center', fontSize: '12px', fontWeight: 'bold', color: theme.subtext }}>Basic</div>
-      <div style={{ textAlign: 'center', fontSize: '12px', fontWeight: 'bold', color: theme.brand }}>Trusted</div>
+      <div style={{ textAlign: 'center', fontSize: '12px', fontWeight: 'bold', color: theme.subtext }}>{t('verification.tierBasic')}</div>
+      <div style={{ textAlign: 'center', fontSize: '12px', fontWeight: 'bold', color: theme.brand }}>{t('verification.tierTrusted')}</div>
       {rows.map((row) => (
         <React.Fragment key={row.label}>
           <div style={{ fontSize: '12px', color: theme.subtext, alignSelf: 'center' }}>{row.label}</div>
@@ -114,6 +117,7 @@ function Tiers({ theme }) {
 }
 
 function DocSlot({ label, file, onChange, theme }) {
+  const { t } = useLanguage();
   return (
     <label style={{ display: 'block', cursor: 'pointer', marginBottom: '12px' }}>
       <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '6px' }}>{label}</div>
@@ -124,7 +128,7 @@ function DocSlot({ label, file, onChange, theme }) {
         backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)',
       }}>
         {file ? <Check size={18} color={theme.up} /> : <Upload size={18} color={theme.faint} />}
-        <span style={{ fontSize: '13px', color: file ? theme.up : theme.faint }}>{file ? file.name : 'Tap to choose a photo'}</span>
+        <span style={{ fontSize: '13px', color: file ? theme.up : theme.faint }}>{file ? file.name : t('verification.tapToChoosePhoto')}</span>
       </div>
       <input type="file" accept="image/*" onChange={onChange} style={{ display: 'none' }} />
     </label>
@@ -141,6 +145,7 @@ const inputStyle = (theme) => ({
 
 const Verification = () => {
   const { theme, iconBadges, mode } = useTheme();
+  const { t } = useLanguage();
   const [kyc, setKyc] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -164,14 +169,14 @@ const Verification = () => {
   };
 
   useEffect(() => {
-    const t = setTimeout(load, 0);
-    return () => clearTimeout(t);
+    const timer = setTimeout(load, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   const submit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!front || !back || !selfie) { setError('Please upload all three photos.'); return; }
+    if (!front || !back || !selfie) { setError(t('verification.uploadAllThree')); return; }
     setBusy(true);
     try {
       const documents = await Promise.all([front, back, selfie].map(fileToDataUrl));
@@ -180,7 +185,7 @@ const Verification = () => {
         body: JSON.stringify({ country, firstName, lastName, dob, docType, idNumber, documents }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Could not submit verification.');
+      if (!res.ok) throw new Error(data.error || t('verification.couldNotSubmit'));
       setKyc(data.kyc);
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
@@ -197,7 +202,7 @@ const Verification = () => {
         position: 'sticky', top: 0, zIndex: 10,
       }}>
         <Link to="/security" style={{ color: theme.text, display: 'flex' }}><ArrowLeft size={20} /></Link>
-        <span style={{ fontWeight: 'bold', fontSize: '16px' }}>Verification</span>
+        <span style={{ fontWeight: 'bold', fontSize: '16px' }}>{t('verification.title')}</span>
       </div>
 
       <div style={{ padding: '20px', maxWidth: '480px', margin: '0 auto' }}>
@@ -220,17 +225,17 @@ const Verification = () => {
           <form onSubmit={submit}>
             {error && <div style={{ color: theme.down, fontSize: '13px', marginBottom: '14px', padding: '10px', backgroundColor: theme.downSoft, borderRadius: '8px' }}>{error}</div>}
 
-            <div style={{ fontSize: '13px', fontWeight: 'bold', color: theme.subtext, margin: '0 0 8px' }}>Personal details</div>
+            <div style={{ fontSize: '13px', fontWeight: 'bold', color: theme.subtext, margin: '0 0 8px' }}>{t('verification.personalDetails')}</div>
             <select value={country} onChange={(e) => setCountry(e.target.value)} required style={{ ...inputStyle(theme), colorScheme: mode }}>
-              <option value="" disabled>Country / Region</option>
+              <option value="" disabled>{t('verification.countryRegion')}</option>
               {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
-            <input type="text" placeholder="First Name" value={firstName} onChange={(e) => setFirstName(e.target.value)} required style={inputStyle(theme)} />
-            <input type="text" placeholder="Last Name" value={lastName} onChange={(e) => setLastName(e.target.value)} required style={inputStyle(theme)} />
-            <label style={{ fontSize: '12px', color: theme.subtext, marginBottom: '6px', display: 'block' }}>Date of Birth</label>
+            <input type="text" placeholder={t('verification.firstName')} value={firstName} onChange={(e) => setFirstName(e.target.value)} required style={inputStyle(theme)} />
+            <input type="text" placeholder={t('verification.lastName')} value={lastName} onChange={(e) => setLastName(e.target.value)} required style={inputStyle(theme)} />
+            <label style={{ fontSize: '12px', color: theme.subtext, marginBottom: '6px', display: 'block' }}>{t('verification.dateOfBirth')}</label>
             <input type="date" value={dob} onChange={(e) => setDob(e.target.value)} required style={{ ...inputStyle(theme), marginBottom: '18px', colorScheme: mode }} />
 
-            <div style={{ fontSize: '13px', fontWeight: 'bold', color: theme.subtext, margin: '0 0 8px' }}>Document</div>
+            <div style={{ fontSize: '13px', fontWeight: 'bold', color: theme.subtext, margin: '0 0 8px' }}>{t('verification.document')}</div>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
               {DOC_TYPES.map((d) => (
                 <button key={d.value} type="button" onClick={() => setDocType(d.value)} style={{
@@ -239,16 +244,16 @@ const Verification = () => {
                   backgroundColor: docType === d.value ? theme.primarySoft : (theme.inputBg || theme.bg),
                   color: docType === d.value ? theme.primary : theme.subtext,
                 }}>
-                  {d.label}
+                  {t(d.labelKey)}
                 </button>
               ))}
             </div>
-            <input type="text" placeholder="Document ID Number" value={idNumber} onChange={(e) => setIdNumber(e.target.value)} required style={{ ...inputStyle(theme), marginBottom: '18px' }} />
+            <input type="text" placeholder={t('verification.documentIdNumber')} value={idNumber} onChange={(e) => setIdNumber(e.target.value)} required style={{ ...inputStyle(theme), marginBottom: '18px' }} />
 
-            <div style={{ fontSize: '13px', fontWeight: 'bold', color: theme.subtext, margin: '0 0 8px' }}>Upload photos</div>
-            <DocSlot label="Front of document" file={front} onChange={(e) => setFront(e.target.files[0])} theme={theme} />
-            <DocSlot label="Back of document" file={back} onChange={(e) => setBack(e.target.files[0])} theme={theme} />
-            <DocSlot label="Selfie holding the document" file={selfie} onChange={(e) => setSelfie(e.target.files[0])} theme={theme} />
+            <div style={{ fontSize: '13px', fontWeight: 'bold', color: theme.subtext, margin: '0 0 8px' }}>{t('verification.uploadPhotos')}</div>
+            <DocSlot label={t('verification.frontOfDocument')} file={front} onChange={(e) => setFront(e.target.files[0])} theme={theme} />
+            <DocSlot label={t('verification.backOfDocument')} file={back} onChange={(e) => setBack(e.target.files[0])} theme={theme} />
+            <DocSlot label={t('verification.selfieHolding')} file={selfie} onChange={(e) => setSelfie(e.target.files[0])} theme={theme} />
 
             <button type="submit" disabled={busy} style={{
               width: '100%', padding: '14px', borderRadius: '12px', border: 'none',
@@ -256,7 +261,7 @@ const Verification = () => {
               fontWeight: 'bold', cursor: busy ? 'not-allowed' : 'pointer', marginTop: '10px',
               boxShadow: '0 6px 18px rgba(59,130,246,0.3)',
             }}>
-              {busy ? 'Submitting...' : 'Submit for Review'}
+              {busy ? t('common.submitting') : t('verification.submitForReview')}
             </button>
           </form>
         )}

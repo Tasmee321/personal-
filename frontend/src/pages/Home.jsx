@@ -2,30 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Sun, Moon, Bell, User, ChevronDown, Headphones, Mail, Search, Wifi, BatteryFull, Signal, ShieldCheck, Globe2, Zap, Lock, Download, Menu, X } from 'lucide-react';
 import { useTheme } from '../ThemeContext';
+import { useLanguage } from '../LanguageContext';
 import ALL_COINS, { buildWsStreamUrl } from '../config/coins';
 
 const ADVANTAGES = [
-  { icon: ShieldCheck, title: 'Security First', description: 'Built with layered risk controls and account verification, so your funds and your data stay protected.' },
-  { icon: Globe2, title: 'Built for Global Traders', description: 'Real-time market data and a trading experience designed to work well for users anywhere, in multiple languages.' },
-  { icon: Zap, title: 'Fast Execution', description: "Live pricing straight from the market, so what you see is what you're trading at." },
-  { icon: Lock, title: 'Your Account, Your Control', description: 'Passwords are hashed, sign-ins are verified by email, and you can review or close your account at any time.' },
+  { icon: ShieldCheck, tkey: 'home.adv1' },
+  { icon: Globe2, tkey: 'home.adv2' },
+  { icon: Zap, tkey: 'home.adv3' },
+  { icon: Lock, tkey: 'home.adv4' },
 ];
 
 const TICKER_SYMBOLS = ALL_COINS.map((c) => c.symbol.toLowerCase());
 
 const NAV_MENUS = {
-  Spot: ['Spot Trading', 'Convert'],
-  Futures: ['USDT-M Futures', 'Coin-M Futures'],
-  'AI Trading': ['AI Signals', 'Auto-Invest'],
+  'home.spot': ['home.spotTrading', 'home.convert'],
+  'home.futures': ['home.usdtmFutures', 'home.coinmFutures'],
+  'home.aiTrading': ['home.aiSignals', 'home.autoInvest'],
 };
-
-const LANGUAGES = [
-  { code: 'en', label: 'English', flag: '🇺🇸' },
-  { code: 'ar', label: 'العربية', flag: '🇪🇬' },
-  { code: 'fr', label: 'Français', flag: '🇫🇷' },
-  { code: 'sw', label: 'Kiswahili', flag: '🇰🇪' },
-  { code: 'pt', label: 'Português', flag: '🇵🇹' },
-];
 
 const Sparkline = ({ points, color }) => (
   <svg viewBox="0 0 100 34" width="100%" height="34" preserveAspectRatio="none">
@@ -36,17 +29,16 @@ const Sparkline = ({ points, color }) => (
 const Home = () => {
   const navigate = useNavigate();
   const { theme, mode, toggleMode } = useTheme();
+  const { t, lang, setLang, LANGUAGES } = useLanguage();
   const [prices, setPrices] = useState({});
   const [openMenu, setOpenMenu] = useState(null);
   const [langOpen, setLangOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [language, setLanguage] = useState(() => localStorage.getItem('kynex_language') || 'en');
   const [heroEmail, setHeroEmail] = useState('');
-  const selectedLang = LANGUAGES.find((l) => l.code === language);
+  const selectedLang = LANGUAGES.find((l) => l.code === lang) || LANGUAGES[0];
 
   const chooseLanguage = (code) => {
-    setLanguage(code);
-    localStorage.setItem('kynex_language', code);
+    setLang(code); // context persists + applies dir/lang
     setLangOpen(false);
   };
 
@@ -110,13 +102,13 @@ const Home = () => {
           </Link>
 
           <div className="kx-nav-links" style={{ display: 'flex', alignItems: 'center', gap: '28px' }}>
-            <Link to="/markets" className="kx-navlink">Market</Link>
-            {Object.entries(NAV_MENUS).map(([label, items]) => (
-              <div key={label} className="kx-dropdown" onMouseEnter={() => setOpenMenu(label)} onMouseLeave={() => setOpenMenu(null)}>
-                <button className="kx-navlink">{label} <ChevronDown size={14} /></button>
-                {openMenu === label && (
+            <Link to="/markets" className="kx-navlink">{t('home.market')}</Link>
+            {Object.entries(NAV_MENUS).map(([labelKey, items]) => (
+              <div key={labelKey} className="kx-dropdown" onMouseEnter={() => setOpenMenu(labelKey)} onMouseLeave={() => setOpenMenu(null)}>
+                <button className="kx-navlink">{t(labelKey)} <ChevronDown size={14} /></button>
+                {openMenu === labelKey && (
                   <div className="kx-dropdown-menu">
-                    {items.map((item) => (<span key={item} onClick={promptLogin}>{item}</span>))}
+                    {items.map((itemKey) => (<span key={itemKey} onClick={promptLogin}>{t(itemKey)}</span>))}
                   </div>
                 )}
               </div>
@@ -125,9 +117,9 @@ const Home = () => {
         </div>
 
         <div className="kx-nav-right-desktop" style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
-          <button className="kx-ghost-btn" onClick={() => navigate('/auth', { state: { mode: 'login' } })}>Log In</button>
-          <button className="kx-solid-btn" onClick={() => navigate('/auth', { state: { mode: 'signup' } })}>Sign Up</button>
-          <Link to="/download" className="kx-download-btn"><Download size={15} /> Download</Link>
+          <button className="kx-ghost-btn" onClick={() => navigate('/auth', { state: { mode: 'login' } })}>{t('common.logIn')}</button>
+          <button className="kx-solid-btn" onClick={() => navigate('/auth', { state: { mode: 'signup' } })}>{t('common.signUp')}</button>
+          <Link to="/download" className="kx-download-btn"><Download size={15} /> {t('common.download')}</Link>
           <button className="kx-icon-btn" onClick={toggleMode} title="Toggle theme">{mode === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</button>
           <button className="kx-icon-btn" onClick={() => navigate('/messages')} title="Messages"><Bell size={18} /></button>
           <button className="kx-icon-btn" onClick={() => navigate('/profile')} title="Profile"><User size={18} /></button>
@@ -156,14 +148,14 @@ const Home = () => {
               <span style={{ color: theme.brand, fontWeight: 'bold', fontSize: '20px' }}>KYNEX</span>
               <button onClick={() => setMobileMenuOpen(false)} style={{ background: 'none', border: 'none', color: theme.text, cursor: 'pointer', display: 'flex' }}><X size={22} /></button>
             </div>
-            <Link to="/markets" onClick={() => setMobileMenuOpen(false)} className="kx-mob-link">Markets</Link>
-            <button className="kx-mob-link" onClick={() => { setMobileMenuOpen(false); promptLogin(); }}>Spot Trading</button>
-            <button className="kx-mob-link" onClick={() => { setMobileMenuOpen(false); promptLogin(); }}>Futures</button>
-            <button className="kx-mob-link" onClick={() => { setMobileMenuOpen(false); promptLogin(); }}>AI Signals</button>
-            <Link to="/download" onClick={() => setMobileMenuOpen(false)} className="kx-mob-link">Download</Link>
+            <Link to="/markets" onClick={() => setMobileMenuOpen(false)} className="kx-mob-link">{t('home.markets')}</Link>
+            <button className="kx-mob-link" onClick={() => { setMobileMenuOpen(false); promptLogin(); }}>{t('home.spotTrading')}</button>
+            <button className="kx-mob-link" onClick={() => { setMobileMenuOpen(false); promptLogin(); }}>{t('home.futures')}</button>
+            <button className="kx-mob-link" onClick={() => { setMobileMenuOpen(false); promptLogin(); }}>{t('home.aiSignals')}</button>
+            <Link to="/download" onClick={() => setMobileMenuOpen(false)} className="kx-mob-link">{t('common.download')}</Link>
             <div style={{ display: 'flex', gap: '10px', marginTop: '20px', marginBottom: '16px' }}>
-              <button className="kx-ghost-btn" style={{ flex: 1 }} onClick={() => { setMobileMenuOpen(false); navigate('/auth', { state: { mode: 'login' } }); }}>Log In</button>
-              <button className="kx-solid-btn" style={{ flex: 1 }} onClick={() => { setMobileMenuOpen(false); navigate('/auth', { state: { mode: 'signup' } }); }}>Sign Up</button>
+              <button className="kx-ghost-btn" style={{ flex: 1 }} onClick={() => { setMobileMenuOpen(false); navigate('/auth', { state: { mode: 'login' } }); }}>{t('common.logIn')}</button>
+              <button className="kx-solid-btn" style={{ flex: 1 }} onClick={() => { setMobileMenuOpen(false); navigate('/auth', { state: { mode: 'signup' } }); }}>{t('common.signUp')}</button>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '12px', borderTop: `1px solid ${theme.cardBorder}` }}>
               <button className="kx-icon-btn" onClick={toggleMode}>{mode === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</button>
@@ -185,14 +177,14 @@ const Home = () => {
       {/* Hero */}
       <section style={{ textAlign: 'center', padding: '90px 20px 60px' }}>
         <h1 style={{ fontSize: '56px', fontWeight: 'bold', margin: '0 0 10px 0' }}>KYNEX</h1>
-        <h2 style={{ fontSize: '38px', fontWeight: 'bold', margin: '0 0 20px 0' }}>Digital transaction currency</h2>
+        <h2 style={{ fontSize: '38px', fontWeight: 'bold', margin: '0 0 20px 0' }}>{t('home.digitalCurrency')}</h2>
         <p style={{ color: theme.brand, fontSize: '18px', marginBottom: '32px' }}>
-          A fast, straightforward way to trade digital assets
+          {t('home.heroTagline')}
         </p>
         <div style={{ display: 'flex', gap: '14px', justifyContent: 'center', flexWrap: 'wrap' }}>
-          <button className="kx-cta" onClick={() => navigate('/auth', { state: { mode: 'signup' } })}>Start Trading</button>
+          <button className="kx-cta" onClick={() => navigate('/auth', { state: { mode: 'signup' } })}>{t('home.startTrading')}</button>
           <Link to="/download" style={{ display: 'flex', alignItems: 'center', gap: '8px', border: `1px solid ${theme.cardBorder}`, color: theme.text, borderRadius: '24px', padding: '14px 30px', fontWeight: 'bold', fontSize: '16px', textDecoration: 'none' }}>
-            <Download size={18} /> Download App
+            <Download size={18} /> {t('home.downloadApp')}
           </Link>
         </div>
 
@@ -227,18 +219,18 @@ const Home = () => {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
               <span style={{ color: theme.brand, fontWeight: 'bold' }}>KYNEX</span>
               <div style={{ flex: 1, margin: '0 10px', backgroundColor: theme.inputBg || theme.bg, borderRadius: '20px', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', color: theme.faint, fontSize: '12px' }}>
-                <Search size={12} /> Search
+                <Search size={12} /> {t('home.searchPlaceholder')}
               </div>
               <Headphones size={16} color={theme.subtext} style={{ marginRight: '8px' }} />
               <Mail size={16} color={theme.subtext} />
             </div>
-            <h3 style={{ fontSize: '22px', margin: '0 0 6px 0', color: theme.text }}>Welcome to join <span style={{ color: theme.brand }}>KYNEX</span></h3>
+            <h3 style={{ fontSize: '22px', margin: '0 0 6px 0', color: theme.text }}>{t('home.welcomeJoin')} <span style={{ color: theme.brand }}>KYNEX</span></h3>
             <p style={{ color: theme.subtext, fontSize: '13px', margin: '0 0 18px 0' }}>
-              Trade with confidence — track live markets and manage your assets in one place.
+              {t('home.heroCardDesc')}
             </p>
             <input
               type="text"
-              placeholder="Email / Phone number"
+              placeholder={t('home.emailOrPhone')}
               value={heroEmail}
               onChange={(e) => setHeroEmail(e.target.value)}
               onKeyDown={(e) => {
@@ -258,7 +250,7 @@ const Home = () => {
               style={{ width: '100%' }}
               onClick={() => navigate('/auth', { state: { mode: 'signup', prefillEmail: heroEmail } })}
             >
-              Sign Up Now →
+              {t('home.signUpNowArrow')}
             </button>
           </div>
         </div>
@@ -267,13 +259,13 @@ const Home = () => {
       {/* Why Choose Us */}
       <section style={{ padding: '40px 20px 90px', textAlign: 'center' }}>
         <span style={{ display: 'inline-block', border: `1px solid ${theme.brand}`, color: theme.brand, borderRadius: '20px', padding: '6px 18px', fontSize: '13px', marginBottom: '20px' }}>
-          Trusted Key Advantages
+          {t('home.trustedAdvantages')}
         </span>
-        <h2 style={{ fontSize: '36px', fontWeight: 'bold', margin: '0 0 50px 0' }}>Why Choose KYNEX</h2>
+        <h2 style={{ fontSize: '36px', fontWeight: 'bold', margin: '0 0 50px 0' }}>{t('home.whyChoose')}</h2>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '24px', maxWidth: '1000px', margin: '0 auto' }}>
-          {ADVANTAGES.map(({ icon: Icon, title, description }) => (
-            <div key={title} style={{
+          {ADVANTAGES.map(({ icon: Icon, tkey }) => (
+            <div key={tkey} style={{
               backgroundColor: theme.card, border: `1px solid ${theme.cardBorder}`, borderRadius: '16px',
               padding: '30px 24px', textAlign: 'left', boxShadow: theme.shadow,
               backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)',
@@ -284,8 +276,8 @@ const Home = () => {
               }}>
                 <Icon size={24} color={theme.brand} />
               </div>
-              <h3 style={{ fontSize: '18px', margin: '0 0 10px 0' }}>{title}</h3>
-              <p style={{ color: theme.subtext, fontSize: '14px', lineHeight: '1.5', margin: 0 }}>{description}</p>
+              <h3 style={{ fontSize: '18px', margin: '0 0 10px 0' }}>{t(`${tkey}Title`)}</h3>
+              <p style={{ color: theme.subtext, fontSize: '14px', lineHeight: '1.5', margin: 0 }}>{t(`${tkey}Desc`)}</p>
             </div>
           ))}
         </div>

@@ -3,15 +3,16 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ShieldCheck, Users, Settings as SettingsIcon, Mail, Headphones, LogOut, BadgeCheck, ShieldAlert, Clock, Copy, Check, ChevronRight, Wallet, Pencil, X } from 'lucide-react';
 import { getToken, logout } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
+import { useLanguage } from '../LanguageContext';
 import { API_URL } from '../config';
 
 const MENU = [
-  { to: '/security', label: 'Security', icon: ShieldCheck, badgeKey: 'blue' },
-  { to: '/invite', label: 'Invites & Referrals', icon: Users, badgeKey: 'purple' },
-  { to: '/assets', label: 'My Assets', icon: Wallet, badgeKey: 'green' },
-  { to: '/settings', label: 'Settings', icon: SettingsIcon, badgeKey: 'amber' },
-  { to: '/messages', label: 'Messages', icon: Mail, badgeKey: 'teal' },
-  { to: '/legal/contact', label: 'Support', icon: Headphones, badgeKey: 'pink' },
+  { to: '/security', tkey: 'settings.security', icon: ShieldCheck, badgeKey: 'blue' },
+  { to: '/invite', tkey: 'profile.invites', icon: Users, badgeKey: 'purple' },
+  { to: '/assets', tkey: 'profile.myAssets', icon: Wallet, badgeKey: 'green' },
+  { to: '/settings', tkey: 'settings.title', icon: SettingsIcon, badgeKey: 'amber' },
+  { to: '/messages', tkey: 'messages.title', icon: Mail, badgeKey: 'teal' },
+  { to: '/legal/contact', tkey: 'settings.support', icon: Headphones, badgeKey: 'pink' },
 ];
 
 function glassCard(theme) {
@@ -27,6 +28,7 @@ function glassCard(theme) {
 
 const Profile = () => {
   const { theme, iconBadges } = useTheme();
+  const { t, isRTL } = useLanguage();
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -43,8 +45,8 @@ const Profile = () => {
         if (res.ok) setProfile(data);
       } catch { /* stays loading */ }
     };
-    const t = setTimeout(load, 0);
-    return () => clearTimeout(t);
+    const timer = setTimeout(load, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   const copyUid = () => {
@@ -63,7 +65,7 @@ const Profile = () => {
 
   const saveName = async () => {
     if (!nameInput.trim() || nameInput.trim().length < 2) {
-      setNameError('Name must be at least 2 characters.');
+      setNameError(t('profile.nameMin'));
       return;
     }
     setNameSaving(true);
@@ -75,7 +77,7 @@ const Profile = () => {
         body: JSON.stringify({ name: nameInput.trim() }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to update name.');
+      if (!res.ok) throw new Error(data.error || t('profile.nameUpdateFail'));
       setProfile(prev => ({ ...prev, name: data.name }));
       setEditingName(false);
     } catch (err) {
@@ -91,9 +93,9 @@ const Profile = () => {
   };
 
   const kycBadge = (status) => {
-    if (status === 'certified') return { label: 'Certified', color: theme.up, bg: theme.upSoft, Icon: BadgeCheck };
-    if (status === 'pending') return { label: 'Pending', color: theme.brand, bg: theme.brandSoft, Icon: Clock };
-    return { label: 'Not Verified', color: theme.subtext, bg: `${theme.faint}26`, Icon: ShieldAlert };
+    if (status === 'certified') return { label: t('status.certified'), color: theme.up, bg: theme.upSoft, Icon: BadgeCheck };
+    if (status === 'pending') return { label: t('status.pending'), color: theme.brand, bg: theme.brandSoft, Icon: Clock };
+    return { label: t('status.notVerified'), color: theme.subtext, bg: `${theme.faint}26`, Icon: ShieldAlert };
   };
 
   return (
@@ -105,7 +107,7 @@ const Profile = () => {
         backdropFilter: theme.cardGlass, WebkitBackdropFilter: theme.cardGlass,
       }}>
         <Link to="/dashboard" style={{ color: theme.text, display: 'flex' }}><ArrowLeft size={20} /></Link>
-        <span style={{ fontWeight: 'bold', fontSize: '16px' }}>Profile</span>
+        <span style={{ fontWeight: 'bold', fontSize: '16px' }}>{t('profile.title')}</span>
       </div>
 
       <div style={{ padding: '20px', maxWidth: '480px', margin: '0 auto' }}>
@@ -148,7 +150,7 @@ const Profile = () => {
                       }}
                     />
                     <button onClick={saveName} disabled={nameSaving} style={{ background: theme.primaryGradient, border: 'none', borderRadius: '8px', padding: '8px 12px', color: 'white', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px', opacity: nameSaving ? 0.7 : 1 }}>
-                      {nameSaving ? '...' : 'Save'}
+                      {nameSaving ? '...' : t('common.save')}
                     </button>
                     <button onClick={() => setEditingName(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex' }}>
                       <X size={18} color={theme.faint} />
@@ -182,7 +184,7 @@ const Profile = () => {
                     color: theme.subtext, fontSize: '12px', cursor: 'pointer',
                   }}
                 >
-                  UID: {profile.uid}
+                  {t('profile.uid')} {profile.uid}
                   {copied ? <Check size={12} color={theme.up} /> : <Copy size={12} />}
                 </button>
 
@@ -201,7 +203,7 @@ const Profile = () => {
 
               {profile.createdAt && (
                 <div style={{ color: theme.faint, fontSize: '11px', marginTop: '10px' }}>
-                  Member since {new Date(profile.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                  {t('profile.memberSince', { date: new Date(profile.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) })}
                 </div>
               )}
             </div>
@@ -222,8 +224,8 @@ const Profile = () => {
                     }}>
                       <Icon size={17} color={badge?.fg || theme.primary} />
                     </div>
-                    <span style={{ flex: 1, fontSize: '14px', fontWeight: '500' }}>{item.label}</span>
-                    <ChevronRight size={16} color={theme.faint} />
+                    <span style={{ flex: 1, fontSize: '14px', fontWeight: '500' }}>{t(item.tkey)}</span>
+                    <ChevronRight size={16} color={theme.faint} style={{ transform: isRTL ? 'scaleX(-1)' : 'none' }} />
                   </Link>
                 );
               })}
@@ -239,7 +241,7 @@ const Profile = () => {
                 boxShadow: '0 4px 14px rgba(217,119,6,0.3)',
               }}
             >
-              <LogOut size={16} /> Logout
+              <LogOut size={16} /> {t('common.logout')}
             </button>
           </>
         )}

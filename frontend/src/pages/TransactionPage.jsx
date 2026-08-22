@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, Receipt, X, Copy, CheckCheck } from 'lucide-react';
 import { getToken } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
+import { useLanguage } from '../LanguageContext';
 import { SkeletonList } from '../components/Skeleton';
 import { API_URL } from '../config';
 function authHeaders() { return { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` }; }
@@ -11,12 +12,27 @@ function fmtDate(ts) { return ts ? new Date(ts).toLocaleString('en-US', { year: 
 function glassCard(theme) {
   return { backgroundColor: theme.card, borderRadius: '16px', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadow, backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)' };
 }
+// category → translated label (also used for the "All" filter). Keeps English keys for logic.
+function catLabel(t, c) {
+  return {
+    All: t('transaction.filterAll'), Deposit: t('transaction.catDeposit'), Withdraw: t('transaction.catWithdraw'),
+    Spot: t('transaction.catSpot'), Signal: t('transaction.catSignal'), Futures: t('transaction.catFutures'), Transfer: t('transaction.catTransfer'),
+  }[c] || c;
+}
+// backend status string → translated label, English fallback capitalized
+function statusLabel(t, s) {
+  if (!s) return '—';
+  const map = { pending: 'status.pending', confirmed: 'status.confirmed', completed: 'status.completed', rejected: 'status.rejected', approved: 'status.approved', processing: 'status.processing' };
+  return map[s] ? t(map[s]) : s.charAt(0).toUpperCase() + s.slice(1);
+}
 
+// logic keys (English) — display labels come from catLabel()
 const FILTERS = ['All', 'Deposit', 'Withdraw', 'Spot', 'Signal', 'Futures', 'Transfer'];
 
 /* ── Detail Modal ── */
 function DetailModal({ item, onClose, theme }) {
   const [copied, setCopied] = useState(false);
+  const { t } = useLanguage();
   if (!item) return null;
 
   const copy = (text) => {
@@ -26,34 +42,34 @@ function DetailModal({ item, onClose, theme }) {
   const rows = [];
   if (item.category === 'Deposit') {
     rows.push(
-      { label: 'Type', value: 'Deposit' },
-      { label: 'Amount', value: `${fmt(item.rawAmount)} USDT` },
-      { label: 'Network', value: (item.network || '').toUpperCase() || '—' },
-      { label: 'Status', value: item.status ? item.status.charAt(0).toUpperCase() + item.status.slice(1) : '—', color: item.statusColor },
-      { label: 'Submitted', value: fmtDate(item.at) },
-      { label: 'Confirmed', value: fmtDate(item.processedAt) },
-      { label: 'TX Hash', value: item.txHash || '—', copyable: !!item.txHash },
-      { label: 'Auto Verified', value: item.autoVerified ? 'Yes (blockchain)' : 'Manual' },
+      { label: t('transaction.rowType'), value: t('transaction.catDeposit') },
+      { label: t('transaction.rowAmount'), value: `${fmt(item.rawAmount)} USDT` },
+      { label: t('transaction.rowNetwork'), value: (item.network || '').toUpperCase() || '—' },
+      { label: t('transaction.rowStatus'), value: statusLabel(t, item.status), color: item.statusColor },
+      { label: t('transaction.rowSubmitted'), value: fmtDate(item.at) },
+      { label: t('transaction.rowConfirmed'), value: fmtDate(item.processedAt) },
+      { label: t('transaction.rowTxHash'), value: item.txHash || '—', copyable: !!item.txHash, alwaysShow: true },
+      { label: t('transaction.rowAutoVerified'), value: item.autoVerified ? t('transaction.valYesBlockchain') : t('transaction.valManual') },
     );
   } else if (item.category === 'Withdraw') {
     rows.push(
-      { label: 'Type', value: 'Withdrawal' },
-      { label: 'Requested', value: `${fmt(item.rawAmount)} USDT` },
-      { label: 'Fee', value: `${fmt(item.fee)} USDT` },
-      { label: 'You Receive', value: `${fmt(item.netPayout)} USDT` },
-      { label: 'Network', value: (item.network || '').toUpperCase() || '—' },
-      { label: 'Wallet Address', value: item.walletAddress || '—', copyable: !!item.walletAddress },
-      { label: 'Status', value: item.status ? item.status.charAt(0).toUpperCase() + item.status.slice(1) : '—', color: item.statusColor },
-      { label: 'Submitted', value: fmtDate(item.at) },
-      { label: 'Reviewed', value: fmtDate(item.reviewedAt) },
-      { label: 'TX ID', value: item.txid || '—', copyable: !!item.txid },
+      { label: t('transaction.rowType'), value: t('transaction.valWithdrawal') },
+      { label: t('transaction.rowRequested'), value: `${fmt(item.rawAmount)} USDT` },
+      { label: t('transaction.rowFee'), value: `${fmt(item.fee)} USDT` },
+      { label: t('transaction.rowYouReceive'), value: `${fmt(item.netPayout)} USDT` },
+      { label: t('transaction.rowNetwork'), value: (item.network || '').toUpperCase() || '—' },
+      { label: t('transaction.rowWalletAddress'), value: item.walletAddress || '—', copyable: !!item.walletAddress, alwaysShow: true },
+      { label: t('transaction.rowStatus'), value: statusLabel(t, item.status), color: item.statusColor },
+      { label: t('transaction.rowSubmitted'), value: fmtDate(item.at) },
+      { label: t('transaction.rowReviewed'), value: fmtDate(item.reviewedAt) },
+      { label: t('transaction.rowTxId'), value: item.txid || '—', copyable: !!item.txid, alwaysShow: true },
     );
   } else {
     rows.push(
-      { label: 'Type', value: item.category },
-      { label: 'Description', value: item.label },
-      { label: 'Amount', value: `${item.amount >= 0 ? '+' : ''}${fmt(Math.abs(item.amount))} USDT` },
-      { label: 'Date', value: fmtDate(item.at) },
+      { label: t('transaction.rowType'), value: catLabel(t, item.category) },
+      { label: t('transaction.rowDescription'), value: item.label },
+      { label: t('transaction.rowAmount'), value: `${item.amount >= 0 ? '+' : ''}${fmt(Math.abs(item.amount))} USDT` },
+      { label: t('transaction.rowDate'), value: fmtDate(item.at) },
     );
   }
 
@@ -74,11 +90,11 @@ function DetailModal({ item, onClose, theme }) {
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
           <div>
-            <span style={{ fontSize: '15px', fontWeight: '700', color: theme.text }}>Transaction Detail</span>
+            <span style={{ fontSize: '15px', fontWeight: '700', color: theme.text }}>{t('transaction.detailTitle')}</span>
             <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
-              <span style={{ fontSize: '10px', fontWeight: '700', color: theme.primary, backgroundColor: theme.primarySoft, padding: '2px 8px', borderRadius: '6px' }}>{item.category}</span>
+              <span style={{ fontSize: '10px', fontWeight: '700', color: theme.primary, backgroundColor: theme.primarySoft, padding: '2px 8px', borderRadius: '6px' }}>{catLabel(t, item.category)}</span>
               {item.status && (
-                <span style={{ fontSize: '10px', fontWeight: '700', color: item.statusColor, backgroundColor: item.statusColor + '1A', padding: '2px 8px', borderRadius: '6px', textTransform: 'capitalize' }}>{item.status}</span>
+                <span style={{ fontSize: '10px', fontWeight: '700', color: item.statusColor, backgroundColor: item.statusColor + '1A', padding: '2px 8px', borderRadius: '6px' }}>{statusLabel(t, item.status)}</span>
               )}
             </div>
           </div>
@@ -97,14 +113,14 @@ function DetailModal({ item, onClose, theme }) {
               {item.category === 'Deposit' ? '+' : '-'}{fmt(item.category === 'Withdraw' ? item.netPayout : item.rawAmount)} USDT
             </div>
             <div style={{ fontSize: '11px', color: theme.subtext, marginTop: '4px' }}>
-              {item.category === 'Withdraw' ? 'Net payout after fee' : 'Deposited amount'}
+              {item.category === 'Withdraw' ? t('transaction.netPayoutAfterFee') : t('transaction.depositedAmount')}
             </div>
           </div>
         )}
 
         {/* Detail rows */}
         <div style={{ ...glassCard(theme), padding: '4px 0', borderRadius: '12px' }}>
-          {rows.map((row, i) => row.value !== '—' || row.label === 'TX Hash' || row.label === 'TX ID' || row.label === 'Wallet Address' ? (
+          {rows.map((row, i) => row.value !== '—' || row.alwaysShow ? (
             <div key={row.label} style={{
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               padding: '11px 16px', borderTop: i === 0 ? 'none' : `1px solid ${theme.cardBorder}`,
@@ -134,6 +150,7 @@ function DetailModal({ item, onClose, theme }) {
 
 const TransactionPage = () => {
   const { theme, iconBadges } = useTheme();
+  const { t } = useLanguage();
   const [trades, setTrades] = useState([]);
   const [positions, setPositions] = useState([]);
   const [futures, setFutures] = useState([]);
@@ -184,20 +201,20 @@ const TransactionPage = () => {
 
   const activity = useMemo(() => {
     const items = [];
-    trades.forEach(t => {
-      if (t.type === 'transfer') {
-        const penaltyLabel = t.penalty ? ` (20% fee: -${fmt(t.penalty)})` : '';
-        const rewardLabel = t.reward ? ` (+${fmt(t.reward)} reward)` : '';
-        items.push({ id: t.id, at: t.at, category: 'Transfer', label: (t.direction === 'toSignal' ? 'Spot → Signal' : 'Signal → Spot') + penaltyLabel + rewardLabel, amount: t.penalty ? -t.penalty : 0 });
+    trades.forEach(tx => {
+      if (tx.type === 'transfer') {
+        const penaltyLabel = tx.penalty ? t('transaction.penaltySuffix', { amt: fmt(tx.penalty) }) : '';
+        const rewardLabel = tx.reward ? t('transaction.rewardSuffix', { amt: fmt(tx.reward) }) : '';
+        items.push({ id: tx.id, at: tx.at, category: 'Transfer', label: (tx.direction === 'toSignal' ? t('transaction.transferToSignal') : t('transaction.transferToSpot')) + penaltyLabel + rewardLabel, amount: tx.penalty ? -tx.penalty : 0 });
         return;
       }
-      items.push({ id: t.id, at: t.at, category: 'Spot', label: `${t.side === 'buy' ? 'Bought' : 'Sold'} ${fmt(t.quantity)} ${t.pair.split('/')[0]}`, amount: t.side === 'buy' ? -t.amount : t.amount });
+      items.push({ id: tx.id, at: tx.at, category: 'Spot', label: (tx.side === 'buy' ? t('transaction.spotBought', { qty: fmt(tx.quantity), coin: tx.pair.split('/')[0] }) : t('transaction.spotSold', { qty: fmt(tx.quantity), coin: tx.pair.split('/')[0] })), amount: tx.side === 'buy' ? -tx.amount : tx.amount });
     });
     closedSignals.forEach(p => {
       const isCancelled = !!p.cancelled;
-      items.push({ id: p.id, at: p.settledAt || p.openedAt, category: 'Signal', label: isCancelled ? `Signal ${p.pair} CANCELLED` : `Signal ${p.pair} ${p.won ? 'WIN' : 'LOSS'}`, amount: isCancelled ? 0 : p.profit });
+      items.push({ id: p.id, at: p.settledAt || p.openedAt, category: 'Signal', label: isCancelled ? t('transaction.signalCancelled', { pair: p.pair }) : (p.won ? t('transaction.signalWin', { pair: p.pair }) : t('transaction.signalLoss', { pair: p.pair })), amount: isCancelled ? 0 : p.profit });
     });
-    closedFutures.forEach(p => items.push({ id: p.id, at: p.closedAt, category: 'Futures', label: `Futures ${p.pair} ${p.direction.toUpperCase()} closed`, amount: p.pnl }));
+    closedFutures.forEach(p => items.push({ id: p.id, at: p.closedAt, category: 'Futures', label: t('transaction.futuresClosed', { pair: p.pair, dir: p.direction.toUpperCase() }), amount: p.pnl }));
 
     deposits.forEach(d => {
       const sc = depositStatusColor(d.status);
@@ -205,7 +222,7 @@ const TransactionPage = () => {
         id: d.id || `dep-${d.at || d.createdAt}`,
         at: d.createdAt || d.at,
         category: 'Deposit',
-        label: `Deposit ${fmt(d.amount)} USDT${d.network ? ` via ${d.network.toUpperCase()}` : ''}`,
+        label: t('transaction.depositLabel', { amt: fmt(d.amount) }) + (d.network ? t('transaction.viaNetwork', { net: d.network.toUpperCase() }) : ''),
         amount: d.amount,
         rawAmount: d.amount,
         status: d.status === 'done' ? 'confirmed' : d.status,
@@ -224,7 +241,7 @@ const TransactionPage = () => {
         id: w.id,
         at: w.createdAt || w.at,
         category: 'Withdraw',
-        label: `Withdraw ${fmt(w.netPayout || w.amount)} USDT via ${(w.network || '').toUpperCase()}`,
+        label: t('transaction.withdrawLabel', { amt: fmt(w.netPayout || w.amount), net: (w.network || '').toUpperCase() }),
         amount: -(w.netPayout || w.amount),
         rawAmount: w.amount,
         netPayout: w.netPayout || w.amount,
@@ -240,7 +257,7 @@ const TransactionPage = () => {
     });
 
     return items.sort((a, b) => b.at - a.at);
-  }, [trades, closedSignals, closedFutures, deposits, withdrawals]);
+  }, [trades, closedSignals, closedFutures, deposits, withdrawals, t]);
 
   const filtered = filter === 'All' ? activity : activity.filter(a => a.category === filter);
   const isClickable = (item) => item.category === 'Deposit' || item.category === 'Withdraw';
@@ -249,14 +266,14 @@ const TransactionPage = () => {
     <div style={{ minHeight: '100vh', backgroundColor: theme.bg, color: theme.text }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px', borderBottom: `1px solid ${theme.cardBorder}`, backgroundColor: theme.card, backdropFilter: theme.cardGlass || 'blur(16px)', position: 'sticky', top: 0, zIndex: 10 }}>
         <Link to="/assets" style={{ color: theme.text, display: 'flex' }}><ArrowLeft size={20} /></Link>
-        <span style={{ fontWeight: 'bold', fontSize: '16px' }}>Transaction History</span>
+        <span style={{ fontWeight: 'bold', fontSize: '16px' }}>{t('transaction.title')}</span>
       </div>
 
       <div style={{ padding: '20px', maxWidth: '520px', margin: '0 auto' }}>
         <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', overflowX: 'auto' }}>
           {FILTERS.map(f => (
             <button key={f} onClick={() => setFilter(f)} style={{ padding: '8px 14px', borderRadius: '20px', border: filter === f ? 'none' : `1px solid ${theme.cardBorder}`, background: filter === f ? theme.primaryGradient : theme.card, color: filter === f ? '#fff' : theme.subtext, fontWeight: '700', fontSize: '12px', cursor: 'pointer', flexShrink: 0 }}>
-              {f}
+              {catLabel(t, f)}
             </button>
           ))}
         </div>
@@ -268,7 +285,7 @@ const TransactionPage = () => {
             <div style={{ width: '56px', height: '56px', borderRadius: '16px', backgroundColor: iconBadges.amber.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
               <Receipt size={26} color={iconBadges.amber.fg} />
             </div>
-            <p style={{ color: theme.faint, fontSize: '14px', margin: 0 }}>No transactions yet</p>
+            <p style={{ color: theme.faint, fontSize: '14px', margin: 0 }}>{t('transaction.noTransactions')}</p>
           </div>
         )}
 
@@ -290,12 +307,12 @@ const TransactionPage = () => {
               <div style={{ fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</div>
               <div style={{ fontSize: '10px', color: theme.faint, marginTop: '3px' }}>{new Date(item.at).toLocaleString()}</div>
               <div style={{ display: 'flex', gap: '6px', marginTop: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ fontSize: '10px', fontWeight: '700', color: theme.primary, backgroundColor: theme.primarySoft, padding: '2px 8px', borderRadius: '6px', display: 'inline-block' }}>{item.category}</span>
+                <span style={{ fontSize: '10px', fontWeight: '700', color: theme.primary, backgroundColor: theme.primarySoft, padding: '2px 8px', borderRadius: '6px', display: 'inline-block' }}>{catLabel(t, item.category)}</span>
                 {item.status && (
-                  <span style={{ fontSize: '10px', fontWeight: '700', color: item.statusColor, backgroundColor: item.statusColor + '1A', padding: '2px 8px', borderRadius: '6px', display: 'inline-block', textTransform: 'capitalize' }}>{item.status}</span>
+                  <span style={{ fontSize: '10px', fontWeight: '700', color: item.statusColor, backgroundColor: item.statusColor + '1A', padding: '2px 8px', borderRadius: '6px', display: 'inline-block' }}>{statusLabel(t, item.status)}</span>
                 )}
                 {isClickable(item) && (
-                  <span style={{ fontSize: '10px', color: theme.primary, fontWeight: '600' }}>Tap for details</span>
+                  <span style={{ fontSize: '10px', color: theme.primary, fontWeight: '600' }}>{t('transaction.tapForDetails')}</span>
                 )}
               </div>
             </div>
@@ -307,7 +324,7 @@ const TransactionPage = () => {
 
         {ledger.length > 0 && (
           <div style={{ marginTop: '20px' }}>
-            <div style={{ fontSize: '13px', fontWeight: '700', color: theme.subtext, marginBottom: '10px' }}>Ledger</div>
+            <div style={{ fontSize: '13px', fontWeight: '700', color: theme.subtext, marginBottom: '10px' }}>{t('transaction.ledger')}</div>
             <div style={{ ...glassCard(theme), padding: '4px 16px' }}>
               {ledger.slice(0, 30).map((entry, i) => (
                 <div key={entry.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: i === 0 ? 'none' : `1px solid ${theme.cardBorder}`, fontSize: '12px' }}>

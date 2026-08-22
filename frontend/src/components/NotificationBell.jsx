@@ -3,25 +3,27 @@ import { Link } from 'react-router-dom';
 import { Bell, MailOpen, Check } from 'lucide-react';
 import { getToken } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
+import { useLanguage } from '../LanguageContext';
 import { API_URL } from '../config';
 
 function authHeaders() {
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` };
 }
 
-function timeAgo(ts) {
+function timeAgo(ts, t) {
   const diff = Date.now() - ts;
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return t('notif.justNow');
+  if (mins < 60) return t('notif.mAgo', { n: mins });
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return t('notif.hAgo', { n: hrs });
   const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
+  return t('notif.dAgo', { n: days });
 }
 
 const NotificationBell = () => {
   const { theme } = useTheme();
+  const { t, isRTL } = useLanguage();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const ref = useRef(null);
@@ -82,7 +84,7 @@ const NotificationBell = () => {
 
       {open && (
         <div style={{
-          position: 'absolute', top: '100%', right: 0, width: '320px', marginTop: '8px', zIndex: 1200,
+          position: 'absolute', top: '100%', [isRTL ? 'left' : 'right']: 0, width: '320px', marginTop: '8px', zIndex: 1200,
           backgroundColor: theme.card, borderRadius: '16px', border: `1px solid ${theme.cardBorder}`,
           boxShadow: theme.shadowElevated || theme.shadow,
           backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)',
@@ -90,14 +92,14 @@ const NotificationBell = () => {
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', borderBottom: `1px solid ${theme.cardBorder}` }}>
             <span style={{ fontWeight: 'bold', fontSize: '14px', color: theme.text }}>
-              Notifications {unreadCount > 0 && <span style={{ color: theme.primary, fontSize: '12px' }}>({unreadCount})</span>}
+              {t('notif.title')} {unreadCount > 0 && <span style={{ color: theme.primary, fontSize: '12px' }}>({unreadCount})</span>}
             </span>
             {unreadCount > 0 && (
               <button
                 onClick={markAllRead}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', color: theme.primary, fontSize: '12px', fontWeight: '600', padding: '0' }}
               >
-                <Check size={13} /> Read all
+                <Check size={13} /> {t('notif.readAll')}
               </button>
             )}
           </div>
@@ -106,7 +108,7 @@ const NotificationBell = () => {
             {recent.length === 0 && (
               <div style={{ padding: '30px 16px', textAlign: 'center' }}>
                 <MailOpen size={28} color={theme.faint} style={{ marginBottom: '8px' }} />
-                <p style={{ color: theme.faint, fontSize: '13px', margin: 0 }}>No notifications yet</p>
+                <p style={{ color: theme.faint, fontSize: '13px', margin: 0 }}>{t('notif.emptyYet')}</p>
               </div>
             )}
 
@@ -128,7 +130,7 @@ const NotificationBell = () => {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
                     <span style={{ fontWeight: m.read ? 'normal' : 'bold', fontSize: '13px', color: theme.text }}>{m.title}</span>
-                    <span style={{ fontSize: '10px', color: theme.faint, flexShrink: 0, marginLeft: '8px' }}>{timeAgo(m.at)}</span>
+                    <span style={{ fontSize: '10px', color: theme.faint, flexShrink: 0, marginLeft: '8px' }}>{timeAgo(m.at, t)}</span>
                   </div>
                   <p style={{ margin: 0, fontSize: '12px', color: theme.subtext, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {m.body}
@@ -148,7 +150,7 @@ const NotificationBell = () => {
                 borderTop: `1px solid ${theme.cardBorder}`,
               }}
             >
-              View all messages
+              {t('notif.viewAll')}
             </Link>
           )}
         </div>

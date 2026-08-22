@@ -840,6 +840,8 @@ function withChatLock(fn) {
   return run;
 }
 const CHAT_MAX_LEN = 1000;
+// Allowed live-chat message reactions (both user and admin). An empty emoji clears the reaction.
+const CHAT_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const chatSendRateLimit = rateLimit(60 * 1000, 15);
 
 async function readBlockedEmails() { return await dbRead('blocked_emails'); }
@@ -2062,6 +2064,26 @@ app.get("/api/livechat/history", authenticate, async (req, res) => {
   res.json({ ok: true, messages: chats[uid].messages });
 });
 
+// User adds / toggles an emoji reaction on a message in their own thread
+app.post("/api/livechat/react", authenticate, async (req, res) => {
+  const { id, emoji } = req.body || {};
+  if (emoji && !CHAT_REACTIONS.includes(emoji)) return res.status(400).json({ error: "Invalid reaction." });
+  const uid = req.user.sub;
+  const result = await withChatLock(async () => {
+    const chats = await readLiveChats();
+    const msg = chats[uid]?.messages?.find(m => m.id === id);
+    if (!msg) return null;
+    if (!msg.reactions) msg.reactions = {};
+    if (!emoji || msg.reactions.user === emoji) delete msg.reactions.user; // tap the same emoji = remove
+    else msg.reactions.user = emoji;
+    if (Object.keys(msg.reactions).length === 0) delete msg.reactions;
+    await writeLiveChats(chats);
+    return msg.reactions || {};
+  });
+  if (result === null) return res.status(404).json({ error: "Message not found." });
+  res.json({ ok: true, id, reactions: result });
+});
+
 // Admin: list all active chat threads (needs admin key)
 app.get("/api/admin/livechat", requireAdmin, async (req, res) => {
   const chats = await readLiveChats();
@@ -2140,6 +2162,26 @@ app.post("/api/admin/livechat/:uid/reply", requireAdmin, async (req, res) => {
   sendWebPush(uid, 'KYNEX Support', clean || '📷 Image').catch(() => {});
   sendFcmNotification(uid, 'KYNEX Support', String(text).trim()).catch(() => {});
   res.json({ ok: true, message: msg });
+});
+
+// Admin adds / toggles an emoji reaction on a message in a user's thread
+app.post("/api/admin/livechat/:uid/react", requireAdmin, async (req, res) => {
+  const { id, emoji } = req.body || {};
+  if (emoji && !CHAT_REACTIONS.includes(emoji)) return res.status(400).json({ error: "Invalid reaction." });
+  const uid = req.params.uid;
+  const result = await withChatLock(async () => {
+    const chats = await readLiveChats();
+    const msg = chats[uid]?.messages?.find(m => m.id === id);
+    if (!msg) return null;
+    if (!msg.reactions) msg.reactions = {};
+    if (!emoji || msg.reactions.admin === emoji) delete msg.reactions.admin; // tap the same emoji = remove
+    else msg.reactions.admin = emoji;
+    if (Object.keys(msg.reactions).length === 0) delete msg.reactions;
+    await writeLiveChats(chats);
+    return msg.reactions || {};
+  });
+  if (result === null) return res.status(404).json({ error: "Message not found." });
+  res.json({ ok: true, id, reactions: result });
 });
 
 // ---- Web Push subscription endpoints ----

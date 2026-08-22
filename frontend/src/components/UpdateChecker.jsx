@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Download, X, RefreshCw, Sparkles } from 'lucide-react';
 import { useTheme } from '../ThemeContext';
+import { useLanguage } from '../LanguageContext';
 
 const DISMISSED_KEY = 'kynex_dismissed_version';
 
@@ -36,6 +37,7 @@ function getNativeVersionCode() {
 
 export default function UpdateChecker({ onPendingChange }) {
   const { theme } = useTheme();
+  const { t, lang, isRTL } = useLanguage();
   const [update, setUpdate] = useState(null);
   const [visible, setVisible] = useState(false);
 
@@ -86,6 +88,7 @@ export default function UpdateChecker({ onPendingChange }) {
             version_name: data.version_name,
             download_url: data.download_url,
             message: data.message,
+            i18n: data.i18n,
           });
           setVisible(true);
         }
@@ -115,28 +118,30 @@ export default function UpdateChecker({ onPendingChange }) {
 
   if (!visible || !update) return null;
 
+  const locMessage = update.i18n?.[lang]?.message || update.message || t('update.message');
+
   return (
     <>
       <div onClick={handleLater} style={{ position:'fixed', inset:0, zIndex:9999, background:'rgba(0,0,0,0.6)', backdropFilter:'blur(6px)', WebkitBackdropFilter:'blur(6px)' }} />
       <div style={{ position:'fixed', bottom:0, left:0, right:0, zIndex:10000, paddingBottom:'env(safe-area-inset-bottom, 20px)' }}>
-        <div style={{ margin:'0 12px 12px', borderRadius:24, overflow:'hidden', background:theme.card, backdropFilter:theme.cardGlass, WebkitBackdropFilter:theme.cardGlass, border:`1px solid ${theme.cardBorder}`, boxShadow:'0 -4px 40px rgba(0,0,0,0.25)' }}>
+        <div dir={isRTL ? 'rtl' : 'ltr'} style={{ margin:'0 12px 12px', borderRadius:24, overflow:'hidden', background:theme.card, backdropFilter:theme.cardGlass, WebkitBackdropFilter:theme.cardGlass, border:`1px solid ${theme.cardBorder}`, boxShadow:'0 -4px 40px rgba(0,0,0,0.25)' }}>
           <div style={{ background:'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)', padding:'20px 20px 18px', position:'relative' }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
               <div style={{ display:'flex', alignItems:'center', gap:14 }}>
                 <div style={{ width:48, height:48, borderRadius:14, background:'rgba(255,255,255,0.18)', border:'1px solid rgba(255,255,255,0.25)', display:'flex', alignItems:'center', justifyContent:'center' }}><RefreshCw size={22} color="white" /></div>
                 <div>
-                  <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:2 }}><span style={{ color:'white', fontWeight:800, fontSize:17 }}>Update Available</span><span style={{ background:'rgba(255,255,255,0.2)', borderRadius:20, padding:'2px 8px', fontSize:11, color:'white', fontWeight:700 }}>NEW</span></div>
-                  <div style={{ color:'rgba(255,255,255,0.75)', fontSize:13, fontWeight:500 }}>KYNEX v{update.version_name} is ready</div>
+                  <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:2 }}><span style={{ color:'white', fontWeight:800, fontSize:17 }}>{t('update.available')}</span><span style={{ background:'rgba(255,255,255,0.2)', borderRadius:20, padding:'2px 8px', fontSize:11, color:'white', fontWeight:700 }}>{t('update.badgeNew')}</span></div>
+                  <div style={{ color:'rgba(255,255,255,0.75)', fontSize:13, fontWeight:500 }}>{t('update.ready', { version: update.version_name })}</div>
                 </div>
               </div>
               <button onClick={handleLater} style={{ background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.2)', borderRadius:10, width:32, height:32, display:'flex', alignItems:'center', justifyContent:'center' }}><X size={15} color="white" /></button>
             </div>
           </div>
           <div style={{ padding:'18px 20px 20px' }}>
-            <div style={{ background:theme.primarySoft, borderRadius:12, padding:'12px 14px', marginBottom:18, display:'flex', alignItems:'flex-start', gap:10 }}><Sparkles size={16} color={theme.primary} /><p style={{ margin:0, fontSize:13.5, color:theme.text, lineHeight:1.55 }}>{update.message}</p></div>
+            <div style={{ background:theme.primarySoft, borderRadius:12, padding:'12px 14px', marginBottom:18, display:'flex', alignItems:'flex-start', gap:10 }}><Sparkles size={16} color={theme.primary} /><p style={{ margin:0, fontSize:13.5, color:theme.text, lineHeight:1.55 }}>{locMessage}</p></div>
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={handleLater} style={{ flex:1, padding:'13px 12px', borderRadius:14, border:`1.5px solid ${theme.cardBorder}`, background:'transparent', color:theme.subtext, fontWeight:600, fontSize:14 }}>Later</button>
-              <button onClick={handleDownload} style={{ flex:2.2, padding:'13px 12px', borderRadius:14, border:'none', background:'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)', color:'white', fontWeight:700, fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}><Download size={16} />Download v{update.version_name}</button>
+              <button onClick={handleLater} style={{ flex:1, padding:'13px 12px', borderRadius:14, border:`1.5px solid ${theme.cardBorder}`, background:'transparent', color:theme.subtext, fontWeight:600, fontSize:14 }}>{t('update.later')}</button>
+              <button onClick={handleDownload} style={{ flex:2.2, padding:'13px 12px', borderRadius:14, border:'none', background:'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)', color:'white', fontWeight:700, fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}><Download size={16} />{t('update.download', { version: update.version_name })}</button>
             </div>
           </div>
         </div>

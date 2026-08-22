@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Copy, CheckCheck } from 'lucide-react';
+import { useLanguage } from '../LanguageContext';
 
 function fmt(n) {
   return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -19,16 +20,17 @@ function statusColor(status, theme) {
   if (status === 'rejected') return theme.down;
   return theme.faint;
 }
-function statusLabel(status) {
-  if (['done', 'completed', 'approved'].includes(status)) return 'Completed';
-  if (status === 'pending') return 'Pending';
-  if (status === 'rejected') return 'Rejected';
-  if (status === 'confirmed') return 'Confirmed';
+function statusLabel(status, t) {
+  if (['done', 'completed', 'approved'].includes(status)) return t('status.completed');
+  if (status === 'pending') return t('status.pending');
+  if (status === 'rejected') return t('status.rejected');
+  if (status === 'confirmed') return t('status.confirmed');
   return status || '—';
 }
 
 export default function TxDetailModal({ item, type, onClose, theme }) {
   const [copied, setCopied] = useState(false);
+  const { t, isRTL } = useLanguage();
   if (!item) return null;
 
   const copy = (text) => {
@@ -41,23 +43,23 @@ export default function TxDetailModal({ item, type, onClose, theme }) {
   const networkName = NETWORK_NAMES[item.network] || (item.network || '').toUpperCase();
 
   const rows = isDeposit ? [
-    { label: 'Type',         value: 'Deposit' },
-    { label: 'Amount',       value: `+${fmt(item.amount)} USDT`, color: theme.up },
-    { label: 'Network',      value: networkName },
-    { label: 'Status',       value: statusLabel(item.status), color: statusColor(item.status, theme) },
-    { label: 'Submitted',    value: fmtDate(item.createdAt) },
-    { label: 'Confirmed',    value: fmtDate(item.processedAt) },
-    { label: 'TX Hash',      value: item.txHash || '—', copyable: !!item.txHash },
-    { label: 'Verification', value: item.autoVerified ? '⚡ Auto (blockchain)' : 'Manual review' },
+    { label: t('field.type'),            value: t('txdetail.typeDeposit') },
+    { label: t('field.amount'),          value: `+${fmt(item.amount)} USDT`, color: theme.up },
+    { label: t('field.network'),         value: networkName },
+    { label: t('field.status'),          value: statusLabel(item.status, t), color: statusColor(item.status, theme) },
+    { label: t('field.submitted'),       value: fmtDate(item.createdAt) },
+    { label: t('status.confirmed'),      value: fmtDate(item.processedAt) },
+    { label: t('txdetail.txHash'),       value: item.txHash || '—', copyable: !!item.txHash },
+    { label: t('txdetail.verification'), value: item.autoVerified ? t('txdetail.autoBlockchain') : t('txdetail.manualReview') },
   ] : [
-    { label: 'Type',         value: 'Withdrawal' },
-    { label: 'Requested',    value: `${fmt(item.amount)} USDT` },
-    { label: 'Fee',          value: `-${fmt(fee)} USDT`, color: theme.down },
-    { label: 'You Receive',  value: `${fmt(netPayout)} USDT`, color: theme.up },
-    { label: 'Network',      value: networkName },
-    { label: 'Wallet',       value: item.walletAddress || item.address || '—', copyable: !!(item.walletAddress || item.address) },
-    { label: 'Status',       value: statusLabel(item.status), color: statusColor(item.status, theme) },
-    { label: 'Submitted',    value: fmtDate(item.createdAt || item.requestedAt) },
+    { label: t('field.type'),            value: t('txdetail.typeWithdrawal') },
+    { label: t('txdetail.requested'),    value: `${fmt(item.amount)} USDT` },
+    { label: t('field.fee'),             value: `-${fmt(fee)} USDT`, color: theme.down },
+    { label: t('field.youReceive'),      value: `${fmt(netPayout)} USDT`, color: theme.up },
+    { label: t('field.network'),         value: networkName },
+    { label: t('txdetail.wallet'),       value: item.walletAddress || item.address || '—', copyable: !!(item.walletAddress || item.address) },
+    { label: t('field.status'),          value: statusLabel(item.status, t), color: statusColor(item.status, theme) },
+    { label: t('field.submitted'),       value: fmtDate(item.createdAt || item.requestedAt) },
   ];
 
   return (
@@ -68,10 +70,10 @@ export default function TxDetailModal({ item, type, onClose, theme }) {
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
           <div>
-            <span style={{ fontSize: '15px', fontWeight: '700', color: theme.text }}>Transaction Detail</span>
+            <span style={{ fontSize: '15px', fontWeight: '700', color: theme.text }}>{t('txdetail.title')}</span>
             <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
-              <span style={{ fontSize: '10px', fontWeight: '700', color: theme.primary, backgroundColor: theme.primarySoft, padding: '2px 8px', borderRadius: '6px' }}>{isDeposit ? 'Deposit' : 'Withdraw'}</span>
-              <span style={{ fontSize: '10px', fontWeight: '700', color: statusColor(item.status, theme), backgroundColor: statusColor(item.status, theme) + '1A', padding: '2px 8px', borderRadius: '6px' }}>{statusLabel(item.status)}</span>
+              <span style={{ fontSize: '10px', fontWeight: '700', color: theme.primary, backgroundColor: theme.primarySoft, padding: '2px 8px', borderRadius: '6px' }}>{isDeposit ? t('txdetail.typeDeposit') : t('txdetail.withdraw')}</span>
+              <span style={{ fontSize: '10px', fontWeight: '700', color: statusColor(item.status, theme), backgroundColor: statusColor(item.status, theme) + '1A', padding: '2px 8px', borderRadius: '6px' }}>{statusLabel(item.status, t)}</span>
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.subtext, display: 'flex', padding: '4px' }}>
@@ -84,16 +86,16 @@ export default function TxDetailModal({ item, type, onClose, theme }) {
           <div style={{ fontSize: '26px', fontWeight: '800', color: isDeposit ? theme.up : theme.down }}>
             {isDeposit ? '+' : '-'}{fmt(item.amount)} USDT
           </div>
-          <div style={{ fontSize: '11px', color: theme.subtext, marginTop: '4px' }}>{isDeposit ? 'Deposited amount' : 'Requested amount (before fee)'}</div>
+          <div style={{ fontSize: '11px', color: theme.subtext, marginTop: '4px' }}>{isDeposit ? t('txdetail.depositedAmount') : t('txdetail.requestedBeforeFee')}</div>
         </div>
 
         {/* Detail rows */}
         <div style={{ ...glassCard(theme), padding: '4px 0', borderRadius: '12px' }}>
           {rows.map((row, i) => row.value !== '—' ? (
             <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 16px', borderTop: i === 0 ? 'none' : `1px solid ${theme.cardBorder}` }}>
-              <span style={{ fontSize: '12px', color: theme.subtext, flexShrink: 0, marginRight: '12px' }}>{row.label}</span>
+              <span style={{ fontSize: '12px', color: theme.subtext, flexShrink: 0, [isRTL ? 'marginLeft' : 'marginRight']: '12px' }}>{row.label}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                <span style={{ fontSize: '12px', fontWeight: '600', color: row.color || theme.text, wordBreak: 'break-all', textAlign: 'right', maxWidth: '220px', overflow: 'hidden', whiteSpace: row.copyable ? 'normal' : 'nowrap', textOverflow: 'ellipsis' }}>{row.value}</span>
+                <span style={{ fontSize: '12px', fontWeight: '600', color: row.color || theme.text, wordBreak: 'break-all', textAlign: isRTL ? 'left' : 'right', maxWidth: '220px', overflow: 'hidden', whiteSpace: row.copyable ? 'normal' : 'nowrap', textOverflow: 'ellipsis' }}>{row.value}</span>
                 {row.copyable && row.value !== '—' && (
                   <button onClick={() => copy(row.value)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.primary, flexShrink: 0, padding: '2px' }}>
                     {copied ? <CheckCheck size={14} color={theme.up} /> : <Copy size={14} />}

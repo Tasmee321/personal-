@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { getToken } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
+import { useLanguage } from '../LanguageContext';
 import { API_URL } from '../config';
 import TxDetailModal from '../components/TxDetailModal';
 
@@ -21,6 +22,7 @@ const NETWORKS = [
 
 const WithdrawPage = () => {
   const { theme } = useTheme();
+  const { t, isRTL } = useLanguage();
   const [balance, setBalance] = useState(0);
   const [wdNet, setWdNet] = useState('trc20');
   const [wdAddr, setWdAddr] = useState('');
@@ -28,6 +30,7 @@ const WithdrawPage = () => {
   const [wdPin, setWdPin] = useState('');
   const [wdBusy, setWdBusy] = useState(false);
   const [wdMsg, setWdMsg] = useState('');
+  const [wdMsgOk, setWdMsgOk] = useState(false);
   const [withdrawalRequests, setWithdrawalRequests] = useState([]);
   const [view, setView] = useState('withdraw');
   const [wdPopup, setWdPopup] = useState(null);
@@ -52,22 +55,23 @@ const WithdrawPage = () => {
   const submitWithdraw = async () => {
     if (wdInFlight.current) return;
     const amt = Number(wdAmt);
-    if (!amt || amt <= 0) return setWdMsg('Enter an amount.');
-    if (!wdAddr.trim()) return setWdMsg('Enter your wallet address.');
-    if (!wdPin) return setWdMsg('Enter your fund password.');
+    if (!amt || amt <= 0) { setWdMsgOk(false); return setWdMsg(t('withdraw.enterAmount')); }
+    if (!wdAddr.trim()) { setWdMsgOk(false); return setWdMsg(t('withdraw.enterAddress')); }
+    if (!wdPin) { setWdMsgOk(false); return setWdMsg(t('withdraw.enterFundPw')); }
     wdInFlight.current = true;
     setWdBusy(true); setWdMsg('');
     try {
       const res = await fetch(`${API_URL}/api/real/withdraw`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ amount: amt, network: wdNet, walletAddress: wdAddr, fundPassword: wdPin }) });
       const data = await res.json();
-      if (!res.ok) { setWdMsg(data.error); } else {
+      if (!res.ok) { setWdMsgOk(false); setWdMsg(data.error); } else {
         setWdAmt(''); setWdAddr(''); setWdPin('');
-        setWdMsg(`Withdrawal submitted! ${data.netPayout.toFixed(2)} USDT pending review.`);
+        setWdMsgOk(true);
+        setWdMsg(t('withdraw.submittedMsg', { amt: data.netPayout.toFixed(2) }));
         setBalance(data.balance);
         setWdPopup({ amount: amt, network: wdNet.toUpperCase(), netPayout: data.netPayout });
         setWithdrawalRequests(prev => [{ id: data.requestId, amount: amt, fee: data.fee, netPayout: data.netPayout, network: wdNet, status: 'pending', createdAt: Date.now() }, ...prev]);
       }
-    } catch { setWdMsg('Network error.'); }
+    } catch { setWdMsgOk(false); setWdMsg(t('common.networkError')); }
     wdInFlight.current = false;
     setWdBusy(false);
   };
@@ -77,10 +81,10 @@ const WithdrawPage = () => {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: `1px solid ${theme.cardBorder}`, backgroundColor: theme.card, backdropFilter: theme.cardGlass || 'blur(16px)', position: 'sticky', top: 0, zIndex: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <Link to="/assets" style={{ color: theme.text, display: 'flex' }}><ArrowLeft size={20} /></Link>
-          <span style={{ fontWeight: 'bold', fontSize: '16px' }}>Withdraw USDT</span>
+          <span style={{ fontWeight: 'bold', fontSize: '16px' }}>{t('withdraw.title')}</span>
         </div>
         <button onClick={() => setView(view === 'withdraw' ? 'history' : 'withdraw')} style={{ background: 'none', border: 'none', color: view === 'history' ? theme.primary : theme.subtext, fontWeight: '600', fontSize: '14px', cursor: 'pointer' }}>
-          {view === 'withdraw' ? 'History' : 'Withdraw'}
+          {view === 'withdraw' ? t('common.history') : t('withdraw.title')}
         </button>
       </div>
 
@@ -88,12 +92,12 @@ const WithdrawPage = () => {
         {view === 'withdraw' && (
           <>
             <div style={{ ...glassCard(theme), padding: '16px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: theme.subtext, fontSize: '13px' }}>Available Balance</span>
+              <span style={{ color: theme.subtext, fontSize: '13px' }}>{t('withdraw.availableBalance')}</span>
               <span style={{ fontWeight: 'bold', color: theme.brand }}>{fmt(balance)} USDT</span>
             </div>
 
             <div style={{ ...glassCard(theme), padding: '18px', marginBottom: '16px' }}>
-              <div style={{ fontSize: '13px', fontWeight: '700', color: theme.subtext, marginBottom: '12px' }}>Select Network</div>
+              <div style={{ fontSize: '13px', fontWeight: '700', color: theme.subtext, marginBottom: '12px' }}>{t('withdraw.selectNetwork')}</div>
               <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
                 {NETWORKS.map(n => (
                   <button key={n.key} onClick={() => setWdNet(n.key)} style={{ flex: 1, padding: '10px', borderRadius: '12px', border: `1px solid ${wdNet === n.key ? theme.primary : theme.cardBorder}`, backgroundColor: wdNet === n.key ? theme.primarySoft : 'transparent', color: wdNet === n.key ? theme.primary : theme.subtext, fontWeight: '700', fontSize: '12px', cursor: 'pointer' }}>
@@ -102,37 +106,37 @@ const WithdrawPage = () => {
                 ))}
               </div>
 
-              <input value={wdAddr} onChange={e => setWdAddr(e.target.value)} placeholder={`${NETWORKS.find(n => n.key === wdNet).chain} wallet address`} style={{ width: '100%', padding: '13px 14px', borderRadius: '12px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg, color: theme.text, fontSize: '13px', boxSizing: 'border-box', marginBottom: '8px', outline: 'none' }} />
+              <input value={wdAddr} onChange={e => setWdAddr(e.target.value)} placeholder={t('withdraw.addrPlaceholder', { chain: NETWORKS.find(n => n.key === wdNet).chain })} style={{ width: '100%', padding: '13px 14px', borderRadius: '12px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg, color: theme.text, fontSize: '13px', boxSizing: 'border-box', marginBottom: '8px', outline: 'none', textAlign: isRTL ? 'right' : 'left' }} />
 
               <div style={{ position: 'relative', marginBottom: '8px' }}>
-                <input type="number" min="0" value={wdAmt} onChange={e => setWdAmt(e.target.value)} placeholder="Amount (USDT)" style={{ width: '100%', padding: '13px 55px 13px 14px', borderRadius: '12px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg, color: theme.text, fontSize: '14px', boxSizing: 'border-box', outline: 'none' }} />
-                <button onClick={() => setWdAmt(String(balance || 0))} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', padding: '5px 10px', borderRadius: '8px', border: 'none', background: theme.primaryGradient, color: 'white', fontWeight: '700', fontSize: '11px', cursor: 'pointer' }}>MAX</button>
+                <input type="number" min="0" value={wdAmt} onChange={e => setWdAmt(e.target.value)} placeholder={t('withdraw.amountPlaceholder')} style={{ width: '100%', padding: isRTL ? '13px 14px 13px 55px' : '13px 55px 13px 14px', borderRadius: '12px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg, color: theme.text, fontSize: '14px', boxSizing: 'border-box', outline: 'none' }} />
+                <button onClick={() => setWdAmt(String(balance || 0))} style={{ position: 'absolute', [isRTL ? 'left' : 'right']: '8px', top: '50%', transform: 'translateY(-50%)', padding: '5px 10px', borderRadius: '8px', border: 'none', background: theme.primaryGradient, color: 'white', fontWeight: '700', fontSize: '11px', cursor: 'pointer' }}>{t('withdraw.max')}</button>
               </div>
 
               {Number(wdAmt) > 0 && (
                 <div style={{ backgroundColor: theme.inputBg, borderRadius: '14px', padding: '14px', marginBottom: '10px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px' }}><span style={{ color: theme.subtext }}>Amount</span><span style={{ fontWeight: 'bold' }}>{fmt(Number(wdAmt))} USDT</span></div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px' }}><span style={{ color: theme.down }}>Fee ({Number(wdAmt) < 100 ? '$5 flat' : '5%'})</span><span style={{ fontWeight: 'bold', color: theme.down }}>-{wdFee.toFixed(2)} USDT</span></div>
-                  <div style={{ borderTop: `1px solid ${theme.cardBorder}`, paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}><span style={{ color: theme.subtext, fontWeight: '600' }}>You Receive</span><span style={{ fontWeight: 'bold', color: theme.up }}>{wdNetAmt > 0 ? wdNetAmt.toFixed(2) : '0.00'} USDT</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px' }}><span style={{ color: theme.subtext }}>{t('field.amount')}</span><span style={{ fontWeight: 'bold' }}>{fmt(Number(wdAmt))} USDT</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px' }}><span style={{ color: theme.down }}>{t('field.fee')} ({Number(wdAmt) < 100 ? '$5 flat' : '5%'})</span><span style={{ fontWeight: 'bold', color: theme.down }}>-{wdFee.toFixed(2)} USDT</span></div>
+                  <div style={{ borderTop: `1px solid ${theme.cardBorder}`, paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}><span style={{ color: theme.subtext, fontWeight: '600' }}>{t('field.youReceive')}</span><span style={{ fontWeight: 'bold', color: theme.up }}>{wdNetAmt > 0 ? wdNetAmt.toFixed(2) : '0.00'} USDT</span></div>
                 </div>
               )}
 
-              <input type="password" value={wdPin} onChange={e => setWdPin(e.target.value)} placeholder="Fund password" style={{ width: '100%', padding: '13px 14px', borderRadius: '12px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg, color: theme.text, fontSize: '14px', boxSizing: 'border-box', marginBottom: '12px', outline: 'none' }} />
+              <input type="password" value={wdPin} onChange={e => setWdPin(e.target.value)} placeholder={t('withdraw.fundPassword')} style={{ width: '100%', padding: '13px 14px', borderRadius: '12px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg, color: theme.text, fontSize: '14px', boxSizing: 'border-box', marginBottom: '12px', outline: 'none', textAlign: isRTL ? 'right' : 'left' }} />
 
-              <button onClick={submitWithdraw} disabled={wdBusy} style={{ width: '100%', padding: '13px', borderRadius: '14px', border: 'none', background: theme.downGradient, color: 'white', fontWeight: '700', fontSize: '14px', cursor: wdBusy ? 'not-allowed' : 'pointer', opacity: wdBusy ? 0.7 : 1 }}>Submit Withdrawal</button>
-              {wdMsg && <p style={{ fontSize: '12px', color: wdMsg.includes('submitted') ? theme.up : theme.down, marginTop: '10px', marginBottom: 0, fontWeight: '600' }}>{wdMsg}</p>}
+              <button onClick={submitWithdraw} disabled={wdBusy} style={{ width: '100%', padding: '13px', borderRadius: '14px', border: 'none', background: theme.downGradient, color: 'white', fontWeight: '700', fontSize: '14px', cursor: wdBusy ? 'not-allowed' : 'pointer', opacity: wdBusy ? 0.7 : 1 }}>{t('withdraw.submitBtn')}</button>
+              {wdMsg && <p style={{ fontSize: '12px', color: wdMsgOk ? theme.up : theme.down, marginTop: '10px', marginBottom: 0, fontWeight: '600' }}>{wdMsg}</p>}
             </div>
           </>
         )}
 
         {view === 'history' && (
           <>
-            <div style={{ fontSize: '14px', fontWeight: '700', marginBottom: '16px', color: theme.text }}>Withdrawal History</div>
+            <div style={{ fontSize: '14px', fontWeight: '700', marginBottom: '16px', color: theme.text }}>{t('withdraw.historyTitle')}</div>
             {withdrawalRequests.length === 0 && (
               <div style={{ ...glassCard(theme), padding: '50px 20px', textAlign: 'center' }}>
                 <div style={{ fontSize: '32px', marginBottom: '10px', opacity: 0.4 }}>📤</div>
-                <div style={{ color: theme.faint, fontSize: '13px' }}>No withdrawal records yet</div>
-                <div style={{ color: theme.faint, fontSize: '11px', marginTop: '4px' }}>Your withdrawals will appear here once submitted</div>
+                <div style={{ color: theme.faint, fontSize: '13px' }}>{t('withdraw.noRecords')}</div>
+                <div style={{ color: theme.faint, fontSize: '11px', marginTop: '4px' }}>{t('withdraw.noRecordsHint')}</div>
               </div>
             )}
             {withdrawalRequests.map(wr => {
@@ -186,7 +190,7 @@ const WithdrawPage = () => {
                           -{fmt(wr.amount)} USDT
                         </div>
                         <div style={{ fontSize: '11px', color: theme.subtext, marginTop: '1px' }}>
-                          via {netInfo.label || wr.network?.toUpperCase()} · {netInfo.chain || ''}
+                          {t('common.via')} {netInfo.label || wr.network?.toUpperCase()} · {netInfo.chain || ''}
                         </div>
                       </div>
                     </div>
@@ -200,34 +204,34 @@ const WithdrawPage = () => {
                       color: '#fff',
                       boxShadow: isDone ? '0 2px 8px rgba(16,185,129,0.4)' : isPending ? '0 2px 8px rgba(245,158,11,0.3)' : '0 2px 8px rgba(239,68,68,0.3)',
                     }}>
-                      {isDone ? 'Completed' : isPending ? 'Pending' : 'Rejected'}
+                      {isDone ? t('status.completed') : isPending ? t('status.pending') : t('status.rejected')}
                     </div>
                   </div>
                   {/* Detail rows */}
                   <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                      <span style={{ color: theme.subtext }}>Date</span>
+                      <span style={{ color: theme.subtext }}>{t('field.date')}</span>
                       <span style={{ color: theme.text, fontWeight: '600' }}>{new Date(wr.createdAt || wr.requestedAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                      <span style={{ color: theme.subtext }}>Network</span>
+                      <span style={{ color: theme.subtext }}>{t('field.network')}</span>
                       <span style={{ color: theme.text, fontWeight: '600' }}>{netInfo.chain || wr.network?.toUpperCase()}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                      <span style={{ color: theme.subtext }}>Fee</span>
+                      <span style={{ color: theme.subtext }}>{t('field.fee')}</span>
                       <span style={{ color: '#EF4444', fontWeight: '600' }}>-{Number(fee).toFixed(2)} USDT</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                      <span style={{ color: theme.subtext }}>You Receive</span>
+                      <span style={{ color: theme.subtext }}>{t('field.youReceive')}</span>
                       <span style={{ color: isDone ? '#10B981' : theme.text, fontWeight: '700' }}>{Number(wr.netPayout || wr.amount).toFixed(2)} USDT</span>
                     </div>
                     {wr.walletAddress || wr.address ? (
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', gap: '8px' }}>
-                        <span style={{ color: theme.subtext, flexShrink: 0 }}>To</span>
-                        <span style={{ color: theme.primary, fontWeight: '600', fontFamily: 'monospace', fontSize: '11px', wordBreak: 'break-all', textAlign: 'right' }}>{wr.walletAddress || wr.address}</span>
+                        <span style={{ color: theme.subtext, flexShrink: 0 }}>{t('withdraw.to')}</span>
+                        <span style={{ color: theme.primary, fontWeight: '600', fontFamily: 'monospace', fontSize: '11px', wordBreak: 'break-all', textAlign: isRTL ? 'left' : 'right' }}>{wr.walletAddress || wr.address}</span>
                       </div>
                     ) : null}
-                    <div style={{ fontSize: '11px', color: theme.primary, fontWeight: '600', marginTop: '2px' }}>Tap for full details →</div>
+                    <div style={{ fontSize: '11px', color: theme.primary, fontWeight: '600', marginTop: '2px' }}>{t('common.tapDetails')}</div>
                   </div>
                 </div>
               );
@@ -242,12 +246,12 @@ const WithdrawPage = () => {
           <div style={{ background: theme.card, backdropFilter: theme.cardGlass, WebkitBackdropFilter: theme.cardGlass, border: '1.5px solid rgba(239,68,68,0.45)', borderRadius: '24px', padding: '36px 28px', maxWidth: '300px', width: '90%', textAlign: 'center', boxShadow: '0 20px 60px rgba(239,68,68,0.2), 0 8px 24px rgba(0,0,0,0.6)', animation: 'popIn 0.3s cubic-bezier(0.34,1.56,0.64,1)' }} onClick={e => e.stopPropagation()}>
             <style>{`@keyframes popIn { from { transform: scale(0.7); opacity: 0 } to { transform: scale(1); opacity: 1 } }`}</style>
             <div style={{ width: '64px', height: '64px', borderRadius: '50%', margin: '0 auto 20px', background: 'linear-gradient(135deg, #EF4444, #DC2626)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 24px rgba(239,68,68,0.5)', fontSize: '28px' }}>📤</div>
-            <div style={{ fontWeight: '800', fontSize: '18px', color: theme.text, marginBottom: '8px' }}>Withdrawal Submitted!</div>
+            <div style={{ fontWeight: '800', fontSize: '18px', color: theme.text, marginBottom: '8px' }}>{t('withdraw.submittedPopupTitle')}</div>
             <div style={{ fontSize: '22px', fontWeight: '800', color: '#EF4444', marginBottom: '4px' }}>-{wdPopup.amount?.toFixed(2)} USDT</div>
-            <div style={{ fontSize: '14px', color: '#10B981', fontWeight: '700', marginBottom: '4px' }}>You receive: {wdPopup.netPayout?.toFixed(2)} USDT</div>
-            <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '6px' }}>via {wdPopup.network}</div>
-            <div style={{ fontSize: '13px', color: theme.subtext, lineHeight: '1.6', marginBottom: '24px' }}>Your withdrawal is under review. Processing time is typically 1–24 hours.</div>
-            <button onClick={() => setWdPopup(null)} style={{ padding: '12px 32px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #EF4444, #DC2626)', color: '#fff', fontWeight: '700', fontSize: '14px', cursor: 'pointer', boxShadow: '0 4px 14px rgba(239,68,68,0.4)' }}>OK</button>
+            <div style={{ fontSize: '14px', color: '#10B981', fontWeight: '700', marginBottom: '4px' }}>{t('field.youReceive')}: {wdPopup.netPayout?.toFixed(2)} USDT</div>
+            <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '6px' }}>{t('common.via')} {wdPopup.network}</div>
+            <div style={{ fontSize: '13px', color: theme.subtext, lineHeight: '1.6', marginBottom: '24px' }}>{t('withdraw.reviewNote')}</div>
+            <button onClick={() => setWdPopup(null)} style={{ padding: '12px 32px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #EF4444, #DC2626)', color: '#fff', fontWeight: '700', fontSize: '14px', cursor: 'pointer', boxShadow: '0 4px 14px rgba(239,68,68,0.4)' }}>{t('common.ok')}</button>
           </div>
         </div>
       )}

@@ -4,9 +4,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { ArrowLeft, ChevronRight, Shield, Mail, Smartphone, Key, Lock, AlertTriangle, Ban } from 'lucide-react';
 
-const KYC_LABELS = { not_started: 'Not Verified', pending: 'Pending', certified: 'Certified', rejected: 'Rejected' };
 import { getToken, logout } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
+import { useLanguage } from '../LanguageContext';
 import { API_URL } from '../config';
 
 function authHeaders() {
@@ -89,7 +89,7 @@ function RowIcon({ name, color, theme }) {
   );
 }
 
-function Row({ label, value, onClick, danger, theme, icon }) {
+function Row({ label, value, onClick, danger, theme, icon, isRTL }) {
   return (
     <button onClick={onClick} style={{
       width: '100%',
@@ -100,7 +100,7 @@ function Row({ label, value, onClick, danger, theme, icon }) {
       background: 'none',
       border: 'none',
       cursor: onClick ? 'pointer' : 'default',
-      textAlign: 'left',
+      textAlign: isRTL ? 'right' : 'left',
       transition: 'background 0.15s ease',
     }}>
       {icon && <RowIcon name={icon} color={danger ? theme.downSoft : undefined} theme={theme} />}
@@ -143,7 +143,9 @@ function Divider({ theme }) {
 
 const Security = () => {
   const { theme } = useTheme();
+  const { t, isRTL } = useLanguage();
   const navigate = useNavigate();
+  const kycLabel = (s) => ({ not_started: t('status.notVerified'), pending: t('status.pending'), certified: t('status.certified'), rejected: t('status.rejected') }[s] || t('status.notVerified'));
   const [security, setSecurity] = useState(null);
   const [open, setOpen] = useState(null);
   const [appLock, setAppLock] = useState(() => localStorage.getItem('kynex_app_lock') === 'true');
@@ -160,8 +162,8 @@ const Security = () => {
   };
 
   useEffect(() => {
-    const t = setTimeout(load, 0);
-    return () => clearTimeout(t);
+    const timer = setTimeout(load, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   const toggle = (panel) => { setOpen(open === panel ? null : panel); setMsg(''); };
@@ -178,7 +180,7 @@ const Security = () => {
       // reset first-load flag so next session starts clean
       localStorage.removeItem('kynex_lock_first_load');
       setAppLock(false);
-      setMsg('App Lock disabled.');
+      setMsg(t('security.appLockDisabled'));
       return;
     }
 
@@ -187,13 +189,13 @@ const Security = () => {
       try { window.KynexBridge.setAppLock('true'); } catch (_) {}
       localStorage.setItem('kynex_app_lock', 'true');
       setAppLock(true);
-      setMsg('App Lock enabled. Screen will lock when you leave the app.');
+      setMsg(t('security.appLockEnabledAndroid'));
       return;
     }
 
     // PWA / browser: use WebAuthn (Face ID / fingerprint / device PIN)
     if (!window.PublicKeyCredential) {
-      setMsg('Biometric lock is not supported on this browser or device.');
+      setMsg(t('security.biometricNotSupported'));
       return;
     }
     setLockBusy(true);
@@ -201,11 +203,11 @@ const Security = () => {
     try {
       await registerBiometric();
       setAppLock(true);
-      setMsg('App Lock enabled. Biometric registered — app will lock when you switch away.');
+      setMsg(t('security.appLockEnabledPwa'));
     } catch (err) {
       const m = err?.name === 'NotAllowedError'
-        ? 'Permission denied. Please allow biometric access and try again.'
-        : err?.message || 'Could not register biometric. Try again.';
+        ? t('security.permissionDenied')
+        : err?.message || t('security.couldNotRegister');
       setMsg(m);
     } finally {
       setLockBusy(false);
@@ -263,7 +265,7 @@ const Security = () => {
         </Link>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Shield size={20} style={{ color: theme.primary }} />
-          <span style={{ fontWeight: 700, fontSize: '17px' }}>Security</span>
+          <span style={{ fontWeight: 700, fontSize: '17px' }}>{t('security.title')}</span>
         </div>
       </div>
 
@@ -283,7 +285,7 @@ const Security = () => {
               boxShadow: theme.shadow,
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '10px', alignItems: 'center' }}>
-                <span style={{ color: theme.subtext, fontWeight: 600 }}>Security Level</span>
+                <span style={{ color: theme.subtext, fontWeight: 600 }}>{t('security.securityLevel')}</span>
                 <span style={{
                   fontWeight: 700,
                   fontSize: '13px',
@@ -294,7 +296,7 @@ const Security = () => {
                     : security.securityLevel === 'Medium' ? theme.brandSoft
                     : theme.downSoft,
                 }}>
-                  {security.securityLevel}
+                  {({ High: t('security.levelHigh'), Medium: t('security.levelMedium'), Low: t('security.levelLow') })[security.securityLevel] || security.securityLevel}
                 </span>
               </div>
               <div style={{
@@ -326,24 +328,24 @@ const Security = () => {
             }}>
 
               {/* Identity Verification */}
-              <Row icon="identity" label="Identity Verification" value={KYC_LABELS[security.kycStatus] || 'Not Verified'} onClick={() => navigate('/verification')} theme={theme} />
+              <Row icon="identity" label={t('security.identityVerification')} value={kycLabel(security.kycStatus)} onClick={() => navigate('/verification')} theme={theme} isRTL={isRTL} />
 
               <Divider theme={theme} />
 
               {/* Email */}
-              <Row icon="email" label="Email" value={security.email} onClick={() => toggle('email')} theme={theme} />
+              <Row icon="email" label={t('security.emailLabel')} value={security.email} onClick={() => toggle('email')} theme={theme} isRTL={isRTL} />
               {open === 'email' && <EmailPanel theme={theme} onDone={() => { load(); setOpen(null); }} setMsg={setMsg} />}
 
               <Divider theme={theme} />
 
               {/* Google 2FA */}
-              <Row icon="google" label="Google Verification" value={security.twoFactorEnabled ? 'Linked' : 'Not Linked'} onClick={() => toggle('2fa')} theme={theme} />
+              <Row icon="google" label={t('security.googleVerification')} value={security.twoFactorEnabled ? t('security.linked') : t('security.notLinked')} onClick={() => toggle('2fa')} theme={theme} isRTL={isRTL} />
               {open === '2fa' && <TwoFactorPanel theme={theme} enabled={security.twoFactorEnabled} onDone={() => { load(); setOpen(null); }} setMsg={setMsg} />}
 
               <Divider theme={theme} />
 
               {/* Login Password */}
-              <Row icon="password" label="Login Password" value="Change" onClick={() => toggle('password')} theme={theme} />
+              <Row icon="password" label={t('security.loginPassword')} value={t('security.change')} onClick={() => toggle('password')} theme={theme} isRTL={isRTL} />
               {open === 'password' && <PasswordPanel theme={theme} onDone={() => { setOpen(null); load(); logout(); navigate('/auth'); }} setMsg={setMsg} />}
 
               <Divider theme={theme} />
@@ -351,10 +353,11 @@ const Security = () => {
               {/* Fund Password */}
               <Row
                 icon="fund"
-                label="Fund Password"
-                value={security.fundPasswordSet ? 'Set' : 'Not Set'}
+                label={t('security.fundPassword')}
+                value={security.fundPasswordSet ? t('security.set') : t('security.notSet')}
                 onClick={security.fundPasswordSet ? () => toggle('fund-change') : () => toggle('fund')}
                 theme={theme}
+                isRTL={isRTL}
               />
               {open === 'fund' && !security.fundPasswordSet && (
                 <FundPasswordPanel theme={theme} onDone={() => { load(); setOpen(null); }} setMsg={setMsg} />
@@ -374,8 +377,8 @@ const Security = () => {
               }}>
                 <RowIcon name="whitelist" theme={theme} />
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '14px', fontWeight: 600 }}>Withdrawal Whitelist</div>
-                  <div style={{ fontSize: '11px', color: theme.faint, marginTop: '2px' }}>Restrict withdrawals to trusted destinations only.</div>
+                  <div style={{ fontSize: '14px', fontWeight: 600 }}>{t('security.withdrawalWhitelist')}</div>
+                  <div style={{ fontSize: '11px', color: theme.faint, marginTop: '2px' }}>{t('security.whitelistDesc')}</div>
                 </div>
                 <WhitelistToggle theme={theme} enabled={security.withdrawalWhitelistEnabled} onDone={load} />
               </div>
@@ -388,11 +391,11 @@ const Security = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <RowIcon name="identity" theme={theme} color={theme.primarySoft} />
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '14px', fontWeight: 600 }}>App Lock</div>
+                    <div style={{ fontSize: '14px', fontWeight: 600 }}>{t('security.appLock')}</div>
                     <div style={{ fontSize: '11px', color: theme.faint, marginTop: '2px' }}>
                       {window.KynexBridge
-                        ? 'Lock screen when leaving the app (Android).'
-                        : 'Face ID / fingerprint / device PIN when app resumes (PWA).'}
+                        ? t('security.appLockAndroid')
+                        : t('security.appLockPwa')}
                     </div>
                   </div>
                   <div
@@ -416,7 +419,7 @@ const Security = () => {
                 </div>
                 {lockBusy && (
                   <div style={{ fontSize: '11px', color: theme.primary, marginTop: '8px', paddingLeft: '46px' }}>
-                    Waiting for biometric…
+                    {t('security.waitingBiometric')}
                   </div>
                 )}
               </div>
@@ -424,7 +427,7 @@ const Security = () => {
               <Divider theme={theme} />
 
               {/* Close Account */}
-              <Row icon="close" label="Close Account" value="" onClick={() => toggle('close')} danger theme={theme} />
+              <Row icon="close" label={t('security.closeAccount')} value="" onClick={() => toggle('close')} danger theme={theme} isRTL={isRTL} />
               {open === 'close' && <ClosePanel theme={theme} setMsg={setMsg} />}
 
             </div>
@@ -472,10 +475,10 @@ const Security = () => {
                     fontSize: '28px',
                   }}>✓</div>
                   <div style={{ fontWeight: '800', fontSize: '18px', color: theme.text, marginBottom: '10px' }}>
-                    {msg.includes('Fund password') ? '🔐 Fund Password' :
-                     msg.includes('Google') ? '📱 Google Authenticator' :
-                     msg.includes('Email') ? '✉️ Email Updated' :
-                     msg.includes('Password changed') ? '🔑 Password Changed' : '✅ Done'}
+                    {(msg === t('security.fundPwSet') || msg === t('security.fundPwChanged')) ? '🔐 ' + t('security.fundPasswordTitle') :
+                     (msg === t('security.twoFaLinked') || msg === t('security.twoFaUnlinked')) ? '📱 ' + t('security.googleAuthTitle') :
+                     msg === t('security.emailUpdated') ? '✉️ ' + t('security.emailUpdatedTitle') :
+                     msg === t('security.passwordChanged') ? '🔑 ' + t('security.passwordChangedTitle') : '✅ ' + t('common.done')}
                   </div>
                   <div style={{ fontSize: '13px', color: theme.subtext, lineHeight: '1.6', marginBottom: '24px' }}>{msg}</div>
                   <button onClick={() => setMsg('')} style={{
@@ -483,7 +486,7 @@ const Security = () => {
                     background: 'linear-gradient(135deg, #10B981, #059669)',
                     color: '#fff', fontWeight: '700', fontSize: '14px', cursor: 'pointer',
                     boxShadow: '0 4px 14px rgba(16,185,129,0.4)',
-                  }}>Got it</button>
+                  }}>{t('common.gotIt')}</button>
                 </div>
               </div>
             )}
@@ -495,6 +498,7 @@ const Security = () => {
 };
 
 function EmailPanel({ theme, onDone, setMsg }) {
+  const { t } = useLanguage();
   const [step, setStep] = useState(1);
   const [newEmail, setNewEmail] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
@@ -518,7 +522,7 @@ function EmailPanel({ theme, onDone, setMsg }) {
       const res = await fetch(`${API_URL}/api/account/email/confirm-change`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ otp }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setMsg('Email updated. Withdrawals are locked for 12 hours.');
+      setMsg(t('security.emailUpdated'));
       onDone();
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
@@ -528,23 +532,23 @@ function EmailPanel({ theme, onDone, setMsg }) {
       {error && <p style={{ color: theme.down, fontSize: '12px', marginTop: 0, fontWeight: 600 }}>{error}</p>}
       {step === 1 ? (
         <>
-          <input type="email" placeholder="New email address" value={newEmail} onChange={(e) => setNewEmail(e.target.value)}
+          <input type="email" placeholder={t('security.newEmailPlaceholder')} value={newEmail} onChange={(e) => setNewEmail(e.target.value)}
             style={{ ...inputStyle(theme), marginBottom: '10px' }} />
-          <input type="password" placeholder="Current login password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)}
+          <input type="password" placeholder={t('security.currentLoginPwPlaceholder')} value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)}
             style={{ ...inputStyle(theme), marginBottom: '14px' }} />
           <button onClick={requestChange} disabled={busy} style={primaryBtnStyle(theme)}>
-            Send Code
+            {t('security.sendCode')}
           </button>
         </>
       ) : (
         <>
-          <p style={{ fontSize: '12px', color: theme.subtext, marginTop: 0, lineHeight: 1.5 }}>Enter the code sent to {newEmail}</p>
-          <input type="text" placeholder="6-digit code" value={otp} onChange={(e) => setOtp(e.target.value)} maxLength={6}
+          <p style={{ fontSize: '12px', color: theme.subtext, marginTop: 0, lineHeight: 1.5 }}>{t('security.enterCodeSentTo', { email: newEmail })}</p>
+          <input type="text" placeholder={t('security.sixDigitCode')} value={otp} onChange={(e) => setOtp(e.target.value)} maxLength={6}
             style={{ ...inputStyle(theme), marginBottom: '14px', letterSpacing: '4px', textAlign: 'center', fontSize: '18px', fontWeight: 700 }} />
           <button onClick={confirmChange} disabled={busy} style={primaryBtnStyle(theme)}>
-            Confirm
+            {t('common.confirm')}
           </button>
-          <p style={{ fontSize: '11px', color: theme.faint, marginTop: '12px', lineHeight: 1.5 }}>Withdrawals will be locked for 12 hours after the change.</p>
+          <p style={{ fontSize: '11px', color: theme.faint, marginTop: '12px', lineHeight: 1.5 }}>{t('security.withdrawLock12h')}</p>
         </>
       )}
     </Panel>
@@ -552,6 +556,7 @@ function EmailPanel({ theme, onDone, setMsg }) {
 }
 
 function TwoFactorPanel({ theme, enabled, onDone, setMsg }) {
+  const { t } = useLanguage();
   const [qr, setQr] = useState(null);
   const [secret, setSecret] = useState('');
   const [code, setCode] = useState('');
@@ -571,8 +576,8 @@ function TwoFactorPanel({ theme, enabled, onDone, setMsg }) {
         setQr(await QRCode.toDataURL(data.otpauth));
       }
     };
-    const t = setTimeout(start, 0);
-    return () => clearTimeout(t);
+    const timer = setTimeout(start, 0);
+    return () => clearTimeout(timer);
   }, [enabled]);
 
   const requestOtp = async () => {
@@ -591,7 +596,7 @@ function TwoFactorPanel({ theme, enabled, onDone, setMsg }) {
       const res = await fetch(`${API_URL}/api/account/2fa/verify`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ code, password, otp }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setMsg('Google Authenticator is now linked.');
+      setMsg(t('security.twoFaLinked'));
       onDone();
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
@@ -602,7 +607,7 @@ function TwoFactorPanel({ theme, enabled, onDone, setMsg }) {
       const res = await fetch(`${API_URL}/api/account/2fa/disable`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ code, password, otp }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setMsg('Google Authenticator was unlinked.');
+      setMsg(t('security.twoFaUnlinked'));
       onDone();
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
@@ -612,7 +617,7 @@ function TwoFactorPanel({ theme, enabled, onDone, setMsg }) {
       {error && <p style={{ color: theme.down, fontSize: '12px', marginTop: 0, fontWeight: 600 }}>{error}</p>}
       {!enabled ? (
         <>
-          <p style={{ fontSize: '12px', color: theme.subtext, marginTop: 0, lineHeight: 1.5 }}>Scan with Google Authenticator or Authy, then confirm with your password, an email code, and the live authenticator code.</p>
+          <p style={{ fontSize: '12px', color: theme.subtext, marginTop: 0, lineHeight: 1.5 }}>{t('security.twoFaScanDesc')}</p>
           {qr && (
             <div style={{
               display: 'flex',
@@ -623,7 +628,7 @@ function TwoFactorPanel({ theme, enabled, onDone, setMsg }) {
               backgroundColor: 'white',
               width: 'fit-content',
             }}>
-              <img src={qr} alt="2FA QR code" style={{ width: '150px', height: '150px', display: 'block' }} />
+              <img src={qr} alt={t('security.qrAlt')} style={{ width: '150px', height: '150px', display: 'block' }} />
             </div>
           )}
           {secret && (
@@ -638,33 +643,33 @@ function TwoFactorPanel({ theme, enabled, onDone, setMsg }) {
               marginBottom: '12px',
               lineHeight: 1.6,
             }}>
-              Manual entry: {secret}
+              {t('security.manualEntry', { secret })}
             </p>
           )}
         </>
       ) : (
-        <p style={{ fontSize: '12px', color: theme.subtext, marginTop: 0, lineHeight: 1.5 }}>Confirm with your password, an email code, and your current authenticator code to unlink 2FA.</p>
+        <p style={{ fontSize: '12px', color: theme.subtext, marginTop: 0, lineHeight: 1.5 }}>{t('security.twoFaUnlinkDesc')}</p>
       )}
 
       {!otpSent ? (
         <button onClick={requestOtp} disabled={busy} style={primaryBtnStyle(theme)}>
-          Send Email Code
+          {t('security.sendEmailCode')}
         </button>
       ) : (
         <>
-          <input type="password" placeholder="Login password" value={password} onChange={(e) => setPassword(e.target.value)}
+          <input type="password" placeholder={t('security.loginPasswordPlaceholder')} value={password} onChange={(e) => setPassword(e.target.value)}
             style={{ ...inputStyle(theme), marginBottom: '10px' }} />
-          <input type="text" placeholder="6-digit email code" value={otp} onChange={(e) => setOtp(e.target.value)} maxLength={6}
+          <input type="text" placeholder={t('security.sixDigitEmailCode')} value={otp} onChange={(e) => setOtp(e.target.value)} maxLength={6}
             style={{ ...inputStyle(theme), marginBottom: '10px', letterSpacing: '4px', textAlign: 'center', fontSize: '18px', fontWeight: 700 }} />
-          <input type="text" placeholder="6-digit authenticator code" value={code} onChange={(e) => setCode(e.target.value)} maxLength={6}
+          <input type="text" placeholder={t('security.sixDigitAuthCode')} value={code} onChange={(e) => setCode(e.target.value)} maxLength={6}
             style={{ ...inputStyle(theme), marginBottom: '14px', letterSpacing: '4px', textAlign: 'center', fontSize: '18px', fontWeight: 700 }} />
           {!enabled ? (
             <button onClick={verify} disabled={busy} style={primaryBtnStyle(theme)}>
-              Enable 2FA
+              {t('security.enable2fa')}
             </button>
           ) : (
             <button onClick={disable} disabled={busy} style={dangerBtnStyle(theme)}>
-              Disable 2FA
+              {t('security.disable2fa')}
             </button>
           )}
         </>
@@ -674,6 +679,7 @@ function TwoFactorPanel({ theme, enabled, onDone, setMsg }) {
 }
 
 function PasswordPanel({ theme, onDone, setMsg }) {
+  const { t } = useLanguage();
   const [otpSent, setOtpSent] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -697,7 +703,7 @@ function PasswordPanel({ theme, onDone, setMsg }) {
       const res = await fetch(`${API_URL}/api/account/password/change`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ currentPassword, newPassword, otp }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setMsg('Password changed. Please log in again.');
+      setMsg(t('security.passwordChanged'));
       onDone();
     } catch (err) { setError(err.message); setBusy(false); }
   };
@@ -707,30 +713,31 @@ function PasswordPanel({ theme, onDone, setMsg }) {
       {error && <p style={{ color: theme.down, fontSize: '12px', marginTop: 0, fontWeight: 600 }}>{error}</p>}
       {!otpSent ? (
         <>
-          <p style={{ fontSize: '12px', color: theme.subtext, marginTop: 0, lineHeight: 1.5 }}>We'll email a code to your account address to confirm this change.</p>
+          <p style={{ fontSize: '12px', color: theme.subtext, marginTop: 0, lineHeight: 1.5 }}>{t('security.pwChangeDesc')}</p>
           <button onClick={requestOtp} disabled={busy} style={primaryBtnStyle(theme)}>
-            Send Code
+            {t('security.sendCode')}
           </button>
         </>
       ) : (
         <>
-          <input type="text" placeholder="6-digit email code" value={otp} onChange={(e) => setOtp(e.target.value)} maxLength={6}
+          <input type="text" placeholder={t('security.sixDigitEmailCode')} value={otp} onChange={(e) => setOtp(e.target.value)} maxLength={6}
             style={{ ...inputStyle(theme), marginBottom: '10px', letterSpacing: '4px', textAlign: 'center', fontSize: '18px', fontWeight: 700 }} />
-          <input type="password" placeholder="Current password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)}
+          <input type="password" placeholder={t('security.currentPwPlaceholder')} value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)}
             style={{ ...inputStyle(theme), marginBottom: '10px' }} />
-          <input type="password" placeholder="New password (e.g. Kynex123)" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+          <input type="password" placeholder={t('security.newPwPlaceholder')} value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
             style={{ ...inputStyle(theme), marginBottom: '14px' }} />
           <button onClick={submit} disabled={busy} style={primaryBtnStyle(theme)}>
-            Change Password
+            {t('security.changePassword')}
           </button>
         </>
       )}
-      <p style={{ fontSize: '11px', color: theme.faint, marginTop: '12px', lineHeight: 1.5 }}>Withdrawals will be locked for 2 hours after the change, and you'll be signed out.</p>
+      <p style={{ fontSize: '11px', color: theme.faint, marginTop: '12px', lineHeight: 1.5 }}>{t('security.pwChangeWarn')}</p>
     </Panel>
   );
 }
 
 function FundPasswordPanel({ theme, onDone, setMsg }) {
+  const { t } = useLanguage();
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -741,7 +748,7 @@ function FundPasswordPanel({ theme, onDone, setMsg }) {
       const res = await fetch(`${API_URL}/api/account/fund-password/set`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ pin }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setMsg('Fund password set — you can now withdraw.');
+      setMsg(t('security.fundPwSet'));
       onDone();
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
@@ -749,17 +756,18 @@ function FundPasswordPanel({ theme, onDone, setMsg }) {
   return (
     <Panel theme={theme}>
       {error && <p style={{ color: theme.down, fontSize: '12px', marginTop: 0, fontWeight: 600 }}>{error}</p>}
-      <p style={{ fontSize: '12px', color: theme.subtext, marginTop: 0, lineHeight: 1.5 }}>A 4-6 digit PIN required before every withdrawal.</p>
-      <input type="password" inputMode="numeric" placeholder="4-6 digit PIN" value={pin} onChange={(e) => setPin(e.target.value)} maxLength={6}
+      <p style={{ fontSize: '12px', color: theme.subtext, marginTop: 0, lineHeight: 1.5 }}>{t('security.fundPwDesc')}</p>
+      <input type="password" inputMode="numeric" placeholder={t('security.pinPlaceholder')} value={pin} onChange={(e) => setPin(e.target.value)} maxLength={6}
         style={{ ...inputStyle(theme), marginBottom: '14px', letterSpacing: '6px', textAlign: 'center', fontSize: '20px', fontWeight: 700 }} />
       <button onClick={submit} disabled={busy} style={primaryBtnStyle(theme)}>
-        Set Fund Password
+        {t('security.setFundPassword')}
       </button>
     </Panel>
   );
 }
 
 function ChangeFundPasswordPanel({ theme, onDone, setMsg }) {
+  const { t } = useLanguage();
   const [step, setStep] = useState('request'); // 'request' | 'verify'
   const [otp, setOtp] = useState('');
   const [newPin, setNewPin] = useState('');
@@ -785,7 +793,7 @@ function ChangeFundPasswordPanel({ theme, onDone, setMsg }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setMsg('Fund password changed successfully.');
+      setMsg(t('security.fundPwChanged'));
       onDone();
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
@@ -797,10 +805,10 @@ function ChangeFundPasswordPanel({ theme, onDone, setMsg }) {
       {step === 'request' && (
         <>
           <p style={{ fontSize: '12px', color: theme.subtext, marginTop: 0, lineHeight: 1.5 }}>
-            To change your fund password, we'll send a verification code to your registered email.
+            {t('security.fundPwChangeDesc')}
           </p>
           <button onClick={requestOtp} disabled={busy} style={primaryBtnStyle(theme)}>
-            {busy ? 'Sending…' : 'Send Verification Code'}
+            {busy ? t('security.sending') : t('security.sendVerificationCode')}
           </button>
         </>
       )}
@@ -808,24 +816,24 @@ function ChangeFundPasswordPanel({ theme, onDone, setMsg }) {
       {step === 'verify' && (
         <>
           <p style={{ fontSize: '12px', color: theme.subtext, marginTop: 0, lineHeight: 1.5 }}>
-            Enter the 6-digit code sent to your email, then set your new fund password.
+            {t('security.fundPwVerifyDesc')}
           </p>
           <input
-            type="text" inputMode="numeric" placeholder="Email OTP code" value={otp}
+            type="text" inputMode="numeric" placeholder={t('security.emailOtpPlaceholder')} value={otp}
             onChange={(e) => setOtp(e.target.value)} maxLength={6}
             style={{ ...inputStyle(theme), marginBottom: '12px', letterSpacing: '4px', textAlign: 'center', fontSize: '18px', fontWeight: 700 }}
           />
           <input
-            type="password" inputMode="numeric" placeholder="New 4-6 digit PIN" value={newPin}
+            type="password" inputMode="numeric" placeholder={t('security.newPinPlaceholder')} value={newPin}
             onChange={(e) => setNewPin(e.target.value)} maxLength={6}
             style={{ ...inputStyle(theme), marginBottom: '14px', letterSpacing: '6px', textAlign: 'center', fontSize: '20px', fontWeight: 700 }}
           />
           <div style={{ display: 'flex', gap: '10px' }}>
             <button onClick={submitChange} disabled={busy} style={primaryBtnStyle(theme)}>
-              {busy ? 'Saving…' : 'Confirm Change'}
+              {busy ? t('security.saving') : t('security.confirmChange')}
             </button>
             <button onClick={requestOtp} disabled={busy} style={{ ...primaryBtnStyle(theme), background: theme.cardBorder, color: theme.subtext, boxShadow: 'none' }}>
-              Resend
+              {t('security.resend')}
             </button>
           </div>
         </>
@@ -871,19 +879,20 @@ function WhitelistToggle({ theme, enabled, onDone }) {
 }
 
 function ClosePanel({ theme, setMsg }) {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const [confirmText, setConfirmText] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    if (confirmText !== 'CLOSE') { setError('Type CLOSE to confirm.'); return; }
+    if (confirmText !== 'CLOSE') { setError(t('security.typeCloseError')); return; }
     setError(''); setBusy(true);
     try {
       const res = await fetch(`${API_URL}/api/account/close`, { method: 'POST', headers: authHeaders() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setMsg('Account closed.');
+      setMsg(t('security.accountClosed'));
       logout();
       navigate('/');
     } catch (err) { setError(err.message); setBusy(false); }
@@ -893,12 +902,12 @@ function ClosePanel({ theme, setMsg }) {
     <Panel theme={theme}>
       {error && <p style={{ color: theme.down, fontSize: '12px', marginTop: 0, fontWeight: 600 }}>{error}</p>}
       <p style={{ fontSize: '12px', color: theme.down, marginTop: 0, fontWeight: 600, lineHeight: 1.5 }}>
-        This permanently closes your account. This email can never be used to create a KYNEX account again.
+        {t('security.closeWarn')}
       </p>
-      <input type="text" placeholder='Type "CLOSE" to confirm' value={confirmText} onChange={(e) => setConfirmText(e.target.value)}
+      <input type="text" placeholder={t('security.closeConfirmPlaceholder')} value={confirmText} onChange={(e) => setConfirmText(e.target.value)}
         style={{ ...inputStyle(theme), marginBottom: '14px', borderColor: theme.down + '44' }} />
       <button onClick={submit} disabled={busy} style={dangerBtnStyle(theme)}>
-        Close Account Permanently
+        {t('security.closeAccountPermanently')}
       </button>
     </Panel>
   );

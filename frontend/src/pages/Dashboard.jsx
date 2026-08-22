@@ -5,6 +5,7 @@ import BottomNav from '../components/BottomNav';
 import { CoinIcon } from '../components/CoinIcons';
 import { getToken } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
+import { useLanguage } from '../LanguageContext';
 import NotificationBell from '../components/NotificationBell';
 import PullIndicator from '../components/PullToRefresh';
 import { usePullToRefresh } from '../utils/usePullToRefresh';
@@ -68,12 +69,12 @@ const CertSVG = () => (
 );
 
 const QUICK_ACTIONS = [
-  { to: '/deposit',            label: 'Deposit',     SvgIcon: DepositSVG,  gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
-  { to: '/withdraw',           label: 'Withdraw',    SvgIcon: WithdrawSVG, gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
-  { to: '/invite',             label: 'Invite',      SvgIcon: InviteSVG,   gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
-  { to: '/download',           label: 'Download',    SvgIcon: DownloadSVG, gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
-  { to: '/legal/member-guide', label: 'Guide',       SvgIcon: GuideSVG,    gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
-  { to: '/certificates',       label: 'Certificate', SvgIcon: CertSVG,     gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
+  { to: '/deposit',            tkey: 'dashboard.deposit',     SvgIcon: DepositSVG,  gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
+  { to: '/withdraw',           tkey: 'dashboard.withdraw',    SvgIcon: WithdrawSVG, gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
+  { to: '/invite',             tkey: 'dashboard.invite',      SvgIcon: InviteSVG,   gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
+  { to: '/download',           tkey: 'dashboard.download',    SvgIcon: DownloadSVG, gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
+  { to: '/legal/member-guide', tkey: 'dashboard.guide',       SvgIcon: GuideSVG,    gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
+  { to: '/certificates',       tkey: 'dashboard.certificate', SvgIcon: CertSVG,     gradient: 'linear-gradient(140deg,#F59E0B 0%,#D97706 100%)', glow: 'rgba(245,158,11,0.38)'  },
 ];
 
 function fmtPrice(n) {
@@ -91,6 +92,7 @@ function fmtVolume(v) {
 
 const Dashboard = () => {
   const { theme, iconBadges } = useTheme();
+  const { t, isRTL } = useLanguage();
   const navigate = useNavigate();
   const [markets, setMarkets] = useState({});
   const [balance, setBalance] = useState(null);
@@ -242,10 +244,10 @@ const Dashboard = () => {
           }}>KYNEX</h2>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <Link to="/legal/contact" style={{ color: theme.subtext, display: 'flex' }} title="Contact"><Headset size={19} /></Link>
-          <Link to="/settings" style={{ color: theme.subtext, display: 'flex' }} title="Language"><Globe size={19} /></Link>
+          <Link to="/legal/contact" style={{ color: theme.subtext, display: 'flex' }} title={t('dashboard.contact')}><Headset size={19} /></Link>
+          <Link to="/settings" style={{ color: theme.subtext, display: 'flex' }} title={t('settings.language')}><Globe size={19} /></Link>
           <NotificationBell />
-          <Link to="/profile" style={{ color: theme.subtext, display: 'flex' }} title="Profile"><User size={20} /></Link>
+          <Link to="/profile" style={{ color: theme.subtext, display: 'flex' }} title={t('dashboard.profile')}><User size={20} /></Link>
         </div>
       </div>
 
@@ -259,7 +261,7 @@ const Dashboard = () => {
       }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-            <p style={{ color: 'rgba(26,19,5,0.72)', fontSize: '13px', margin: 0 }}>Total Balance</p>
+            <p style={{ color: 'rgba(26,19,5,0.72)', fontSize: '13px', margin: 0 }}>{t('dashboard.totalBalance')}</p>
             <button onClick={() => { const next = !hideBalance; setHideBalance(next); localStorage.setItem('kynex_hide_balance', next ? '1' : '0'); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', color: 'rgba(26,19,5,0.72)' }}>
               {hideBalance ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
@@ -270,10 +272,10 @@ const Dashboard = () => {
           </h2>
           {!hideBalance && balance !== null && (
             <div style={{ display: 'flex', gap: '12px', marginTop: '6px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '11px', color: 'rgba(26,19,5,0.72)' }}>Spot <span style={{ color: '#1A1305', fontWeight: '600' }}>{balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
-              {signalBalance > 0 && <span style={{ fontSize: '11px', color: 'rgba(26,19,5,0.72)' }}>Signal <span style={{ color: '#1A1305', fontWeight: '600' }}>{signalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>}
-              {spotValue > 0 && <span style={{ fontSize: '11px', color: 'rgba(26,19,5,0.72)' }}>Holdings <span style={{ color: '#1A1305', fontWeight: '600' }}>{spotValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>}
-              {(signalsLocked + futuresLocked) > 0 && <span style={{ fontSize: '11px', color: 'rgba(26,19,5,0.72)' }}>In trades <span style={{ color: '#1A1305', fontWeight: '600' }}>{(signalsLocked + futuresLocked).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>}
+              <span style={{ fontSize: '11px', color: 'rgba(26,19,5,0.72)' }}>{t('dashboard.spot')} <span style={{ color: '#1A1305', fontWeight: '600' }}>{balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
+              {signalBalance > 0 && <span style={{ fontSize: '11px', color: 'rgba(26,19,5,0.72)' }}>{t('dashboard.signal')} <span style={{ color: '#1A1305', fontWeight: '600' }}>{signalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>}
+              {spotValue > 0 && <span style={{ fontSize: '11px', color: 'rgba(26,19,5,0.72)' }}>{t('dashboard.holdings')} <span style={{ color: '#1A1305', fontWeight: '600' }}>{spotValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>}
+              {(signalsLocked + futuresLocked) > 0 && <span style={{ fontSize: '11px', color: 'rgba(26,19,5,0.72)' }}>{t('dashboard.inTrades')} <span style={{ color: '#1A1305', fontWeight: '600' }}>{(signalsLocked + futuresLocked).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>}
             </div>
           )}
         </div>
@@ -296,7 +298,7 @@ const Dashboard = () => {
             borderRadius: '24px', pointerEvents: 'none',
           }} />
           <ArrowLeftRight size={14} style={{ position: 'relative' }} />
-          <span style={{ position: 'relative' }}>Transfer</span>
+          <span style={{ position: 'relative' }}>{t('dashboard.transfer')}</span>
         </Link>
       </div>
 
@@ -305,7 +307,7 @@ const Dashboard = () => {
         {QUICK_ACTIONS.map((action) => {
           const { SvgIcon } = action;
           return (
-            <Link key={action.label} to={action.to} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '7px', color: theme.text, textDecoration: 'none', flex: 1, minWidth: 0, ...(action.disabled ? { opacity: 0.4, pointerEvents: 'none' } : {}) }}>
+            <Link key={action.tkey} to={action.to} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '7px', color: theme.text, textDecoration: 'none', flex: 1, minWidth: 0, ...(action.disabled ? { opacity: 0.4, pointerEvents: 'none' } : {}) }}>
               <div style={{
                 width: '48px', height: '48px', borderRadius: '16px',
                 background: action.gradient,
@@ -323,7 +325,7 @@ const Dashboard = () => {
                 }}/>
                 <SvgIcon />
               </div>
-              <span style={{ fontSize: '10px', color: theme.subtext, fontWeight: '600', textAlign: 'center', lineHeight: 1.2, letterSpacing: '0.01em' }}>{action.label}</span>
+              <span style={{ fontSize: '10px', color: theme.subtext, fontWeight: '600', textAlign: 'center', lineHeight: 1.2, letterSpacing: '0.01em' }}>{t(action.tkey)}</span>
             </Link>
           );
         })}
@@ -341,7 +343,7 @@ const Dashboard = () => {
               <TrendingUp size={16} color={theme.up} />
             </div>
             <div>
-              <div style={{ fontSize: '11px', color: theme.faint }}>Gainers</div>
+              <div style={{ fontSize: '11px', color: theme.faint }}>{t('dashboard.gainers')}</div>
               <div style={{ fontSize: '16px', fontWeight: 'bold', color: theme.up }}>{stats.gainers}</div>
             </div>
           </div>
@@ -354,7 +356,7 @@ const Dashboard = () => {
               <TrendingDown size={16} color={theme.down} />
             </div>
             <div>
-              <div style={{ fontSize: '11px', color: theme.faint }}>Losers</div>
+              <div style={{ fontSize: '11px', color: theme.faint }}>{t('dashboard.losers')}</div>
               <div style={{ fontSize: '16px', fontWeight: 'bold', color: theme.down }}>{stats.losers}</div>
             </div>
           </div>
@@ -367,7 +369,7 @@ const Dashboard = () => {
               <BarChart3 size={16} color={theme.primary} />
             </div>
             <div>
-              <div style={{ fontSize: '11px', color: theme.faint }}>24h Vol</div>
+              <div style={{ fontSize: '11px', color: theme.faint }}>{t('dashboard.vol24h')}</div>
               <div style={{ fontSize: '16px', fontWeight: 'bold' }}>${fmtVolume(stats.totalVol)}</div>
             </div>
           </div>
@@ -376,24 +378,24 @@ const Dashboard = () => {
 
       {/* Search */}
       <div style={{ position: 'relative', marginBottom: '14px' }}>
-        <Search size={16} color={theme.faint} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
+        <Search size={16} color={theme.faint} style={{ position: 'absolute', [isRTL ? 'right' : 'left']: '14px', top: '50%', transform: 'translateY(-50%)' }} />
         <input
           type="text"
-          placeholder="Search coins"
+          placeholder={t('dashboard.searchCoins')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          style={{ width: '100%', padding: '12px 12px 12px 38px', borderRadius: '12px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.card, color: theme.text, fontSize: '14px', boxSizing: 'border-box', boxShadow: theme.shadow }}
+          style={{ width: '100%', padding: isRTL ? '12px 38px 12px 12px' : '12px 12px 12px 38px', borderRadius: '12px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.card, color: theme.text, fontSize: '14px', boxSizing: 'border-box', boxShadow: theme.shadow }}
         />
       </div>
 
       {/* All Markets */}
       <div style={{ backgroundColor: theme.card, borderRadius: '16px', padding: '6px 16px', border: `1px solid ${theme.cardBorder}`, boxShadow: theme.shadowElevated || theme.shadow, backdropFilter: theme.cardGlass || 'blur(16px)', WebkitBackdropFilter: theme.cardGlass || 'blur(16px)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0 6px' }}>
-          <h4 style={{ color: theme.subtext, margin: 0, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '1px' }}>All Markets</h4>
-          <Link to="/markets" style={{ fontSize: '12px', color: theme.primary, textDecoration: 'none', fontWeight: '600' }}>View all</Link>
+          <h4 style={{ color: theme.subtext, margin: 0, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '1px' }}>{t('dashboard.allMarkets')}</h4>
+          <Link to="/markets" style={{ fontSize: '12px', color: theme.primary, textDecoration: 'none', fontWeight: '600' }}>{t('common.viewAll')}</Link>
         </div>
 
-        {visibleCoins.length === 0 && <p style={{ color: theme.faint, fontSize: '13px', padding: '12px 0' }}>No coins match "{search}".</p>}
+        {visibleCoins.length === 0 && <p style={{ color: theme.faint, fontSize: '13px', padding: '12px 0' }}>{t('dashboard.noCoinsMatch', { q: search })}</p>}
 
         {visibleCoins.map((coin, i) => (
           <div
@@ -416,7 +418,7 @@ const Dashboard = () => {
                     ${fmtPrice(coin.live.price)}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end', marginTop: '2px' }}>
-                    <span style={{ color: theme.faint, fontSize: '11px' }}>Vol {fmtVolume(coin.live.volume)}</span>
+                    <span style={{ color: theme.faint, fontSize: '11px' }}>{t('dashboard.vol')} {fmtVolume(coin.live.volume)}</span>
                     <span style={{
                       color: coin.live.change >= 0 ? theme.up : theme.down,
                       fontSize: '12px', backgroundColor: coin.live.change >= 0 ? theme.upSoft : theme.downSoft,
@@ -427,7 +429,7 @@ const Dashboard = () => {
                   </div>
                 </>
               ) : (
-                <span style={{ color: theme.faint, fontSize: '13px' }}>Loading...</span>
+                <span style={{ color: theme.faint, fontSize: '13px' }}>{t('common.loading')}</span>
               )}
             </div>
           </div>
@@ -441,13 +443,13 @@ const Dashboard = () => {
             <style>{`@keyframes kynexSlideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`}</style>
             <div style={{ textAlign: 'center', marginBottom: '24px' }}>
               <div style={{ fontSize: '36px', marginBottom: '8px' }}>👋</div>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', color: theme.text, marginBottom: '6px' }}>Welcome to KYNEX</div>
-              <div style={{ fontSize: '13px', color: theme.subtext }}>Start trading in 3 simple steps</div>
+              <div style={{ fontSize: '20px', fontWeight: 'bold', color: theme.text, marginBottom: '6px' }}>{t('dashboard.welcome')}</div>
+              <div style={{ fontSize: '13px', color: theme.subtext }}>{t('dashboard.startIn3')}</div>
             </div>
             {[
-              { icon: '💰', title: 'Deposit Funds', desc: 'Add USDT via TRC20, ERC20 or BEP20', to: '/deposit' },
-              { icon: '📊', title: 'Start Trading', desc: 'Trade signals, spot, or futures', to: '/signals' },
-              { icon: '🏆', title: 'Invite & Earn', desc: 'Refer friends and earn referral rewards', to: '/invite' },
+              { icon: '💰', title: t('dashboard.depositFunds'), desc: t('dashboard.depositFundsDesc'), to: '/deposit' },
+              { icon: '📊', title: t('dashboard.startTrading'), desc: t('dashboard.startTradingDesc'), to: '/signals' },
+              { icon: '🏆', title: t('dashboard.inviteEarn'), desc: t('dashboard.inviteEarnDesc'), to: '/invite' },
             ].map((step) => (
               <div key={step.icon} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '12px', borderRadius: '14px', backgroundColor: theme.primarySoft, marginBottom: '10px' }}>
                 <div style={{ fontSize: '22px', flexShrink: 0 }}>{step.icon}</div>
@@ -458,10 +460,10 @@ const Dashboard = () => {
               </div>
             ))}
             <button onClick={() => { localStorage.setItem('kynex_onboarded', '1'); setShowOnboarding(false); navigate('/deposit'); }} style={{ width: '100%', padding: '15px', borderRadius: '14px', border: 'none', background: theme.primaryGradient, color: 'white', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer', marginTop: '16px', boxShadow: '0 4px 18px rgba(99,102,241,0.4)' }}>
-              Make First Deposit
+              {t('dashboard.makeFirstDeposit')}
             </button>
             <button onClick={() => { localStorage.setItem('kynex_onboarded', '1'); setShowOnboarding(false); }} style={{ width: '100%', padding: '12px', borderRadius: '14px', border: 'none', background: 'none', color: theme.faint, fontWeight: '600', fontSize: '13px', cursor: 'pointer', marginTop: '8px' }}>
-              Explore first
+              {t('dashboard.exploreFirst')}
             </button>
           </div>
         </div>

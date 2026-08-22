@@ -30,5 +30,51 @@
       "title": "Improved App Icon",
       "desc": "New adaptive icon that looks perfect on all Android launchers."
     }
-  ]
+  ],
+  "i18n": {
+    "ar": {
+      "tagline": "تطبيقك الآن محدَّث بالكامل!",
+      "message": "تحديث جديد متوفر! KYNEX v2.2.0 جاهز — اضغط أدناه للتنزيل.",
+      "features": [
+        { "title": "إصلاح الإشعارات الفورية", "desc": "احصل على إشعارات فورية حتى عندما يكون التطبيق في الخلفية — لن تفوتك أي رسالة بعد الآن." },
+        { "title": "قفل التطبيق (بيومتري)", "desc": "أمِّن تطبيقك ببصمة الإصبع أو فتح الوجه. فعّله من Settings > Security." },
+        { "title": "توقيت PKT على الرسوم البيانية", "desc": "تُعرض الآن جميع الرسوم البيانية وأوقات الإشارات بتوقيت باكستان الرسمي (UTC+5)." },
+        { "title": "تتبّع أوقات الإشارات", "desc": "اطّلع على أوقات الفتح والتسوية الدقيقة لجميع الإشارات النشطة والسابقة." },
+        { "title": "أيقونة تطبيق مُحسَّنة", "desc": "أيقونة تكيّفية جديدة تبدو مثالية على جميع مشغّلات Android." }
+      ]
+    },
+    "fr": {
+      "tagline": "Votre application est maintenant à jour !",
+      "message": "Nouvelle mise à jour disponible ! KYNEX v2.2.0 est prête — appuyez ci-dessous pour télécharger.",
+      "features": [
+        { "title": "Notifications push corrigées", "desc": "Recevez des notifications instantanées même lorsque l'application est en arrière-plan — ne manquez plus jamais un message." },
+        { "title": "Verrouillage de l'application (biométrique)", "desc": "Sécurisez votre application avec l'empreinte digitale ou la reconnaissance faciale. Activez-le depuis Settings > Security." },
+        { "title": "Fuseau horaire PKT sur les graphiques", "desc": "Tous les graphiques et horaires des signaux s'affichent désormais à l'heure standard du Pakistan (UTC+5)." },
+        { "title": "Suivi de l'heure des signaux", "desc": "Consultez les heures exactes d'ouverture et de règlement pour tous les signaux actifs et passés." },
+        { "title": "Icône d'application améliorée", "desc": "Nouvelle icône adaptative qui s'affiche parfaitement sur tous les lanceurs Android." }
+      ]
+    },
+    "sw": {
+      "tagline": "Programu yako sasa imesasishwa!",
+      "message": "Sasisho jipya linapatikana! KYNEX v2.2.0 iko tayari — gusa hapa chini ili kupakua.",
+      "features": [
+        { "title": "Arifa za Kusukumwa Zimerekebishwa", "desc": "Pokea arifa za papo hapo hata wakati programu iko nyuma — usikose ujumbe tena kamwe." },
+        { "title": "Kufunga Programu (Biometriki)", "desc": "Linda programu yako kwa alama ya kidole au kufungua kwa uso. Wezesha kutoka Settings > Security." },
+        { "title": "Saa za PKT kwenye Chati", "desc": "Chati zote na nyakati za ishara sasa zinaonyeshwa kwa Saa Rasmi za Pakistan (UTC+5)." },
+        { "title": "Ufuatiliaji wa Muda wa Ishara", "desc": "Ona nyakati kamili za kufungua na kukamilisha kwa ishara zote zinazoendelea na zilizopita." },
+        { "title": "Aikoni ya Programu Iliyoboreshwa", "desc": "Aikoni mpya inayojirekebisha inayoonekana kikamilifu kwenye vizinduzi vyote vya Android." }
+      ]
+    },
+    "pt": {
+      "tagline": "Seu aplicativo agora está atualizado!",
+      "message": "Nova atualização disponível! KYNEX v2.2.0 está pronta — toque abaixo para baixar.",
+      "features": [
+        { "title": "Notificações push corrigidas", "desc": "Receba notificações instantâneas mesmo quando o aplicativo estiver em segundo plano — nunca mais perca uma mensagem." },
+        { "title": "Bloqueio do aplicativo (biométrico)", "desc": "Proteja seu aplicativo com impressão digital ou desbloqueio facial. Ative em Settings > Security." },
+        { "title": "Fuso horário PKT nos gráficos", "desc": "Todos os gráficos e horários de sinais agora são exibidos no Horário Padrão do Paquistão (UTC+5)." },
+        { "title": "Rastreamento do horário dos sinais", "desc": "Veja os horários exatos de abertura e liquidação de todos os sinais ativos e passados." },
+        { "title": "Ícone do aplicativo aprimorado", "desc": "Novo ícone adaptável que fica perfeito em todos os inicializadores Android." }
+      ]
+    }
+  }
 }

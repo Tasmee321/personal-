@@ -11,3 +11,14 @@ export function applyLanguage(code) {
   document.documentElement.lang = lang.code;
   document.documentElement.dir = lang.dir;
 }
+
+// First-open language: honour the phone's language if we support it, else English.
+// navigator.language looks like "fr-FR" / "ar" / "pt-BR" — we key off the base subtag only.
+export function detectDeviceLang() {
+  try {
+    const raw = (navigator.languages && navigator.languages[0]) || navigator.language || 'en';
+    const base = String(raw).toLowerCase().split('-')[0];
+    return LANGUAGES.some(l => l.code === base) ? base : 'en';
+  } catch { return 'en'; }
+}
+

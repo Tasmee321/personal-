@@ -4,6 +4,7 @@ import { ArrowLeft, Zap, TrendingUp, Shield, Globe, Smartphone, RefreshCw, Wifi,
 import { QRCodeSVG } from 'qrcode.react';
 import { CoinIcon } from '../components/CoinIcons';
 import { useTheme } from '../ThemeContext';
+import { useLanguage } from '../LanguageContext';
 import { isAuthenticated } from '../utils/auth';
 
 const FloatingCoin = ({ symbol, size, top, left, right, bottom, delay, duration }) => (
@@ -18,6 +19,7 @@ const FloatingCoin = ({ symbol, size, top, left, right, bottom, delay, duration 
 
 const Download = () => {
   const { theme, mode, iconBadges } = useTheme();
+  const { t, isRTL } = useLanguage();
   const navigate = useNavigate();
   const appleBg = mode === 'dark' ? 'linear-gradient(135deg, #F8FAFC, #CBD5E1)' : 'linear-gradient(135deg, #555, #222)';
   const appleFg = mode === 'dark' ? '#0F172A' : 'white';
@@ -38,17 +40,17 @@ const Download = () => {
   }, []);
 
   const features = [
-    { icon: <Zap size={28} />, badge: iconBadges.amber, title: 'Lightning-fast transactions', desc: 'The KYNEX matching engine enables up to 100,000 transactions per second' },
-    { icon: <TrendingUp size={28} />, badge: iconBadges.purple, title: 'Turn costs into investments', desc: 'Access the most popular crypto perpetual future contracts, as well as spot crypto' },
-    { icon: <Shield size={28} />, badge: iconBadges.green, title: 'Security you can trust', desc: 'Your assets are protected with industry-leading encryption and multi-layer security' },
-    { icon: <Globe size={28} />, badge: iconBadges.blue, title: 'Trade anytime, anywhere', desc: 'Our platform is available 24/7 across all devices with real-time market data' },
+    { icon: <Zap size={28} />, badge: iconBadges.amber, title: t('download.feat1Title'), desc: t('download.feat1Desc') },
+    { icon: <TrendingUp size={28} />, badge: iconBadges.purple, title: t('download.feat2Title'), desc: t('download.feat2Desc') },
+    { icon: <Shield size={28} />, badge: iconBadges.green, title: t('download.feat3Title'), desc: t('download.feat3Desc') },
+    { icon: <Globe size={28} />, badge: iconBadges.blue, title: t('download.feat4Title'), desc: t('download.feat4Desc') },
   ];
 
   const appBenefits = [
-    { icon: <RefreshCw size={18} />, title: 'Always Up-to-Date', desc: 'App updates automatically with the platform — no manual updates needed' },
-    { icon: <Wifi size={18} />, title: 'Live Web Technology', desc: 'Built as a smart web app that loads the latest version every time you open it' },
-    { icon: <HardDrive size={18} />, title: 'Lightweight (~3 MB)', desc: 'Small because the app is a smart launcher — all features load from our secure servers' },
-    { icon: <Smartphone size={18} />, title: 'Native App Feel', desc: 'Fullscreen experience with no browser bar — looks and feels like a native app' },
+    { icon: <RefreshCw size={18} />, title: t('download.benefit1Title'), desc: t('download.benefit1Desc') },
+    { icon: <Wifi size={18} />, title: t('download.benefit2Title'), desc: t('download.benefit2Desc') },
+    { icon: <HardDrive size={18} />, title: t('download.benefit3Title'), desc: t('download.benefit3Desc') },
+    { icon: <Smartphone size={18} />, title: t('download.benefit4Title'), desc: t('download.benefit4Desc') },
   ];
 
   return (
@@ -141,10 +143,10 @@ const Download = () => {
         </div>
 
         <h1 style={{ fontSize: '32px', fontWeight: 800, margin: '0 0 10px', letterSpacing: '-0.5px', position: 'relative', zIndex: 2 }}>
-          Get KYNEX App
+          {t('download.heroTitle')}
         </h1>
         <p style={{ color: theme.subtext, fontSize: '14px', margin: '0 0 36px', position: 'relative', zIndex: 2, maxWidth: 360 }}>
-          Trade crypto on the go with our fast, secure & always up-to-date application
+          {t('download.heroSubtitle')}
         </p>
       </div>
 
@@ -168,15 +170,15 @@ const Download = () => {
             }}>
               <svg width="26" height="26" viewBox="0 0 24 24" fill="white"><path d="M17.523 2.237a.625.625 0 0 0-.803.368L15.482 6H8.518L7.28 2.605a.625.625 0 1 0-1.17.435L7.24 6H4.625a.625.625 0 0 0 0 1.25h.838L7.1 17.563A2.625 2.625 0 0 0 9.69 19.75h4.62a2.625 2.625 0 0 0 2.59-2.188L18.537 7.25h.838a.625.625 0 0 0 0-1.25H16.76l1.13-2.96a.625.625 0 0 0-.368-.803z"/></svg>
             </div>
-            <h3 style={{ margin: '0 0 4px', fontSize: '16px', fontWeight: 700 }}>Android</h3>
-            <p style={{ margin: '0 0 6px', fontSize: '11px', color: theme.faint }}>APK Download</p>
+            <h3 style={{ margin: '0 0 4px', fontSize: '16px', fontWeight: 700 }}>{t('download.android')}</h3>
+            <p style={{ margin: '0 0 6px', fontSize: '11px', color: theme.faint }}>{t('download.apkDownload')}</p>
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 4,
               fontSize: '11px', color: theme.up, fontWeight: 600,
               backgroundColor: theme.upSoft, padding: '3px 10px', borderRadius: 20,
               marginBottom: 14,
             }}>
-              <CheckCircle size={12} /> v{apkInfo.version_name}
+              <CheckCircle size={12} /> {t('download.versionLabel', { version: apkInfo.version_name })}
             </div>
             <button
               onClick={() => {
@@ -190,7 +192,7 @@ const Download = () => {
                 textDecoration: 'none', boxShadow: '0 4px 16px rgba(61,220,132,0.3)',
               }}
             >
-              <DownloadIcon size={16} /> Download
+              <DownloadIcon size={16} /> {t('download.downloadBtn')}
             </button>
           </div>
 
@@ -210,15 +212,15 @@ const Download = () => {
             }}>
               <svg width="24" height="24" viewBox="0 0 24 24" fill={appleFg}><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
             </div>
-            <h3 style={{ margin: '0 0 4px', fontSize: '16px', fontWeight: 700 }}>iPhone</h3>
-            <p style={{ margin: '0 0 6px', fontSize: '11px', color: theme.faint }}>Add to Home Screen</p>
+            <h3 style={{ margin: '0 0 4px', fontSize: '16px', fontWeight: 700 }}>{t('download.iphone')}</h3>
+            <p style={{ margin: '0 0 6px', fontSize: '11px', color: theme.faint }}>{t('download.addToHomeScreen')}</p>
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 4,
               fontSize: '11px', color: theme.primary, fontWeight: 600,
               backgroundColor: theme.primarySoft, padding: '3px 10px', borderRadius: 20,
               marginBottom: 14,
             }}>
-              <Smartphone size={12} /> No download needed
+              <Smartphone size={12} /> {t('download.noDownloadNeeded')}
             </div>
             <button
               onClick={() => setShowIosGuide(true)}
@@ -230,7 +232,7 @@ const Download = () => {
                 boxShadow: appleShadow,
               }}
             >
-              View Guide
+              {t('download.viewGuide')}
             </button>
           </div>
         </div>
@@ -244,10 +246,10 @@ const Download = () => {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
             <RefreshCw size={16} style={{ color: theme.brand }} />
-            <span style={{ fontWeight: 700, fontSize: '14px' }}>Why is the app only 3 MB?</span>
+            <span style={{ fontWeight: 700, fontSize: '14px' }}>{t('download.whySmallTitle')}</span>
           </div>
           <p style={{ margin: '0 0 14px', fontSize: '12px', color: theme.subtext, lineHeight: 1.7 }}>
-            KYNEX is a <strong style={{ color: theme.text }}>smart web application</strong> — the app acts as a secure launcher that connects directly to our servers. All features, data, and updates load in real-time from the cloud.
+            {t('download.smartAppPart1')} <strong style={{ color: theme.text }}>{t('download.smartAppBold')}</strong> {t('download.smartAppPart2')}
           </p>
           <div className="dl-benefits-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             {appBenefits.map((b, i) => (
@@ -292,7 +294,7 @@ const Download = () => {
             />
           </div>
           <p style={{ color: theme.faint, fontSize: '12px', margin: 0 }}>
-            Scan to open KYNEX on your phone
+            {t('download.scanToOpen')}
           </p>
         </div>
       </div>
@@ -335,10 +337,10 @@ const Download = () => {
             boxShadow: '0 6px 24px rgba(59,130,246,0.35)',
           }}
         >
-          Open Web App
+          {t('download.openWebApp')}
         </button>
         <p style={{ textAlign: 'center', color: theme.faint, fontSize: '12px', marginTop: 12, marginBottom: 0 }}>
-          No install needed — works on any device with a browser
+          {t('download.noInstallNeeded')}
         </p>
       </div>
 
@@ -357,20 +359,20 @@ const Download = () => {
             maxWidth: '400px', width: '100%', padding: '28px 24px', maxHeight: '80vh', overflowY: 'auto',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: theme.text }}>Install on iPhone</h3>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: theme.text }}>{t('download.installOnIphone')}</h3>
               <button onClick={() => setShowIosGuide(false)} style={{ background: 'none', border: 'none', color: theme.faint, cursor: 'pointer', fontSize: '22px', padding: 0, lineHeight: 1 }}>×</button>
             </div>
 
             <p style={{ color: theme.subtext, fontSize: '13px', marginBottom: '20px', lineHeight: 1.6 }}>
-              KYNEX works as a full-screen app on iPhone — no App Store needed. Just follow these steps:
+              {t('download.iosIntro')}
             </p>
 
             {[
-              { step: 1, title: 'Open in Safari', desc: 'Open kynex.site in Safari browser (not Chrome or other browsers).', icon: <Globe size={16} /> },
-              { step: 2, title: 'Tap the Share button', desc: 'Tap the Share icon (square with arrow pointing up) at the bottom of Safari.', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> },
-              { step: 3, title: 'Add to Home Screen', desc: 'Scroll down in the share menu and tap "Add to Home Screen".', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg> },
-              { step: 4, title: 'Confirm & Add', desc: 'Keep the name "KYNEX" and tap "Add" in the top right corner.', icon: <CheckCircle size={16} /> },
-              { step: 5, title: 'Done!', desc: 'KYNEX icon appears on your home screen. Open it for a full-screen app experience.', icon: <Smartphone size={16} /> },
+              { step: 1, title: t('download.iosStep1Title'), desc: t('download.iosStep1Desc'), icon: <Globe size={16} /> },
+              { step: 2, title: t('download.iosStep2Title'), desc: t('download.iosStep2Desc'), icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> },
+              { step: 3, title: t('download.addToHomeScreen'), desc: t('download.iosStep3Desc'), icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg> },
+              { step: 4, title: t('download.iosStep4Title'), desc: t('download.iosStep4Desc'), icon: <CheckCircle size={16} /> },
+              { step: 5, title: t('download.iosStep5Title'), desc: t('download.iosStep5Desc'), icon: <Smartphone size={16} /> },
             ].map(s => (
               <div key={s.step} style={{ display: 'flex', gap: '14px', marginBottom: '16px' }}>
                 <div style={{
@@ -381,7 +383,7 @@ const Download = () => {
                 }}>{s.icon}</div>
                 <div>
                   <div style={{ fontWeight: '700', fontSize: '14px', color: theme.text, marginBottom: '2px' }}>
-                    <span style={{ color: theme.faint, marginRight: 6, fontSize: '12px' }}>Step {s.step}</span>
+                    <span style={{ color: theme.faint, [isRTL ? 'marginLeft' : 'marginRight']: 6, fontSize: '12px' }}>{t('download.stepLabel', { step: s.step })}</span>
                     {s.title}
                   </div>
                   <div style={{ fontSize: '12px', color: theme.subtext, lineHeight: 1.5 }}>{s.desc}</div>
@@ -395,7 +397,7 @@ const Download = () => {
               color: 'white', fontWeight: 700, fontSize: '15px', cursor: 'pointer',
               marginTop: '8px', boxShadow: '0 6px 18px rgba(59,130,246,0.3)',
             }}>
-              Got it
+              {t('download.gotIt')}
             </button>
           </div>
         </div>

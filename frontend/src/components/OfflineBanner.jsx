@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useTheme } from '../ThemeContext';
+import { useLanguage } from '../LanguageContext';
 
 // Slim fixed banner: shows while the device is offline, and "Back online" for 2s on reconnect.
 // On a trading app, stale prices/balances shown as if live are dangerous — this makes it obvious.
 export default function OfflineBanner() {
   const { theme } = useTheme();
+  const { t } = useLanguage();
   const [offline, setOffline] = useState(typeof navigator !== 'undefined' ? !navigator.onLine : false);
   const [justBack, setJustBack] = useState(false);
 
@@ -32,7 +34,7 @@ export default function OfflineBanner() {
       backgroundColor: bg, boxShadow: theme.shadow,
       animation: 'kynexBannerIn 0.25s ease-out',
     }}>
-      {offline ? '⚠ You are offline — prices and balances may be out of date' : '✓ Back online'}
+      {offline ? t('misc.offline') : t('misc.backOnline')}
       <style>{`@keyframes kynexBannerIn { from { transform: translateY(-100%) } to { transform: translateY(0) } }`}</style>
     </div>
   );

@@ -5,6 +5,7 @@ import BottomNav from '../components/BottomNav';
 import { CoinIcon } from '../components/CoinIcons';
 import { getToken } from '../utils/auth';
 import { useTheme } from '../ThemeContext';
+import { useLanguage } from '../LanguageContext';
 import ALL_COINS, { buildWsStreamUrl } from '../config/coins';
 import { API_URL } from '../config';
 const LEVERAGE_OPTIONS = [1, 5, 10, 20, 50];
@@ -45,7 +46,7 @@ function glassCard(theme) {
   };
 }
 
-const RiskWarningModal = ({ theme, onAccept, onCancel }) => (
+const RiskWarningModal = ({ theme, onAccept, onCancel, t }) => (
   <div style={{
     position: 'fixed', inset: 0, zIndex: 9999,
     backgroundColor: 'rgba(0,0,0,0.65)',
@@ -67,16 +68,16 @@ const RiskWarningModal = ({ theme, onAccept, onCancel }) => (
         <AlertTriangle size={28} color="white" />
       </div>
       <h3 style={{ margin: '0 0 12px', fontSize: '18px', fontWeight: 700, color: theme.text }}>
-        Risk Notice
+        {t('trade.riskTitle')}
       </h3>
       <p style={{ color: theme.down, fontSize: '13px', lineHeight: 1.6, margin: '0 0 8px', fontWeight: 'bold' }}>
-        You may lose your assets. KYNEX is not responsible for any losses incurred from trading.
+        {t('trade.riskLose')}
       </p>
       <p style={{ color: theme.subtext, fontSize: '13px', lineHeight: 1.6, margin: '0 0 8px' }}>
-        Trading outside of admin-approved signals carries a 20% risk fee that is automatically deducted from your balance.
+        {t('trade.riskFee')}
       </p>
       <p style={{ color: theme.subtext, fontSize: '13px', lineHeight: 1.6, margin: '0 0 22px' }}>
-        By proceeding, you acknowledge you are trading at your own risk and accept full responsibility for any outcomes.
+        {t('trade.riskAck')}
       </p>
       <div style={{ display: 'flex', gap: '12px' }}>
         <button onClick={onCancel} style={{
@@ -85,7 +86,7 @@ const RiskWarningModal = ({ theme, onAccept, onCancel }) => (
           backgroundColor: 'transparent', color: theme.subtext,
           fontWeight: 600, fontSize: '14px', cursor: 'pointer',
         }}>
-          Cancel
+          {t('common.cancel')}
         </button>
         <button onClick={onAccept} style={{
           flex: 1, padding: '14px', borderRadius: '12px', border: 'none',
@@ -93,7 +94,7 @@ const RiskWarningModal = ({ theme, onAccept, onCancel }) => (
           color: 'white', fontWeight: 700, fontSize: '14px', cursor: 'pointer',
           boxShadow: '0 6px 18px rgba(59,130,246,0.3)',
         }}>
-          I Understand
+          {t('trade.iUnderstand')}
         </button>
       </div>
     </div>
@@ -104,6 +105,7 @@ const CoinPicker = ({ theme, coins, livePrices, selected, onSelect }) => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const ref = useRef(null);
+  const { t, isRTL } = useLanguage();
 
   useEffect(() => {
     if (!open) return undefined;
@@ -149,27 +151,27 @@ const CoinPicker = ({ theme, coins, livePrices, selected, onSelect }) => {
           ...glassCard(theme), padding: '8px', maxHeight: '320px', overflowY: 'auto',
         }}>
           <div style={{ position: 'relative', marginBottom: '8px' }}>
-            <Search size={14} color={theme.faint} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
+            <Search size={14} color={theme.faint} style={{ position: 'absolute', [isRTL ? 'right' : 'left']: '10px', top: '50%', transform: 'translateY(-50%)' }} />
             <input
               autoFocus
               type="text"
-              placeholder="Search coin..."
+              placeholder={t('trade.searchCoin')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               style={{
-                width: '100%', padding: '10px 10px 10px 32px', borderRadius: '10px',
+                width: '100%', padding: isRTL ? '10px 32px 10px 10px' : '10px 10px 10px 32px', borderRadius: '10px',
                 border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg,
                 color: theme.text, fontSize: '13px', boxSizing: 'border-box', outline: 'none',
               }}
             />
             {query && (
-              <button onClick={() => setQuery('')} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px', display: 'flex' }}>
+              <button onClick={() => setQuery('')} style={{ position: 'absolute', [isRTL ? 'left' : 'right']: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px', display: 'flex' }}>
                 <X size={14} color={theme.faint} />
               </button>
             )}
           </div>
 
-          {filtered.length === 0 && <p style={{ color: theme.faint, fontSize: '12px', textAlign: 'center', margin: '12px 0' }}>No results</p>}
+          {filtered.length === 0 && <p style={{ color: theme.faint, fontSize: '12px', textAlign: 'center', margin: '12px 0' }}>{t('empty.results')}</p>}
 
           {filtered.map((coin) => {
             const cl = livePrices[coin.symbol];
@@ -209,6 +211,7 @@ const CoinPicker = ({ theme, coins, livePrices, selected, onSelect }) => {
 
 const Trade = () => {
   const { theme, mode } = useTheme();
+  const { t, isRTL } = useLanguage();
   const location = useLocation();
   const navigate = useNavigate();
   const [riskAccepted, setRiskAccepted] = useState(() => sessionStorage.getItem('kynex_risk_ok') === '1');
@@ -343,8 +346,8 @@ const Trade = () => {
           c = { time: Math.floor(k.t / 1000) + PKT_OFFSET_SEC, open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c), volume: parseFloat(k.v) || 0 };
           lastRawCandle = c;
         } else if (data.e === 'aggTrade') {
-          const t = Number(data.T || data.E || Date.now());
-          const bucket = Math.floor(t / 1000 / tfSec) * tfSec + PKT_OFFSET_SEC;
+          const tms = Number(data.T || data.E || Date.now());
+          const bucket = Math.floor(tms / 1000 / tfSec) * tfSec + PKT_OFFSET_SEC;
           const merged = mergeTradeTick(lastRawCandle, parseFloat(data.p), bucket, parseFloat(data.q));
           if (!merged) return;
           lastRawCandle = merged;
@@ -391,7 +394,7 @@ const Trade = () => {
     try {
       const res = await fetch(`${API_URL}${url}`, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Request failed.');
+      if (!res.ok) throw new Error(data.error || t('trade.requestFailed'));
       if (data.balance !== undefined) setBalance(data.balance);
       if (data.holdings) setHoldings(data.holdings);
       if (data.futures) setFutures(data.futures);
@@ -406,21 +409,21 @@ const Trade = () => {
 
   const handleBuy = async () => {
     const amt = Number(buyAmount);
-    if (!amt || amt <= 0) return setError('Enter an amount greater than 0.');
+    if (!amt || amt <= 0) return setError(t('trade.enterAmountGt0'));
     const ok = await runAction('/api/real/spot/buy', { pair: selectedCoin.pair, usdtAmount: amt });
     if (ok) setBuyAmount('');
   };
 
   const handleSell = async () => {
     const qty = Number(sellQty);
-    if (!qty || qty <= 0) return setError('Enter a quantity greater than 0.');
+    if (!qty || qty <= 0) return setError(t('trade.enterQtyGt0'));
     const ok = await runAction('/api/real/spot/sell', { pair: selectedCoin.pair, quantity: qty });
     if (ok) setSellQty('');
   };
 
   const openFutures = async (direction) => {
     const m = Number(margin);
-    if (!m || m <= 0) return setError('Enter a margin amount greater than 0.');
+    if (!m || m <= 0) return setError(t('trade.enterMarginGt0'));
     const ok = await runAction('/api/real/futures/open', { pair: selectedCoin.pair, direction, margin: m, leverage });
     if (ok) setMargin('');
   };
@@ -448,7 +451,7 @@ const Trade = () => {
   return (
     <div style={{ padding: '16px', paddingBottom: '90px', color: theme.text, backgroundColor: theme.bg, minHeight: '100vh' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-        <h3 style={{ margin: 0 }}>Trade</h3>
+        <h3 style={{ margin: 0 }}>{t('nav.trade')}</h3>
         <Link to="/settings" style={{ color: theme.subtext, display: 'flex' }}><Settings size={20} /></Link>
       </div>
 
@@ -481,16 +484,16 @@ const Trade = () => {
       {/* Spot / Futures tabs */}
       <div style={{ display: 'flex', borderRadius: '12px', overflow: 'hidden', marginBottom: '16px', border: `1px solid ${theme.cardBorder}` }}>
         <button onClick={() => setTab('spot')} style={{ flex: 1, padding: '12px', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', backgroundColor: tab === 'spot' ? theme.primarySoft : theme.card, color: tab === 'spot' ? theme.primary : theme.subtext }}>
-          Spot
+          {t('trade.spot')}
         </button>
         <button onClick={() => setTab('futures')} style={{ flex: 1, padding: '12px', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', backgroundColor: tab === 'futures' ? theme.primarySoft : theme.card, color: tab === 'futures' ? theme.primary : theme.subtext }}>
-          Futures
+          {t('trade.futures')}
         </button>
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', color: theme.subtext, fontSize: '12px', marginBottom: '12px' }}>
-        <span>Available: <b style={{ color: theme.text }}>{balance === null ? '...' : fmt(balance)} USDT</b></span>
-        <span>Holdings: <b style={{ color: theme.text }}>{fmt(heldQty, 6)} {selectedCoin.short}</b></span>
+        <span>{t('field.available')}: <b style={{ color: theme.text }}>{balance === null ? '...' : fmt(balance)} USDT</b></span>
+        <span>{t('dashboard.holdings')}: <b style={{ color: theme.text }}>{fmt(heldQty, 6)} {selectedCoin.short}</b></span>
       </div>
 
       {error && (
@@ -500,23 +503,23 @@ const Trade = () => {
       {tab === 'spot' ? (
         <div style={{ ...glassCard(theme), padding: '16px' }}>
           <div style={{ marginBottom: '14px' }}>
-            <label style={{ fontSize: '12px', color: theme.subtext, marginBottom: '6px', display: 'block' }}>Spend (USDT)</label>
+            <label style={{ fontSize: '12px', color: theme.subtext, marginBottom: '6px', display: 'block' }}>{t('trade.spendUsdt')}</label>
             <div style={{ display: 'flex', gap: '8px' }}>
               <input type="number" min="0" value={buyAmount} onChange={(e) => setBuyAmount(e.target.value)} placeholder="0.00"
                 style={{ flex: 1, padding: '12px', borderRadius: '10px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg, color: theme.text, fontSize: '14px', boxSizing: 'border-box' }} />
               <button onClick={handleBuy} disabled={busy} style={{ padding: '0 20px', borderRadius: '10px', border: 'none', background: theme.upGradient || theme.up, color: 'white', fontWeight: 'bold', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1, boxShadow: '0 4px 12px rgba(16,185,129,0.25)' }}>
-                Buy {selectedCoin.short}
+                {t('trade.buy')} {selectedCoin.short}
               </button>
             </div>
           </div>
 
           <div>
-            <label style={{ fontSize: '12px', color: theme.subtext, marginBottom: '6px', display: 'block' }}>Sell ({selectedCoin.short})</label>
+            <label style={{ fontSize: '12px', color: theme.subtext, marginBottom: '6px', display: 'block' }}>{t('trade.sell')} ({selectedCoin.short})</label>
             <div style={{ display: 'flex', gap: '8px' }}>
               <input type="number" min="0" value={sellQty} onChange={(e) => setSellQty(e.target.value)} placeholder="0.000000"
                 style={{ flex: 1, padding: '12px', borderRadius: '10px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg, color: theme.text, fontSize: '14px', boxSizing: 'border-box' }} />
               <button onClick={handleSell} disabled={busy} style={{ padding: '0 20px', borderRadius: '10px', border: 'none', background: theme.downGradient || theme.down, color: 'white', fontWeight: 'bold', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1, boxShadow: '0 4px 12px rgba(239,68,68,0.25)' }}>
-                Sell {selectedCoin.short}
+                {t('trade.sell')} {selectedCoin.short}
               </button>
             </div>
           </div>
@@ -524,7 +527,7 @@ const Trade = () => {
       ) : (
         <>
           <div style={{ ...glassCard(theme), padding: '16px', marginBottom: '16px' }}>
-            <div style={{ color: theme.subtext, fontSize: '12px', marginBottom: '8px' }}>Leverage</div>
+            <div style={{ color: theme.subtext, fontSize: '12px', marginBottom: '8px' }}>{t('trade.leverage')}</div>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
               {LEVERAGE_OPTIONS.map((lv) => (
                 <button key={lv} onClick={() => setLeverage(lv)} style={{
@@ -538,22 +541,22 @@ const Trade = () => {
               ))}
             </div>
 
-            <label style={{ fontSize: '12px', color: theme.subtext, marginBottom: '6px', display: 'block' }}>Margin (USDT)</label>
+            <label style={{ fontSize: '12px', color: theme.subtext, marginBottom: '6px', display: 'block' }}>{t('trade.marginUsdt')}</label>
             <input type="number" min="0" value={margin} onChange={(e) => setMargin(e.target.value)} placeholder="0.00"
               style={{ width: '100%', padding: '12px', borderRadius: '10px', border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg, color: theme.text, fontSize: '14px', boxSizing: 'border-box', marginBottom: '14px' }} />
 
             <div style={{ display: 'flex', gap: '10px' }}>
               <button onClick={() => openFutures('long')} disabled={busy} style={{ flex: 1, background: theme.upGradient || theme.up, color: 'white', border: 'none', padding: '14px', borderRadius: '10px', fontWeight: 'bold', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1, boxShadow: '0 4px 12px rgba(16,185,129,0.25)' }}>
-                Long
+                {t('trade.long')}
               </button>
               <button onClick={() => openFutures('short')} disabled={busy} style={{ flex: 1, background: theme.downGradient || theme.down, color: 'white', border: 'none', padding: '14px', borderRadius: '10px', fontWeight: 'bold', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1, boxShadow: '0 4px 12px rgba(239,68,68,0.25)' }}>
-                Short
+                {t('trade.short')}
               </button>
             </div>
           </div>
 
-          <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 'bold', color: theme.subtext }}>Open Positions</div>
-          {openFuturesPositions.length === 0 && <p style={{ color: theme.faint, fontSize: '13px' }}>No open positions.</p>}
+          <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 'bold', color: theme.subtext }}>{t('trade.openPositions')}</div>
+          {openFuturesPositions.length === 0 && <p style={{ color: theme.faint, fontSize: '13px' }}>{t('trade.noOpenPositions')}</p>}
           {openFuturesPositions.map((p) => {
             const coin = COINS.find((c) => c.pair === p.pair);
             const live = coin ? livePrices[coin.symbol] : null;
@@ -567,13 +570,13 @@ const Trade = () => {
                   </span>
                   <span style={{ color: p.direction === 'long' ? theme.up : theme.down, fontWeight: 'bold' }}>{p.direction.toUpperCase()}</span>
                 </div>
-                <div style={{ color: theme.subtext, fontSize: '12px', marginBottom: '8px' }}>Margin: {fmt(p.margin)} USDT · Entry: {fmt(p.entryPrice)}</div>
+                <div style={{ color: theme.subtext, fontSize: '12px', marginBottom: '8px' }}>{t('trade.marginEntry', { margin: fmt(p.margin), entry: fmt(p.entryPrice) })}</div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontWeight: 'bold', color: floatingPnl === null ? theme.faint : floatingPnl >= 0 ? theme.up : theme.down }}>
-                    {floatingPnl === null ? 'Switch to this pair for live PnL' : `${floatingPnl >= 0 ? '+' : ''}${fmt(floatingPnl)} USDT`}
+                    {floatingPnl === null ? t('trade.switchForPnl') : `${floatingPnl >= 0 ? '+' : ''}${fmt(floatingPnl)} USDT`}
                   </span>
                   <button onClick={() => closeFutures(p.id)} disabled={busy} style={{ padding: '8px 16px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, backgroundColor: 'transparent', color: theme.text, fontWeight: 'bold', cursor: busy ? 'not-allowed' : 'pointer', fontSize: '12px' }}>
-                    Close
+                    {t('common.close')}
                   </button>
                 </div>
               </div>
@@ -582,7 +585,7 @@ const Trade = () => {
 
           {closedFuturesPositions.length > 0 && (
             <>
-              <div style={{ margin: '18px 0 8px', fontSize: '13px', fontWeight: 'bold', color: theme.subtext }}>History</div>
+              <div style={{ margin: '18px 0 8px', fontSize: '13px', fontWeight: 'bold', color: theme.subtext }}>{t('common.history')}</div>
               {closedFuturesPositions.map((p) => (
                 <div key={p.id} style={{ ...glassCard(theme), padding: '14px', marginBottom: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
@@ -592,7 +595,7 @@ const Trade = () => {
                     </span>
                     <span style={{ color: p.pnl >= 0 ? theme.up : theme.down, fontWeight: 'bold' }}>{p.pnl >= 0 ? '+' : ''}{fmt(p.pnl)} USDT</span>
                   </div>
-                  <div style={{ color: theme.faint, fontSize: '11px' }}>Entry {fmt(p.entryPrice)} → Close {fmt(p.closePrice)}</div>
+                  <div style={{ color: theme.faint, fontSize: '11px' }}>{t('trade.entryClose', { entry: fmt(p.entryPrice), close: fmt(p.closePrice) })}</div>
                 </div>
               ))}
             </>

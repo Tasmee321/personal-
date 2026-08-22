@@ -2,18 +2,20 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Home, LineChart, ArrowLeftRight, Zap, Wallet } from 'lucide-react';
 import { useTheme } from '../ThemeContext';
+import { useLanguage } from '../LanguageContext';
 
 const NAV_ITEMS = [
-  { path: '/dashboard', label: 'Home',    icon: Home,           badgeKey: 'blue' },
-  { path: '/markets',   label: 'Markets', icon: LineChart,      badgeKey: 'purple' },
-  { path: '/signals',   label: 'Signals', icon: Zap,            badgeKey: 'purple', center: true },
-  { path: '/trade',     label: 'Trade',   icon: ArrowLeftRight, badgeKey: 'green' },
-  { path: '/assets',    label: 'Assets',  icon: Wallet,         badgeKey: 'amber' },
+  { path: '/dashboard', label: 'Home',    tkey: 'nav.home',    icon: Home,           badgeKey: 'blue' },
+  { path: '/markets',   label: 'Markets', tkey: 'nav.markets', icon: LineChart,      badgeKey: 'purple' },
+  { path: '/signals',   label: 'Signals', tkey: 'nav.signals', icon: Zap,            badgeKey: 'purple', center: true },
+  { path: '/trade',     label: 'Trade',   tkey: 'nav.trade',   icon: ArrowLeftRight, badgeKey: 'green' },
+  { path: '/assets',    label: 'Assets',  tkey: 'nav.assets',  icon: Wallet,         badgeKey: 'amber' },
 ];
 
 const BottomNav = () => {
   const location = useLocation();
   const { theme, iconBadges } = useTheme();
+  const { t } = useLanguage();
 
   return (
     <div data-kynex-bottomnav="1" style={{
@@ -50,7 +52,7 @@ const BottomNav = () => {
                 <Icon size={22} color="white" />
               </div>
               <span style={{ fontSize: '10px', marginTop: '4px', fontWeight: 'bold', color: isActive ? iconBadges.purple.fg : theme.faint }}>
-                {item.label}
+                {t(item.tkey)}
               </span>
             </Link>
           );
@@ -68,7 +70,7 @@ const BottomNav = () => {
               <Icon size={20} color={isActive ? badge.fg : theme.faint} />
             </div>
             <span style={{ fontSize: '10px', fontWeight: isActive ? '700' : '500', color: isActive ? badge.fg : theme.faint }}>
-              {item.label}
+              {t(item.tkey)}
             </span>
           </Link>
         );

@@ -13,6 +13,7 @@ import { getToken } from '../utils/auth';
 import { hapticTick, hapticTap, hapticCommit, hapticWin, hapticLoss, hapticError } from '../utils/haptics';
 import { scaleVolume } from '../utils/volumeDisplay';
 import { useTheme } from '../ThemeContext';
+import { useLanguage } from '../LanguageContext';
 import ALL_COINS, { buildWsStreamUrl } from '../config/coins';
 import { API_URL } from '../config';
 const MARKET_DATA_DELAY_MS = 0;
@@ -49,6 +50,7 @@ const CoinSelector = ({ theme, coins, livePrices, selected, onSelect }) => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const ref = useRef(null);
+  const { t, isRTL } = useLanguage();
 
   useEffect(() => {
     if (!open) return undefined;
@@ -77,10 +79,10 @@ const CoinSelector = ({ theme, coins, livePrices, selected, onSelect }) => {
         }}
       >
         <CoinIcon symbol={selected.short} size={28} />
-        <div style={{ flex: 1, textAlign: 'left' }}>
+        <div style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}>
           <span style={{ fontWeight: 'bold', fontSize: '16px', color: theme.text }}>{selected.pair}</span>
           {live && (
-            <span style={{ marginLeft: '10px', fontWeight: 'bold', color: live.change >= 0 ? theme.up : theme.down }}>
+            <span style={{ [isRTL ? 'marginRight' : 'marginLeft']: '10px', fontWeight: 'bold', color: live.change >= 0 ? theme.up : theme.down }}>
               ${fmtUsd(live.price)} <span style={{ fontSize: '12px' }}>({live.change >= 0 ? '+' : ''}{live.change.toFixed(2)}%)</span>
             </span>
           )}
@@ -94,27 +96,27 @@ const CoinSelector = ({ theme, coins, livePrices, selected, onSelect }) => {
           ...glassCard(theme), padding: '8px', maxHeight: '320px', overflowY: 'auto',
         }}>
           <div style={{ position: 'relative', marginBottom: '8px' }}>
-            <Search size={14} color={theme.faint} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
+            <Search size={14} color={theme.faint} style={{ position: 'absolute', [isRTL ? 'right' : 'left']: '10px', top: '50%', transform: 'translateY(-50%)' }} />
             <input
               autoFocus
               type="text"
-              placeholder="Search coin..."
+              placeholder={t('trade.searchCoin')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               style={{
-                width: '100%', padding: '10px 10px 10px 32px', borderRadius: '10px',
+                width: '100%', padding: isRTL ? '10px 32px 10px 10px' : '10px 10px 10px 32px', borderRadius: '10px',
                 border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg,
                 color: theme.text, fontSize: '13px', boxSizing: 'border-box', outline: 'none',
               }}
             />
             {query && (
-              <button onClick={() => setQuery('')} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px', display: 'flex' }}>
+              <button onClick={() => setQuery('')} style={{ position: 'absolute', [isRTL ? 'left' : 'right']: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px', display: 'flex' }}>
                 <X size={14} color={theme.faint} />
               </button>
             )}
           </div>
 
-          {filtered.length === 0 && <p style={{ color: theme.faint, fontSize: '12px', textAlign: 'center', margin: '12px 0' }}>No results</p>}
+          {filtered.length === 0 && <p style={{ color: theme.faint, fontSize: '12px', textAlign: 'center', margin: '12px 0' }}>{t('empty.results')}</p>}
 
           {filtered.map((coin) => {
             const cl = livePrices[coin.symbol];
@@ -125,17 +127,17 @@ const CoinSelector = ({ theme, coins, livePrices, selected, onSelect }) => {
                 onClick={() => { onSelect(coin); setOpen(false); }}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '10px',
-                  borderRadius: '10px', border: 'none', cursor: 'pointer', textAlign: 'left',
+                  borderRadius: '10px', border: 'none', cursor: 'pointer', textAlign: isRTL ? 'right' : 'left',
                   backgroundColor: isSelected ? theme.primarySoft : 'transparent', boxSizing: 'border-box',
                 }}
               >
                 <CoinIcon symbol={coin.short} size={24} />
                 <div style={{ flex: 1 }}>
                   <span style={{ fontWeight: 'bold', fontSize: '14px', color: theme.text }}>{coin.short}</span>
-                  <span style={{ color: theme.faint, fontSize: '11px', marginLeft: '6px' }}>{coin.name}</span>
+                  <span style={{ color: theme.faint, fontSize: '11px', [isRTL ? 'marginRight' : 'marginLeft']: '6px' }}>{coin.name}</span>
                 </div>
                 {cl && (
-                  <div style={{ textAlign: 'right' }}>
+                  <div style={{ textAlign: isRTL ? 'left' : 'right' }}>
                     <div style={{ fontSize: '13px', fontWeight: 'bold', color: theme.text }}>${fmtUsd(cl.price)}</div>
                     <div style={{ fontSize: '11px', fontWeight: '600', color: cl.change >= 0 ? theme.up : theme.down }}>
                       {cl.change >= 0 ? '+' : ''}{cl.change.toFixed(2)}%
@@ -153,6 +155,7 @@ const CoinSelector = ({ theme, coins, livePrices, selected, onSelect }) => {
 
 const Signals = () => {
   const { theme, mode: themeMode } = useTheme();
+  const { t, isRTL } = useLanguage();
   const [signalBalance, setSignalBalance] = useState(null);
   const [positions, setPositions] = useState([]);
 
@@ -186,8 +189,8 @@ const Signals = () => {
   // while one is already showing restarts the clock instead of cutting the new one short.
   useEffect(() => {
     if (!settleFlash) return;
-    const t = setTimeout(() => setSettleFlash(null), 5200);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setSettleFlash(null), 5200);
+    return () => clearTimeout(timer);
   }, [settleFlash]);
 
   const [selectedCoin, setSelectedCoin] = useState(COINS[0]);
@@ -476,12 +479,12 @@ const Signals = () => {
     setActionError('');
     if (signalBalance < 200) {
       hapticError();
-      setActionError('Minimum $200 signal balance required to trade.');
+      setActionError(t('signals.minBalance'));
       return;
     }
     if (!signalBalance || signalBalance <= 0) {
       hapticError();
-      setActionError('Your balance is empty. Transfer funds first.');
+      setActionError(t('signals.emptyBalanceErr'));
       return;
     }
     hapticTap();
@@ -512,7 +515,7 @@ const Signals = () => {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Could not place prediction.');
+      if (!res.ok) throw new Error(data.error || t('signals.couldNotPlace'));
       setSignalBalance(data.signalBalance);
       setPositions(data.positions);
       setPendingDirection(null);
@@ -537,7 +540,7 @@ const Signals = () => {
     } catch (err) {
       console.error(err);
       hapticError();
-      setActionError('Could not cancel trade. It may have already settled.');
+      setActionError(t('signals.couldNotCancel'));
       loadAccount();
     }
   };
@@ -630,8 +633,8 @@ const Signals = () => {
           </div>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ color: '#fff', fontWeight: 800, fontSize: '15px', letterSpacing: '0.3px' }}>
-              {settleFlash.won ? 'You won!' : 'You lost'}
-              {settleFlash.count > 1 && ` · ${settleFlash.count} trades`}
+              {settleFlash.won ? t('signals.youWon') : t('signals.youLost')}
+              {settleFlash.count > 1 && ` · ${t('signals.tradesCount', { count: settleFlash.count })}`}
             </div>
             <div style={{ color: 'rgba(255,255,255,0.9)', fontSize: '13px', fontWeight: 600 }}>
               {settleFlash.profit >= 0 ? '+' : '−'}{fmtUsd(Math.abs(settleFlash.profit))} USDT
@@ -642,7 +645,7 @@ const Signals = () => {
       )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-        <h3 style={{ margin: 0 }}>Signals</h3>
+        <h3 style={{ margin: 0 }}>{t('nav.signals')}</h3>
         <Link to="/settings" style={{ color: theme.subtext, display: 'flex' }}><Settings size={20} /></Link>
       </div>
 
@@ -655,7 +658,7 @@ const Signals = () => {
       <div style={{ ...glassCard(theme), padding: '14px 16px', marginBottom: '14px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ color: theme.subtext, fontSize: '13px' }}>
-            Signal Balance
+            {t('assets.signalBalance')}
           </span>
           <span style={{ fontWeight: 'bold', color: theme.brand }}>
             {signalBalance === null ? '...' : `${fmtUsd(signalBalance)} USDT`}
@@ -664,11 +667,11 @@ const Signals = () => {
         {/* Today's signals — same limit the server enforces, shown up-front */}
         {bonusInfo.dailySignalLimit != null && (
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', fontSize: '11px', color: theme.subtext }}>
-            <span>Signals today</span>
+            <span>{t('signals.signalsToday')}</span>
             <span style={{ fontWeight: 600, color: bonusInfo.signalsLeftToday === 0 ? theme.down : theme.text }}>
               {Math.min(bonusInfo.signalsUsedToday || 0, bonusInfo.dailySignalLimit)} / {bonusInfo.dailySignalLimit}
-              {bonusInfo.bonusSignals > 0 && bonusInfo.bonusUsedToday < 1 ? ' + 1 bonus' : ''}
-              {bonusInfo.signalsLeftToday === 0 ? ' · limit reached' : ''}
+              {bonusInfo.bonusSignals > 0 && bonusInfo.bonusUsedToday < 1 ? t('signals.plusOneBonus') : ''}
+              {bonusInfo.signalsLeftToday === 0 ? t('signals.limitReached') : ''}
             </span>
           </div>
         )}
@@ -681,7 +684,7 @@ const Signals = () => {
           return (
             <div style={{ marginTop: '10px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: theme.subtext, marginBottom: '4px' }}>
-                <span>Trading volume {done ? '✓ complete' : ''}</span>
+                <span>{t('transfer.tradingVolume')} {done ? t('signals.volComplete') : ''}</span>
                 <span style={{ fontWeight: 600, color: done ? theme.up : theme.text }}>{Math.round(pct)}%</span>
               </div>
               <div style={{ height: '6px', borderRadius: '3px', backgroundColor: theme.inputBg || theme.cardBorder, overflow: 'hidden' }}>
@@ -690,8 +693,8 @@ const Signals = () => {
               <div style={{ fontSize: '10px', color: theme.faint, marginTop: '4px' }}>
                 {showAmounts && <>{fmtUsd(doneAmt)} / {fmtUsd(total)} USDT</>}
                 {done
-                  ? `${showAmounts ? ' · ' : ''}Signal → Spot transfers are penalty-free`
-                  : showAmounts ? ` · ${fmtUsd(remaining)} USDT remaining to unlock penalty-free transfer` : 'Complete trading volume to unlock penalty-free transfer'}
+                  ? `${showAmounts ? ' · ' : ''}${t('signals.penaltyFreeTransfers')}`
+                  : showAmounts ? t('signals.remainingToUnlock', { amt: fmtUsd(remaining) }) : t('signals.completeVolume')}
               </div>
             </div>
           );
@@ -700,8 +703,8 @@ const Signals = () => {
 
       {signalBalance === 0 && (
         <div style={{ backgroundColor: theme.primarySoft, border: `1px solid ${theme.primary}`, borderRadius: '12px', padding: '12px 16px', marginBottom: '14px', fontSize: '13px' }}>
-          Your Signal balance is empty.{' '}
-          <Link to="/assets" style={{ color: theme.primary, fontWeight: 'bold' }}>Transfer funds from Spot</Link> to start trading.
+          {t('signals.emptyBalanceMsg')}{' '}
+          <Link to="/assets" style={{ color: theme.primary, fontWeight: 'bold' }}>{t('signals.transferFromSpot')}</Link>{t('signals.toStartTrading')}
         </div>
       )}
 
@@ -713,7 +716,7 @@ const Signals = () => {
 
       {/* Trade size */}
       <div style={{ ...glassCard(theme), padding: '12px 16px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ color: theme.subtext, fontSize: '13px' }}>Trade size 1% <span style={{ color: theme.faint, fontSize: '11px' }}>(0.662% Your + platform fee)</span></span>
+        <span style={{ color: theme.subtext, fontSize: '13px' }}>{t('signals.tradeSize')} <span style={{ color: theme.faint, fontSize: '11px' }}>{t('signals.feeNote')}</span></span>
         <span style={{ fontWeight: 'bold' }}>{fmtUsd(stakeAmount)} USDT</span>
       </div>
 
@@ -732,7 +735,7 @@ const Signals = () => {
                 boxShadow: '0 4px 14px rgba(16,185,129,0.3)',
               }}
             >
-              Up (ROE) 80%
+              {t('signals.upRoe')}
             </button>
             <button
               onClick={() => startPlacing('down')}
@@ -742,24 +745,24 @@ const Signals = () => {
                 boxShadow: '0 4px 14px rgba(239,68,68,0.3)',
               }}
             >
-              Down (ROE) 80%
+              {t('signals.downRoe')}
             </button>
           </div>
           <p style={{ color: theme.faint, fontSize: '11px', marginTop: 0, marginBottom: '14px' }}>
-            Pick a direction, then choose exact settlement time. Outcomes are not guaranteed.
+            {t('signals.pickDirection')}
           </p>
 
           {bonusInfo.bonusSignals > 0 && (
             <div style={{ ...glassCard(theme), padding: '14px 16px', marginBottom: '24px', border: `1px solid ${theme.up}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontWeight: 'bold', fontSize: '14px', color: theme.up }}>Referral Bonus Signal</span>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '12px', color: theme.subtext }}>{bonusInfo.bonusSignals} remaining</div>
-                  {bonusInfo.daysRemaining > 0 && <div style={{ fontSize: '11px', color: theme.faint }}>Expires in {bonusInfo.daysRemaining} day{bonusInfo.daysRemaining !== 1 ? 's' : ''}</div>}
+                <span style={{ fontWeight: 'bold', fontSize: '14px', color: theme.up }}>{t('signals.referralBonus')}</span>
+                <div style={{ textAlign: isRTL ? 'left' : 'right' }}>
+                  <div style={{ fontSize: '12px', color: theme.subtext }}>{t('signals.remaining', { n: bonusInfo.bonusSignals })}</div>
+                  {bonusInfo.daysRemaining > 0 && <div style={{ fontSize: '11px', color: theme.faint }}>{bonusInfo.daysRemaining === 1 ? t('signals.expiresInDay') : t('signals.expiresInDays', { n: bonusInfo.daysRemaining })}</div>}
                 </div>
               </div>
               <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '10px' }}>
-                1% profit · {bonusInfo.referralSymbol ? bonusInfo.referralSymbol.replace('USDT','') : '—'} · Available at <b style={{ color: theme.text }}>{bonusInfo.referralSignalTime || '—'}</b>
+                {t('signals.referralInfo', { sym: bonusInfo.referralSymbol ? bonusInfo.referralSymbol.replace('USDT','') : '—' })} <b style={{ color: theme.text }}>{bonusInfo.referralSignalTime || '—'}</b>
               </div>
               {bonusInfo.referralWindowOpen && bonusInfo.bonusUsedToday === 0 ? (
                 <button
@@ -783,12 +786,12 @@ const Signals = () => {
                     boxShadow: '0 4px 16px rgba(99,102,241,0.3)', opacity: placingBonus ? 0.7 : 1,
                   }}
                 >
-                  {placingBonus ? 'Placing...' : `Place Referral Signal (${fmtUsd(signalBalance ? signalBalance * 0.01 : 0)} USDT)`}
+                  {placingBonus ? t('signals.placing') : t('signals.placeReferral', { amt: fmtUsd(signalBalance ? signalBalance * 0.01 : 0) })}
                 </button>
               ) : bonusInfo.bonusUsedToday > 0 ? (
-                <div style={{ fontSize: '12px', color: theme.faint, padding: '8px 0' }}>Today's bonus signal already used. Next available tomorrow.</div>
+                <div style={{ fontSize: '12px', color: theme.faint, padding: '8px 0' }}>{t('signals.bonusUsedToday')}</div>
               ) : (
-                <div style={{ fontSize: '12px', color: theme.faint, padding: '8px 0' }}>Window not open yet. Come back at <b>{bonusInfo.referralSignalTime}</b>.</div>
+                <div style={{ fontSize: '12px', color: theme.faint, padding: '8px 0' }}>{t('signals.windowNotOpen')} <b>{bonusInfo.referralSignalTime}</b>.</div>
               )}
             </div>
           )}
@@ -799,14 +802,14 @@ const Signals = () => {
             <span style={{ fontWeight: 'bold', color: pendingDirection === 'up' ? theme.up : theme.down }}>
               {pendingDirection.toUpperCase()} · {fmtUsd(stakeAmount)} USDT
             </span>
-            <button onClick={() => setPendingDirection(null)} style={{ background: 'none', border: 'none', color: theme.faint, cursor: 'pointer', fontSize: '13px' }}>Cancel</button>
+            <button onClick={() => setPendingDirection(null)} style={{ background: 'none', border: 'none', color: theme.faint, cursor: 'pointer', fontSize: '13px' }}>{t('common.cancel')}</button>
           </div>
 
-          <label style={{ fontSize: '12px', color: theme.subtext, marginBottom: '8px', display: 'block' }}>Settle Time</label>
+          <label style={{ fontSize: '12px', color: theme.subtext, marginBottom: '8px', display: 'block' }}>{t('signals.settleTime')}</label>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
             <button
               onClick={() => stepMinutes(-1)}
-              aria-label="One minute earlier"
+              aria-label={t('signals.oneMinEarlier')}
               style={{
                 width: '46px', height: '46px', flexShrink: 0, borderRadius: '12px', cursor: 'pointer',
                 border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg,
@@ -822,7 +825,7 @@ const Signals = () => {
             />
             <button
               onClick={() => stepMinutes(1)}
-              aria-label="One minute later"
+              aria-label={t('signals.oneMinLater')}
               style={{
                 width: '46px', height: '46px', flexShrink: 0, borderRadius: '12px', cursor: 'pointer',
                 border: `1px solid ${theme.cardBorder}`, backgroundColor: theme.inputBg || theme.bg,
@@ -841,10 +844,10 @@ const Signals = () => {
               color: followsSignal ? theme.up : theme.down,
             }}>
               {followsSignal
-                ? <>✅ Signal time <b>{fmtClock(announcedSettleAt)}</b> — you are following this signal.</>
+                ? <>{t('signals.followingSignalPre')} <b>{fmtClock(announcedSettleAt)}</b> {t('signals.followingSignalPost')}</>
                 : settleAtTarget < announcedSettleAt
-                  ? <>⚠️ Signal time is <b>{fmtClock(announcedSettleAt)}</b>. Your time is earlier — this does not follow the signal.</>
-                  : <>⚠️ Signal time is <b>{fmtClock(announcedSettleAt)}</b>. A later time does not follow the signal — the session closes at {fmtClock(announcedSettleAt + 60 * 1000)} and your stake is refunded.</>
+                  ? <>{t('signals.signalTimeIs')} <b>{fmtClock(announcedSettleAt)}</b>{t('signals.earlierWarn')}</>
+                  : <>{t('signals.signalTimeIs')} <b>{fmtClock(announcedSettleAt)}</b>{t('signals.laterWarn', { close: fmtClock(announcedSettleAt + 60 * 1000) })}</>
               }
             </div>
           )}
@@ -858,12 +861,12 @@ const Signals = () => {
                 fontWeight: 'bold', fontSize: '13px',
               }}
             >
-              Use signal time {fmtClock(announcedSettleAt)}
+              {t('signals.useSignalTime', { time: fmtClock(announcedSettleAt) })}
             </button>
           )}
 
           <div style={{ fontSize: '12px', color: theme.subtext, marginBottom: '14px' }}>
-            Current time: <b style={{ color: theme.text }}>{fmtClock(now)}</b> · Settles at <b style={{ color: theme.text }}>{fmtClock(settleAtTarget)}</b>
+            {t('signals.currentTime')} <b style={{ color: theme.text }}>{fmtClock(now)}</b> {t('signals.settlesAtSep')} <b style={{ color: theme.text }}>{fmtClock(settleAtTarget)}</b>
           </div>
 
           <button
@@ -876,26 +879,26 @@ const Signals = () => {
               boxShadow: pendingDirection === 'up' ? '0 4px 14px rgba(16,185,129,0.3)' : '0 4px 14px rgba(239,68,68,0.3)',
             }}
           >
-            {placing ? 'Placing...' : `Confirm ${pendingDirection.toUpperCase()} — Settles at ${fmtClock(settleAtTarget)}`}
+            {placing ? t('signals.placing') : t('signals.confirmSettles', { dir: pendingDirection.toUpperCase(), time: fmtClock(settleAtTarget) })}
           </button>
         </div>
       )}
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: '24px', borderBottom: `1px solid ${theme.cardBorder}`, marginBottom: '16px' }}>
-        {[{ key: 'current', label: 'Current' }, { key: 'history', label: 'History' }].map((t) => (
+        {[{ key: 'current', label: t('signals.tabCurrent') }, { key: 'history', label: t('common.history') }].map((tab) => (
           <button
-            key={t.key}
-            onClick={() => setActiveTab(t.key)}
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
             style={{
               background: 'none', border: 'none', cursor: 'pointer', paddingBottom: '10px', fontSize: '14px', fontWeight: 'bold',
-              color: activeTab === t.key ? theme.primary : theme.faint,
-              borderBottom: activeTab === t.key ? `2px solid ${theme.primary}` : '2px solid transparent',
+              color: activeTab === tab.key ? theme.primary : theme.faint,
+              borderBottom: activeTab === tab.key ? `2px solid ${theme.primary}` : '2px solid transparent',
             }}
           >
-            {t.label}
-            {t.key === 'current' && currentPositions.length > 0 && (
-              <span style={{ marginLeft: '6px', fontSize: '11px', backgroundColor: theme.primarySoft, color: theme.primary, padding: '2px 6px', borderRadius: '8px' }}>
+            {tab.label}
+            {tab.key === 'current' && currentPositions.length > 0 && (
+              <span style={{ [isRTL ? 'marginRight' : 'marginLeft']: '6px', fontSize: '11px', backgroundColor: theme.primarySoft, color: theme.primary, padding: '2px 6px', borderRadius: '8px' }}>
                 {currentPositions.length}
               </span>
             )}
@@ -905,7 +908,7 @@ const Signals = () => {
 
       {activeTab === 'current' && (
         <div>
-          {currentPositions.length === 0 && <p style={{ color: theme.faint, fontSize: '13px' }}>No open positions.</p>}
+          {currentPositions.length === 0 && <p style={{ color: theme.faint, fontSize: '13px' }}>{t('trade.noOpenPositions')}</p>}
           {currentPositions.map((p, idx) => {
             const secondsLeft = Math.max(0, Math.ceil((p.settleAt - now) / 1000));
             const coin = COINS.find((c) => c.pair === p.pair);
@@ -919,11 +922,11 @@ const Signals = () => {
                   </span>
                   <span style={{ color: p.direction === 'up' ? theme.up : theme.down, fontWeight: 'bold' }}>{p.direction.toUpperCase()}</span>
                 </div>
-                <div style={{ color: theme.subtext, fontSize: '12px' }}>Stake: {fmtUsd(p.stake)} USDT · Entry: {fmtUsd(p.entryPrice)}</div>
-                <div style={{ color: theme.faint, fontSize: '11px', marginTop: '4px' }}>Opened: {fmtClockShort(p.openedAt)} PKT · Settles: {fmtClockShort(p.settleAt)} PKT</div>
+                <div style={{ color: theme.subtext, fontSize: '12px' }}>{t('signals.stakeEntry', { stake: fmtUsd(p.stake), entry: fmtUsd(p.entryPrice) })}</div>
+                <div style={{ color: theme.faint, fontSize: '11px', marginTop: '4px' }}>{t('signals.openedSettles', { opened: fmtClockShort(p.openedAt), settles: fmtClockShort(p.settleAt) })}</div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
                   <div style={{ color: theme.text, fontSize: '13px', fontWeight: '500' }}>
-                    {secondsLeft > 0 ? `${Math.floor(secondsLeft / 60)}m ${secondsLeft % 60}s left` : 'Settling...'}
+                    {secondsLeft > 0 ? t('signals.timeLeft', { m: Math.floor(secondsLeft / 60), s: secondsLeft % 60 }) : t('signals.settling')}
                   </div>
                   {secondsLeft > 0 && (
                     <button
@@ -933,7 +936,7 @@ const Signals = () => {
                         borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer',
                       }}
                     >
-                      Cancel
+                      {t('common.cancel')}
                     </button>
                   )}
                 </div>
@@ -953,34 +956,34 @@ const Signals = () => {
             const winRate = settled.length > 0 ? Math.round((wins / settled.length) * 100) : 0;
             return (
               <div style={{ ...glassCard(theme), padding: '14px 16px', marginBottom: '14px' }}>
-                <div style={{ fontSize: '11px', fontWeight: '700', color: theme.subtext, marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Performance Summary</div>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: theme.subtext, marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('signals.perfSummary')}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8px', textAlign: 'center' }}>
                   <div>
                     <div style={{ fontSize: '18px', fontWeight: 'bold', color: theme.up }}>{wins}</div>
-                    <div style={{ fontSize: '10px', color: theme.faint }}>Wins</div>
+                    <div style={{ fontSize: '10px', color: theme.faint }}>{t('signals.wins')}</div>
                   </div>
                   <div>
                     <div style={{ fontSize: '18px', fontWeight: 'bold', color: theme.down }}>{losses}</div>
-                    <div style={{ fontSize: '10px', color: theme.faint }}>Losses</div>
+                    <div style={{ fontSize: '10px', color: theme.faint }}>{t('signals.losses')}</div>
                   </div>
                   <div>
                     <div style={{ fontSize: '18px', fontWeight: 'bold', color: winRate >= 50 ? theme.up : theme.down }}>{winRate}%</div>
-                    <div style={{ fontSize: '10px', color: theme.faint }}>Win Rate</div>
+                    <div style={{ fontSize: '10px', color: theme.faint }}>{t('signals.winRate')}</div>
                   </div>
                   <div>
                     <div style={{ fontSize: '16px', fontWeight: 'bold', color: totalProfit >= 0 ? theme.up : theme.down }}>{totalProfit >= 0 ? '+' : ''}{fmtUsd(totalProfit)}</div>
-                    <div style={{ fontSize: '10px', color: theme.faint }}>Total P&L</div>
+                    <div style={{ fontSize: '10px', color: theme.faint }}>{t('signals.totalPnl')}</div>
                   </div>
                 </div>
               </div>
             );
           })()}
-          {historyPositions.length === 0 && <p style={{ color: theme.faint, fontSize: '13px' }}>No settled trades yet.</p>}
+          {historyPositions.length === 0 && <p style={{ color: theme.faint, fontSize: '13px' }}>{t('signals.noSettled')}</p>}
           {historyPositions.map((p) => {
             const coin = COINS.find((c) => c.pair === p.pair);
             const isCancelled = !!p.cancelled;
             const isTimedOut = !!p.timedOut;
-            const statusLabel = isTimedOut ? 'TIMED OUT' : isCancelled ? 'CANCELLED' : (p.won ? 'WIN' : 'LOSS');
+            const statusLabel = isTimedOut ? t('status.timedOut') : isCancelled ? t('status.cancelled') : (p.won ? t('status.win') : t('status.loss'));
             const statusColor = isTimedOut ? '#f59e0b' : isCancelled ? theme.faint : (p.won ? theme.up : theme.down);
             return (
               <div key={p.id} style={{ ...glassCard(theme), padding: '14px', marginBottom: '10px' }}>
@@ -992,13 +995,13 @@ const Signals = () => {
                   <span style={{ color: statusColor, fontWeight: 'bold' }}>{statusLabel}</span>
                 </div>
                 <div style={{ color: theme.subtext, fontSize: '12px' }}>
-                  Stake: {fmtUsd(p.stake)} USDT · Entry: {fmtUsd(p.entryPrice)}
-                  {!isCancelled && !isTimedOut && <> → Close: {fmtUsd(p.closePrice)}</>}
+                  {t('signals.stakeEntry', { stake: fmtUsd(p.stake), entry: fmtUsd(p.entryPrice) })}
+                  {!isCancelled && !isTimedOut && <>{t('signals.closeSuffix', { close: fmtUsd(p.closePrice) })}</>}
                 </div>
                 <div style={{ color: theme.faint, fontSize: '11px', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                   <span>{fmtClockShort(p.openedAt)} → {fmtClockShort(p.settleAt)} PKT</span>
                   <span style={{ color: p.direction === 'up' ? theme.up : theme.down, fontWeight: 'bold' }}>
-                    · {p.pair.replace('USDT','').replace('/','').replace('USDT','')} {p.direction === 'up' ? '▲ UP' : '▼ DOWN'}
+                    · {p.pair.replace('USDT','').replace('/','').replace('USDT','')} {p.direction === 'up' ? t('signals.arrowUp') : t('signals.arrowDown')}
                   </span>
                 </div>
                 {!isCancelled && !isTimedOut && (
@@ -1007,10 +1010,10 @@ const Signals = () => {
                   </div>
                 )}
                 {isCancelled && (
-                  <div style={{ color: theme.faint, fontSize: '13px', marginTop: '4px' }}>Stake refunded</div>
+                  <div style={{ color: theme.faint, fontSize: '13px', marginTop: '4px' }}>{t('signals.stakeRefunded')}</div>
                 )}
                 {isTimedOut && (
-                  <div style={{ color: '#f59e0b', fontSize: '13px', marginTop: '4px' }}>Settled after the signal closed · Stake refunded</div>
+                  <div style={{ color: '#f59e0b', fontSize: '13px', marginTop: '4px' }}>{t('signals.settledAfterClose')}</div>
                 )}
               </div>
             );
@@ -1024,12 +1027,12 @@ const Signals = () => {
           backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)',
         }}>
           <div style={{ ...glassCard(theme), padding: '24px', maxWidth: '340px', width: '90%', textAlign: 'center' }}>
-            <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '12px', color: theme.down }}>Cancel Signal?</div>
+            <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '12px', color: theme.down }}>{t('signals.cancelSignalTitle')}</div>
             <p style={{ color: theme.subtext, fontSize: '13px', margin: '0 0 8px' }}>
-              Are you sure you want to cancel your <b>{cancelConfirm.pair}</b> signal?
+              {t('signals.cancelConfirmPre')} <b>{cancelConfirm.pair}</b> {t('signals.cancelConfirmPost')}
             </p>
             <p style={{ color: theme.subtext, fontSize: '13px', margin: '0 0 20px' }}>
-              Your stake of <b>{fmtUsd(cancelConfirm.stake)} USDT</b> will be refunded. This trade will appear as "Cancelled" in your history.
+              {t('signals.refundPre')} <b>{fmtUsd(cancelConfirm.stake)} USDT</b> {t('signals.refundPost')}
             </p>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
@@ -1039,7 +1042,7 @@ const Signals = () => {
                   backgroundColor: theme.card, color: theme.text, fontWeight: 'bold', cursor: 'pointer',
                 }}
               >
-                Keep Trade
+                {t('signals.keepTrade')}
               </button>
               <button
                 onClick={() => cancelTrade(cancelConfirm.id, cancelConfirm.stake)}
@@ -1048,7 +1051,7 @@ const Signals = () => {
                   background: theme.downGradient || theme.down, color: 'white', fontWeight: 'bold', cursor: 'pointer',
                 }}
               >
-                Cancel Trade
+                {t('signals.cancelTrade')}
               </button>
             </div>
           </div>

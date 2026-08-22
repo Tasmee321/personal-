@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Mail, Lock, Sun, Moon } from 'lucide-react';
 import { useTheme } from './ThemeContext';
 import { API_URL } from './config';
-import { applyLanguage } from './utils/language';
+import { useLanguage } from './LanguageContext';
 
 const translations = {
   en: {
@@ -174,8 +174,7 @@ export default function KynexAuth() {
     } catch (err) { setError(err.message); }
   };
 
-  const [langCode, setLangCodeState] = useState(() => localStorage.getItem('kynex_language') || 'en');
-  const setLangCode = (code) => { setLangCodeState(code); localStorage.setItem('kynex_language', code); applyLanguage(code); };
+  const { lang, setLang } = useLanguage(); // language source of truth (persists + applies dir/lang)
   const [isOpen, setIsOpen] = useState(false);
   const [successPopup, setSuccessPopup] = useState(null);
 
@@ -185,10 +184,10 @@ export default function KynexAuth() {
     return () => clearTimeout(timer);
   }, [successPopup]);
 
-  const t = translations[langCode] || translations.en;
-  const isRTL = langCode === 'ar';
+  const t = translations[lang] || translations.en;
+  const isRTL = lang === 'ar';
 
-  const selectedLangName = (languages.find((l) => l.code === langCode) || languages.find((l) => l.code === 'en') || languages[0])?.name || 'English';
+  const selectedLangName = (languages.find((l) => l.code === lang) || languages.find((l) => l.code === 'en') || languages[0])?.name || 'English';
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -356,9 +355,9 @@ export default function KynexAuth() {
               </button>
               {isOpen && (
                 <div className="ka-lang-menu">
-                  {languages.map((lang) => (
-                    <div key={lang.code} className={`ka-lang-item ${lang.code === langCode ? 'active' : ''}`} onClick={() => { setLangCode(lang.code); setIsOpen(false); }}>
-                      {lang.name}
+                  {languages.map((l) => (
+                    <div key={l.code} className={`ka-lang-item ${l.code === lang ? 'active' : ''}`} onClick={() => { setLang(l.code); setIsOpen(false); }}>
+                      {l.name}
                     </div>
                   ))}
                 </div>

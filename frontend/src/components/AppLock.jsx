@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTheme } from '../ThemeContext';
+import { useLanguage } from '../LanguageContext';
 
 const LOCK_KEY  = 'kynex_app_lock';
 const CRED_KEY  = 'kynex_lock_cred_id';
@@ -68,6 +69,7 @@ export function clearBiometric() {
 // ── Component ─────────────────────────────────────────────────────────────────
 const AppLock = () => {
   const { theme } = useTheme();
+  const { t, isRTL } = useLanguage();
   const [locked, setLocked]       = useState(false);
   const [authing, setAuthing]     = useState(false);
   const [error,   setError]       = useState('');
@@ -95,8 +97,8 @@ const AppLock = () => {
       setFailCount(0);
     } catch (err) {
       const msg = err?.name === 'NotAllowedError'
-        ? 'Cancelled. Tap to try again.'
-        : err?.message || 'Authentication failed. Tap to retry.';
+        ? t('applock.cancelled')
+        : err?.message || t('applock.authFailed');
       setError(msg);
       setFailCount(c => c + 1);
     } finally {
@@ -135,8 +137,8 @@ const AppLock = () => {
   useEffect(() => {
     if (!locked || authing || autoTriedRef.current) return;
     autoTriedRef.current = true;
-    const t = setTimeout(() => unlock(), 350);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => unlock(), 350);
+    return () => clearTimeout(timer);
   }, [locked, authing, unlock]);
 
   if (!locked || isAPK) return null;
@@ -150,6 +152,7 @@ const AppLock = () => {
       display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
       gap: '20px', padding: '32px',
+      direction: isRTL ? 'rtl' : 'ltr',
     }}>
       {/* Branding */}
       <div style={{ fontWeight: '900', fontSize: '36px', letterSpacing: '-1px', color: theme.brand }}>
@@ -169,10 +172,10 @@ const AppLock = () => {
 
       <div style={{ textAlign: 'center' }}>
         <div style={{ fontWeight: '700', fontSize: '17px', color: theme.text, marginBottom: '6px' }}>
-          App Locked
+          {t('applock.locked')}
         </div>
         <div style={{ fontSize: '13px', color: theme.subtext, lineHeight: '1.6' }}>
-          Verify your identity to continue
+          {t('applock.verifyPrompt')}
         </div>
       </div>
 
@@ -201,24 +204,24 @@ const AppLock = () => {
       >
         {authing ? (
           <>
-            <span style={{ fontSize: '14px' }}>⏳</span> Verifying…
+            <span style={{ fontSize: '14px' }}>⏳</span> {t('misc.verifying')}
           </>
         ) : (
           <>
-            <span style={{ fontSize: '16px' }}>🔓</span> Unlock with Biometric
+            <span style={{ fontSize: '16px' }}>🔓</span> {t('applock.unlockBiometric')}
           </>
         )}
       </button>
 
       <div style={{ fontSize: '11px', color: theme.subtext, textAlign: 'center' }}>
-        Face ID · Touch ID · Fingerprint · Device PIN
+        {t('applock.authMethods')}
       </div>
 
       {/* Emergency disable — shown after 2 failed attempts */}
       {showEmergency && (
         <div style={{ textAlign: 'center', marginTop: '8px' }}>
           <div style={{ fontSize: '12px', color: theme.faint, marginBottom: '8px' }}>
-            Biometric not working?
+            {t('applock.biometricNotWorking')}
           </div>
           <button
             onClick={disableAndUnlock}
@@ -233,7 +236,7 @@ const AppLock = () => {
               fontWeight: '600',
             }}
           >
-            Disable App Lock &amp; Enter
+            {t('applock.disableAndEnter')}
           </button>
         </div>
       )}

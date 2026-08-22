@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useTheme } from '../ThemeContext';
 import { API_URL } from '../config';
+import { longPressProps, justLongPressed } from '../utils/longPress';
 const KEY_STORAGE = 'kynex_admin_key';
 
 function adminHeaders(key) {
@@ -81,6 +82,7 @@ const AdminKyc = () => {
   const [chatThreads, setChatThreads] = useState([]);
   const [activeChatUid, setActiveChatUid] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
+  const [reactPickerId, setReactPickerId] = useState(null); // chat message id whose emoji picker is open
   const [chatReply, setChatReply] = useState('');
   const [chatSending, setChatSending] = useState(false);
   const [userTyping, setUserTyping] = useState(false);
@@ -206,6 +208,28 @@ const AdminKyc = () => {
       setError(data?.error || 'Reply failed — your text is still in the box, try again.');
     }
     setChatSending(false);
+  };
+
+  // Admin adds / toggles an emoji reaction on a chat message (optimistic; reverts on failure)
+  const reactAdminMsg = async (id, emoji) => {
+    if (!id || !activeChatUid) return;
+    setReactPickerId(null);
+    let prevList;
+    setChatMessages(list => {
+      prevList = list;
+      return list.map(m => {
+        if (m.id !== id) return m;
+        const r = { ...(m.reactions || {}) };
+        if (!emoji || r.admin === emoji) delete r.admin; else r.admin = emoji;
+        return { ...m, reactions: Object.keys(r).length ? r : undefined };
+      });
+    });
+    const { ok } = await safeFetch(`${API_URL}/api/admin/livechat/${activeChatUid}/react`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': adminKey },
+      body: JSON.stringify({ id, emoji }),
+    });
+    if (!ok && prevList) setChatMessages(prevList);
   };
 
   const sendBroadcast = async () => {
@@ -1137,7 +1161,7 @@ This cannot be undone!`)) return;
                         }}>{u.closed ? 'Blocked' : 'Active'}</span>
                       </td>
                       <td style={{ padding: '10px 8px' }}>
-                        <button onClick={(e) => { e.stopPropagation(); setSelectedUser(u); setNewLevel(String(u.level || 0)); setNewLimit(String(u.dailySignalLimit || 3)); }}
+                        <button onClick={(e) => { e.stopPropagation(); setSelectedUser(u); setNewLevel(String(u.level || 0)); setNewLimit(String(u.dailySignalLimit || 3)); setUserDetailTab('info'); setUserDeposits([]); setUserWithdrawals([]); setUserSignals([]); setUserTransactions([]); setTeamTree(null); setTeamData(null); setTeamUser(null); }}
                           style={{ ...btnPrimary, padding: '4px 12px', fontSize: '11px' }}>Manage</button>
                       </td>
                     </tr>
@@ -1196,7 +1220,7 @@ This cannot be undone!`)) return;
 
         {activeTab === 'users' && selectedUser && (
           <>
-            <button onClick={() => setSelectedUser(null)} style={{ background: 'none', border: 'none', color: theme.primary, cursor: 'pointer', fontSize: '13px', fontWeight: '600', marginBottom: '16px', padding: 0 }}>
+            <button onClick={() => { setSelectedUser(null); setUserDetailTab('info'); setUserDeposits([]); setUserWithdrawals([]); setUserSignals([]); setUserTransactions([]); setTeamTree(null); setTeamData(null); setTeamUser(null); }} style={{ background: 'none', border: 'none', color: theme.primary, cursor: 'pointer', fontSize: '13px', fontWeight: '600', marginBottom: '16px', padding: 0 }}>
               ← Back to Users
             </button>
             {/* Detail tabs */}
@@ -2414,7 +2438,7 @@ This cannot be undone!`)) return;
                       {(dbUsage.used / 1024 / 1024).toFixed(1)} MB / {Math.round(dbUsage.limit / 1024 / 1024)} MB ({pct}%)
                     </div>
                   </div>
-                  <div style={{ height: '8px', borderRadius: '4px', backgroundColor: theme.border, overflow: 'hidden' }}>
+                  <div style={{ height: '8px', borderRadius: '4px', backgroundColor: theme.cardBorder, overflow: 'hidden' }}>
                     <div style={{ height: '100%', width: `${pct}%`, backgroundColor: tone, transition: 'width .3s' }} />
                   </div>
                   <div style={{ fontSize: '12px', color: theme.subtext, marginTop: '8px', lineHeight: 1.7 }}>
@@ -2586,7 +2610,7 @@ This cannot be undone!`)) return;
                   </div>
 
                   {/* Messages */}
-                  <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', backgroundColor: theme.bg || theme.card }}>
+                  <div onClick={() => { if (reactPickerId && !justLongPressed()) setReactPickerId(null); }} style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', backgroundColor: theme.bg || theme.card }}>
                     {chatMessages.map(msg => (
                       <div key={msg.id} style={{ display: 'flex', justifyContent: msg.from === 'admin' ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: '6px' }}>
                         {msg.from === 'user' && (
@@ -2597,7 +2621,9 @@ This cannot be undone!`)) return;
                             fontSize: '11px', fontWeight: 700, color: theme.primary,
                           }}>U</div>
                         )}
-                        <div style={{
+                        <div
+                          {...(msg.id ? longPressProps(() => setReactPickerId(msg.id)) : {})}
+                          style={{
                           maxWidth: '70%', padding: '9px 13px',
                           borderRadius: msg.from === 'admin' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
                           backgroundColor: msg.from === 'admin' ? theme.primary : (theme.inputBg || theme.card),
@@ -2605,10 +2631,11 @@ This cannot be undone!`)) return;
                           fontSize: '13px', lineHeight: '1.5', wordBreak: 'break-word',
                           boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
                           border: msg.from === 'user' ? `1px solid ${theme.cardBorder}` : 'none',
+                          WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none',
                         }}>
                           {msg.image && <img src={msg.image} alt="attachment" onClick={() => window.open(msg.image, '_blank')} style={{ display: 'block', maxWidth: '100%', maxHeight: '260px', borderRadius: '10px', marginBottom: msg.text ? '6px' : 0, cursor: 'zoom-in' }} />}
                           {msg.text && <div>{msg.text}</div>}
-                          <div style={{ fontSize: '10px', marginTop: '4px', color: msg.from === 'admin' ? 'rgba(255,255,255,0.65)' : theme.faint, textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '3px' }}>
+                          <div style={{ fontSize: '10px', marginTop: '4px', color: msg.from === 'admin' ? 'rgba(255,255,255,0.65)' : theme.faint, textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '5px' }}>
                             {new Date(msg.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             {msg.from === 'admin' && (
                               <span style={{ color: msg.readByUser ? '#60A5FA' : 'rgba(255,255,255,0.6)', fontSize: '11px' }}>
@@ -2616,6 +2643,19 @@ This cannot be undone!`)) return;
                               </span>
                             )}
                           </div>
+                          {(msg.reactions?.user || msg.reactions?.admin) && (
+                            <div style={{ display: 'flex', gap: '4px', marginTop: '5px', flexWrap: 'wrap' }}>
+                              {msg.reactions?.user && <span style={{ fontSize: '12px', lineHeight: 1.2, padding: '2px 7px', borderRadius: '10px', backgroundColor: msg.from === 'admin' ? 'rgba(255,255,255,0.22)' : theme.bg, border: msg.from === 'admin' ? 'none' : `1px solid ${theme.cardBorder}` }}>{msg.reactions.user}</span>}
+                              {msg.reactions?.admin && <span onClick={() => reactAdminMsg(msg.id, msg.reactions.admin)} title="Tap to remove" style={{ cursor: 'pointer', fontSize: '12px', lineHeight: 1.2, padding: '2px 7px', borderRadius: '10px', backgroundColor: msg.from === 'admin' ? 'rgba(255,255,255,0.34)' : theme.primarySoft, border: msg.from === 'admin' ? 'none' : `1px solid ${theme.primary}55` }}>{msg.reactions.admin}</span>}
+                            </div>
+                          )}
+                          {reactPickerId === msg.id && (
+                            <div style={{ display: 'flex', gap: '2px', marginTop: '6px', padding: '4px', borderRadius: '14px', backgroundColor: msg.from === 'admin' ? 'rgba(255,255,255,0.18)' : theme.bg, flexWrap: 'wrap' }}>
+                              {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(e => (
+                                <button key={e} onClick={() => reactAdminMsg(msg.id, e)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '17px', padding: '2px 4px', lineHeight: 1, borderRadius: '8px' }}>{e}</button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}

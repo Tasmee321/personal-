@@ -8,6 +8,7 @@ import NotFound from './pages/NotFound';
 import OfflineBanner from './components/OfflineBanner';
 import { isAuthenticated } from './utils/auth';
 import { ThemeProvider, useTheme } from './ThemeContext';
+import { LanguageProvider } from './LanguageContext';
 import LiveChat from './components/LiveChat';
 import WhatsNewModal from './components/WhatsNewModal';
 import UpdateChecker from './components/UpdateChecker';
@@ -80,6 +81,7 @@ function App() {
 
   return (
     <ThemeProvider>
+      <LanguageProvider>
       <Router>
         <AnimatedRoutes><Suspense fallback={<PageLoader />}><Routes>
           <Route path="/" element={authed ? <Navigate to="/dashboard" /> : <Home />} />
@@ -127,6 +129,7 @@ function App() {
         <UpdateChecker onPendingChange={setUpdatePending} />
         <WhatsNewModal updatePending={updatePending} />
       </Router>
+      </LanguageProvider>
     </ThemeProvider>
   );
 }
