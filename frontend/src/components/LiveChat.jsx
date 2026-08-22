@@ -8,11 +8,39 @@ import { API_URL } from '../config';
 import { registerFcmToken } from '../firebase';
 import { longPressProps, justLongPressed } from '../utils/longPress';
 import { hapticTap } from '../utils/haptics';
+import { fmtLocalClockShort, deviceTzLabel } from '../utils/localTime';
 
 const DRAG_KEY = 'kynex_chat_btn_pos';
 const IDLE_MS = 4000;
 const CHAT_BTN = 50; // floating button size (px) — compact, not oversized
 const CHAT_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏']; // emoji reactions a user can add to a message
+
+// A signal-alert broadcast is ONE shared string the server formats in PKT ("🕒 Time: 3:15 PM (PKT)"),
+// so every subscriber sees Pakistan time. Inside the app we localise just that line to the viewer's own
+// clock. PKT is a fixed UTC+5 offset and the message's send instant (msg.at) fixes the PKT calendar day —
+// signals fire mid-afternoon/evening, never across PKT midnight — so we can rebuild the absolute instant
+// and re-render it locally. The instant is unchanged; only the shown wall-clock + tz label change.
+// Server/Telegram/OS-push copies stay PKT by design (a shared message can't be per-user localised).
+function localizeSignalTime(text, atMs) {
+  if (!text || !atMs) return text;
+  return text.replace(
+    /(Time:\s*)(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?\s*\(PKT\)/i,
+    (_full, label, hh, mm, ss, ap) => {
+      let h = parseInt(hh, 10);
+      const m = parseInt(mm, 10);
+      const s = ss ? parseInt(ss, 10) : 0;
+      if (ap) {
+        const up = ap.toUpperCase();
+        if (up === 'PM' && h < 12) h += 12;
+        if (up === 'AM' && h === 12) h = 0;
+      }
+      const pkt = new Date(atMs + 5 * 60 * 60 * 1000);   // shift into PKT to read its calendar day
+      let epoch = Date.UTC(pkt.getUTCFullYear(), pkt.getUTCMonth(), pkt.getUTCDate(), h, m, s) - 5 * 60 * 60 * 1000;
+      if (epoch < atMs - 12 * 60 * 60 * 1000) epoch += 24 * 60 * 60 * 1000;   // guard the rare midnight wrap
+      return `${label}${fmtLocalClockShort(epoch)} ${deviceTzLabel()}`;
+    }
+  );
+}
 
 // Device safe-area insets (notch / home indicator) measured from CSS env() — JS can't read env() directly
 function getSafeInsets() {
@@ -1305,7 +1333,7 @@ const LiveChat = () => {
                     <div key={msg.id || msg.at} style={{ display:'flex', justifyContent:'flex-start', animation:'chatSlideIn 0.18s ease-out' }}>
                       <div style={{ maxWidth:'85%', padding:'9px 13px', borderRadius:'4px 18px 18px 18px', backgroundColor:theme.brandSoft, border:`1.5px solid ${theme.brand}66`, color:theme.text, fontSize:'13px', lineHeight:'1.5', wordBreak:'break-word', boxShadow:'0 2px 8px rgba(0,0,0,0.07)' }}>
                         <div style={{ fontSize:'10px', fontWeight:'800', color:theme.brand, textTransform:'uppercase', letterSpacing:'0.7px', marginBottom:'4px' }}>📢 {t('livechat.adminAnnouncement')}</div>
-                        <div>{msg.text}</div>
+                        <div>{localizeSignalTime(msg.text, msg.at)}</div>
                         <div style={{ fontSize:'10px', marginTop:'4px', color:theme.faint, textAlign:'right' }}>{fmtTime(msg.at)}</div>
                       </div>
                     </div>
@@ -1440,7 +1468,7 @@ const LiveChat = () => {
                 {toast.broadcast ? t('livechat.toastBroadcast') : t('livechat.toastNew')}
               </div>
               <div style={{ fontSize:'13px', color:theme.text, lineHeight:'1.5', fontWeight:'500', overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>
-                {toast.text}
+                {localizeSignalTime(toast.text, toast.at)}
               </div>
               <div style={{ fontSize:'10px', color:theme.faint, marginTop:'4px' }}>{t('livechat.tapOpen')}</div>
             </div>
